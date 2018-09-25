@@ -3424,7 +3424,7 @@ static pj_bool_t pubsub_on_rx_publish_request(pjsip_rx_data *rdata)
 			ao2_link(handler->publications, publication);
 
 			AST_SCHED_REPLACE_UNREF(publication->sched_id, sched, expires * 1000, publish_expire, publication,
-						ao2_ref(publication, -1), ao2_ref(publication, -1), ao2_ref(publication, +1));
+						ao2_ref(_data, -1), ao2_ref(publication, -1), ao2_ref(publication, +1));
 		} else {
 			AST_SCHED_DEL_UNREF(sched, publication->sched_id, ao2_ref(publication, -1));
 		}
@@ -5589,7 +5589,7 @@ static int load_module(void)
 		persistence_expires_str2struct, persistence_expires_struct2str, NULL, 0, 0);
 	ast_sorcery_object_field_register(sorcery, "subscription_persistence", "contact_uri", "", OPT_CHAR_ARRAY_T, 0,
 		CHARFLDSET(struct subscription_persistence, contact_uri));
-	ast_sorcery_object_field_register(sorcery, "subscription_persistence", "prune_on_boot", "0", OPT_UINT_T, 0,
+	ast_sorcery_object_field_register(sorcery, "subscription_persistence", "prune_on_boot", "no", OPT_YESNO_T, 1,
 		FLDSET(struct subscription_persistence, prune_on_boot));
 
 	if (apply_list_configuration(sorcery)) {

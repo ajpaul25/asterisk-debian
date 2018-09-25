@@ -8172,11 +8172,11 @@ stop:
 					"%d|%d|%ld", qe.pos, qe.opos,
 					(long) (time(NULL) - qe.start));
 				res = -1;
-			} else if (qcontinue) {
-				reason = QUEUE_CONTINUE;
-				res = 0;
 			} else if (reason == QUEUE_LEAVEEMPTY) {
 				/* Return back to dialplan, don't hang up */
+				res = 0;
+			} else if (qcontinue) {
+				reason = QUEUE_CONTINUE;
 				res = 0;
 			}
 		} else if (qe.valid_digits) {
@@ -9932,7 +9932,7 @@ static char *complete_queue_add_member(const char *line, const char *word, int p
 	case 6: /* only one possible match, "penalty" */
 		return state == 0 ? ast_strdup("penalty") : NULL;
 	case 7:
-		if (state < 100) {      /* 0-99 */
+		if (0 <= state && state < 100) {      /* 0-99 */
 			char *num;
 			if ((num = ast_malloc(3))) {
 				sprintf(num, "%d", state);

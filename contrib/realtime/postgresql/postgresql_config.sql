@@ -1206,5 +1206,17 @@ ALTER TABLE ps_endpoints ADD COLUMN accept_multiple_sdp_answers yesno_values;
 
 UPDATE alembic_version SET version_num='0be05c3a8225' WHERE alembic_version.version_num = 'd3e4284f8707';
 
+-- Running upgrade 0be05c3a8225 -> 19b00bc19b7b
+
+ALTER TABLE ps_endpoints ADD COLUMN suppress_q850_reason_header yesno_values;
+
+UPDATE alembic_version SET version_num='19b00bc19b7b' WHERE alembic_version.version_num = '0be05c3a8225';
+
+-- Running upgrade 19b00bc19b7b -> 1d3ed26d9978
+
+ALTER TABLE ps_contacts ALTER COLUMN uri TYPE VARCHAR(511);
+
+UPDATE alembic_version SET version_num='1d3ed26d9978' WHERE alembic_version.version_num = '19b00bc19b7b';
+
 COMMIT;
 

@@ -1895,6 +1895,30 @@ UPDATE alembic_version SET version_num='0be05c3a8225' WHERE alembic_version.vers
 
 GO
 
+-- Running upgrade 0be05c3a8225 -> 19b00bc19b7b
+
+ALTER TABLE ps_endpoints ADD suppress_q850_reason_header VARCHAR(3) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (suppress_q850_reason_header IN ('yes', 'no'));
+
+GO
+
+UPDATE alembic_version SET version_num='19b00bc19b7b' WHERE alembic_version.version_num = '0be05c3a8225';
+
+GO
+
+-- Running upgrade 19b00bc19b7b -> 1d3ed26d9978
+
+ALTER TABLE ps_contacts ALTER COLUMN uri VARCHAR(511);
+
+GO
+
+UPDATE alembic_version SET version_num='1d3ed26d9978' WHERE alembic_version.version_num = '19b00bc19b7b';
+
+GO
+
 COMMIT;
 
 GO

@@ -56,21 +56,22 @@ struct monitored_transport {
 	int sip_received;
 };
 
-/*! \brief Callback function to send keepalive */
-static int keepalive_transport_cb(void *obj, void *arg, int flags)
+static void keepalive_transport_send_keepalive(struct monitored_transport *monitored)
 {
-	struct monitored_transport *monitored = obj;
 	pjsip_tpselector selector = {
 		.type = PJSIP_TPSELECTOR_TRANSPORT,
 		.u.transport = monitored->transport,
 	};
 
 	pjsip_tpmgr_send_raw(pjsip_endpt_get_tpmgr(ast_sip_get_pjsip_endpoint()),
-		monitored->transport->key.type, &selector, NULL, keepalive_packet.ptr, keepalive_packet.slen,
-		&monitored->transport->key.rem_addr, pj_sockaddr_get_len(&monitored->transport->key.rem_addr),
+		monitored->transport->key.type,
+		&selector,
+		NULL,
+		keepalive_packet.ptr,
+		keepalive_packet.slen,
+		&monitored->transport->key.rem_addr,
+		pj_sockaddr_get_len(&monitored->transport->key.rem_addr),
 		NULL, NULL);
-
-	return 0;
 }
 
 /*! \brief Thread which sends keepalives to all active connection-oriented transports */
@@ -90,12 +91,26 @@ static void *keepalive_transport_thread(void *data)
 		return NULL;
 	}
 
-	/* Once loaded this module just keeps on going as it is unsafe to stop and change the underlying
-	 * callback for the transport manager.
+	/*
+	 * Once loaded this module just keeps on going as it is unsafe to stop
+	 * and change the underlying callback for the transport manager.
 	 */
 	while (keepalive_interval) {
+		struct ao2_iterator iter;
+		struct monitored_transport *monitored;
+
 		sleep(keepalive_interval);
-		ao2_callback(transports, OBJ_NODATA, keepalive_transport_cb, NULL);
+
+		/*
+		 * We must use the iterator to avoid deadlock between the container lock
+		 * and the pjproject transport manager group lock when sending
+		 * the keepalive packet.
+		 */
+		iter = ao2_iterator_init(transports, 0);
+		for (; (monitored = ao2_iterator_next(&iter)); ao2_ref(monitored, -1)) {
+			keepalive_transport_send_keepalive(monitored);
+		}
+		ao2_iterator_destroy(&iter);
 	}
 
 	ao2_ref(transports, -1);
@@ -104,10 +119,8 @@ static void *keepalive_transport_thread(void *data)
 
 AST_THREADSTORAGE(desc_storage);
 
-static int idle_sched_cb(const void *data)
+static int idle_sched_init_pj_thread(void)
 {
-	struct monitored_transport *monitored = (struct monitored_transport *) data;
-
 	if (!pj_thread_is_registered()) {
 		pj_thread_t *thread;
 		pj_thread_desc *desc;
@@ -115,13 +128,24 @@ static int idle_sched_cb(const void *data)
 		desc = ast_threadstorage_get(&desc_storage, sizeof(pj_thread_desc));
 		if (!desc) {
 			ast_log(LOG_ERROR, "Could not get thread desc from thread-local storage.\n");
-			ao2_ref(monitored, -1);
-			return 0;
+			return -1;
 		}
 
 		pj_bzero(*desc, sizeof(*desc));
 
 		pj_thread_register("Transport Monitor", *desc, &thread);
+	}
+
+	return 0;
+}
+
+static int idle_sched_cb(const void *data)
+{
+	struct monitored_transport *monitored = (struct monitored_transport *) data;
+
+	if (idle_sched_init_pj_thread()) {
+		ao2_ref(monitored, -1);
+		return 0;
 	}
 
 	if (!monitored->sip_received) {
@@ -131,6 +155,18 @@ static int idle_sched_cb(const void *data)
 	}
 
 	ao2_ref(monitored, -1);
+	return 0;
+}
+
+static int idle_sched_cleanup(const void *data)
+{
+	struct monitored_transport *monitored = (struct monitored_transport *) data;
+
+	if (!idle_sched_init_pj_thread()) {
+		pjsip_transport_shutdown(monitored->transport);
+	}
+	ao2_ref(monitored, -1);
+
 	return 0;
 }
 
@@ -369,6 +405,7 @@ void ast_sip_destroy_transport_management(void)
 
 	internal_sip_unregister_service(&idle_monitor_module);
 
+	ast_sched_clean_by_callback(sched, idle_sched_cb, idle_sched_cleanup);
 	ast_sched_context_destroy(sched);
 	sched = NULL;
 

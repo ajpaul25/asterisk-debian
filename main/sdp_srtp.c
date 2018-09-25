@@ -322,8 +322,8 @@ int ast_sdp_crypto_process(struct ast_rtp_instance *rtp, struct ast_sdp_srtp *sr
 				sdes_lifetime = n_lifetime;
 			}
 
-			/* Accept anything above 10 hours. Less than 10; reject. */
-			if (sdes_lifetime < 1800000) {
+			/* Accept anything above ~5.8 hours. Less than ~5.8; reject. */
+			if (sdes_lifetime < 1048576) {
 				ast_log(LOG_NOTICE, "Rejecting crypto attribute '%s': lifetime '%f' too short\n", attr, sdes_lifetime);
 				continue;
 			}
@@ -350,7 +350,6 @@ int ast_sdp_crypto_process(struct ast_rtp_instance *rtp, struct ast_sdp_srtp *sr
 
 	if (!memcmp(crypto->remote_key, remote_key, sizeof(crypto->remote_key))) {
 		ast_debug(1, "SRTP remote key unchanged; maintaining current policy\n");
-		ast_set_flag(srtp, AST_SRTP_CRYPTO_OFFER_OK);
 		return 0;
 	}
 	memcpy(crypto->remote_key, remote_key, sizeof(crypto->remote_key));

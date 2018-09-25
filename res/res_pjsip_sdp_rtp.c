@@ -531,6 +531,10 @@ static void add_ice_to_stream(struct ast_sip_session *session, struct ast_sip_se
 		return;
 	}
 
+	if (!session_media->remote_ice) {
+		return;
+	}
+
 	if ((username = ice->get_ufrag(session_media->rtp))) {
 		attr = pjmedia_sdp_attr_create(pool, "ice-ufrag", pj_cstr(&stmp, username));
 		media->attr[media->attr_count++] = attr;
@@ -574,6 +578,33 @@ static void add_ice_to_stream(struct ast_sip_session *session, struct ast_sip_se
 
 	ao2_iterator_destroy(&it_candidates);
 	ao2_ref(candidates, -1);
+}
+
+/*! \brief Function which checks for ice attributes in an audio stream */
+static void check_ice_support(struct ast_sip_session *session, struct ast_sip_session_media *session_media,
+				   const struct pjmedia_sdp_media *remote_stream)
+{
+	struct ast_rtp_engine_ice *ice;
+	const pjmedia_sdp_attr *attr;
+	unsigned int attr_i;
+
+	if (!session->endpoint->media.rtp.ice_support || !(ice = ast_rtp_instance_get_ice(session_media->rtp))) {
+		session_media->remote_ice = 0;
+		return;
+	}
+
+	/* Find all of the candidates */
+	for (attr_i = 0; attr_i < remote_stream->attr_count; ++attr_i) {
+		attr = remote_stream->attr[attr_i];
+		if (!pj_strcmp2(&attr->name, "candidate")) {
+			session_media->remote_ice = 1;
+			break;
+		}
+	}
+
+	if (attr_i == remote_stream->attr_count) {
+		session_media->remote_ice = 0;
+	}
 }
 
 /*! \brief Function which processes ICE attributes in an audio stream */
@@ -1033,6 +1064,9 @@ static int negotiate_incoming_sdp_stream(struct ast_sip_session *session, struct
 		pj_strdup(session->inv_session->pool, &session_media->transport, &stream->desc.transport);
  	}
 
+	/* If ICE support is enabled find all the needed attributes */
+	check_ice_support(session, session_media, stream);
+
 	if (set_caps(session, session_media, stream)) {
 		return 0;
 	}
@@ -1342,8 +1376,8 @@ static int create_outgoing_sdp_stream(struct ast_sip_session *session, struct as
 	attr->name = STR_SENDRECV;
 	media->attr[media->attr_count++] = attr;
 
-	/* If we've got rtcp-mux enabled, just unconditionally offer it in all SDPs */
-	if (session->endpoint->rtcp_mux) {
+	/* If we've got rtcp-mux enabled, add it unless we received an offer without it */
+	if (session->endpoint->rtcp_mux && session_media->remote_rtcp_mux) {
 		attr = pjmedia_sdp_attr_create(pool, "rtcp-mux", NULL);
 		pjmedia_sdp_attr_add(&media->attr_count, media->attr, attr);
 	}

@@ -1,6 +1,1442 @@
-2018-07-12 16:19 +0000  Asterisk Development Team <asteriskteam@digium.com>
+2018-09-20 18:38 +0000  Asterisk Development Team <asteriskteam@digium.com>
 
-	* asterisk 13.22.0 Released.
+	* asterisk 13.23.1 Released.
+
+2018-08-16 10:45 +0000 [e6b0c4d27e]  Sean Bright <sean.bright@gmail.com>
+
+	* AST-2018-009: Fix crash processing websocket HTTP Upgrade requests
+
+	  The HTTP request processing in res_http_websocket allocates additional
+	  space on the stack for various headers received during an Upgrade request.
+	  An attacker could send a specially crafted request that causes this code
+	  to overflow the stack, resulting in a crash.
+
+	  * No longer allocate memory from the stack in a loop to parse the header
+	  values.  NOTE: There is a slight API change when using the passed in
+	  strings as is.  We now require the passed in strings to no longer have
+	  leading or trailing whitespace.  This isn't a problem as the only callers
+	  have already done this before passing the strings to the affected
+	  function.
+
+	  ASTERISK-28013 #close
+
+	  Change-Id: Ia564825a8a95e085fd17e658cb777fe1afa8091a
+
+2018-09-17 07:10 +0000 [43e816ead9]  George Joseph <gjoseph@digium.com>
+
+	* CI: Fix typo in testsuite git checkout
+
+	  Change-Id: I30024515e5b00a5044fd39fbff27d818f016b719
+
+2018-09-14 12:31 +0000 [5f777e483a]  George Joseph <gjoseph@digium.com>
+
+	* CI: Use proper credentials for Security testsuite checkout
+
+	  Can't do anonymous http checkout from Security-testsuite.
+	  Need to use same credentials as the gerrit review checkout.
+
+	  Change-Id: I87af68c995cb8926f5e87f9af245600d76984f05
+
+2018-09-05 17:12 +0000  Asterisk Development Team <asteriskteam@digium.com>
+
+	* asterisk 13.23.0 Released.
+
+2018-08-28 19:07 +0000  Asterisk Development Team <asteriskteam@digium.com>
+
+	* asterisk 13.23.0-rc1 Released.
+
+2018-08-13 08:12 +0000 [2a5d408733]  Jaco Kroon <jaco@uls.co.za>
+
+	* chan_sip: improved ip:port finding of peers for non-UDP transports.
+
+	  Also remove function peer_ipcmp_cb since it's not used (according to
+	  rmudgett).
+
+	  Prior to b2c4e8660a9c89d07041271371151779b7ec75f6 (ASTERISK_27457)
+	  insecure=port was the defacto standard.  That commit also prevented
+	  insecure=port from being applied for sip/tcp or sip/tls.
+
+	  Into consideration there are three sets of behaviour:
+
+	  1.  "previous" - before the above commit.
+	  2.  "current" - post above commit, pre this one.
+	  3.  "new" - post this commit.
+
+	  The problem that the above commit tried to address was guests over TCP.
+	  It succeeded in doing that but broke transport!=udp with host!=dynamic.
+
+	  This commit attempts to restore sane behaviour with respect to
+	  transport!=udp for host!=dynamic whilst still retaining the guest users
+	  over tcp.
+
+	  It should be noted that when looking for a peer, two passes are made, the
+	  first pass doesn't have SIP_INSECURE_PORT set for the searched-for peer,
+	  thus looking for full matches (IP + Port), the second pass sets
+	  SIP_INSECURE_PORT, thus expecting matches on IP only where the matched
+	  peer allows for that (in the author's opinion:  UDP with insecure=port,
+	  or any TCP based, non-dynamic host).
+
+	  In previous behaviour there was special handling for transport=tcp|tls
+	  whereby a peer would match during the first pass if the utilized
+	  transport was TCP|TLS (and the peer allowed that specific transport).
+
+	  This behaviour was wrong, or dubious at best.  Consider two dynamic tcp
+	  peers, both registering from the same IP (NAT), in this case either peer
+	  could match for connections from an IP.  It's also this behaviour that
+	  prevented SIP guests over tcp.
+
+	  The above referenced commit removed this behaviour, but kept applying
+	  the SIP_INSECURE_PORT only to WS|WSS|UDP.  Since WS and WSS is also TCP
+	  based, the logic here should fall into the TCP category.
+
+	  This patch updates things such that the previously non-explicit (TCP
+	  behaviour) transport test gets performed explicitly (ie, matched peer
+	  must allow for the used transport), as well as the indeterministic
+	  source-port nature of the TCP protocol is taken into account.  The new
+	  match algorithm now looks like:
+
+	  1.  As per previous behaviour, IP address is matched first.
+
+	  2.  Explicit filter with respect to transport protocol, previous
+	      behaviour was semi-implied in the test for TCP pure IP match - this now
+	      made explicit.
+
+	  3.  During first pass (without SIP_INSECURE_PORT), always match on port.
+
+	  4.  If doing UDP, match if matched against peer also has
+	      SIP_INSECURE_PORT, else don't match.
+
+	  5.  Match if not a dynamic host (for non-UDP protocols)
+
+	  6.  Don't match if this is WS|WSS, or we can't trust the Contact address
+	      (presumably due to NAT)
+
+	  7.  Match (we have a valid Contact thus if the IP matches we have no
+	      choice, this will likely only apply to non-NAT).
+
+	  To logic-test this we need a few different scenarios.  Towards this end,
+	  I work with a set number of peers defined in sip.conf:
+
+	  [peer1]
+	  host=1.1.1.1
+	  transport=tcp
+
+	  [peer2]
+	  host=1.1.1.1
+	  transport=udp
+
+	  [peer3]
+	  host=1.1.1.1
+	  port=5061
+	  insecure=port
+	  transport=udp
+
+	  [peer4]
+	  host=1.1.1.2
+	  transport=udp,tcp
+
+	  [peer5]
+	  host=dynamic
+	  transport=udp,tcp
+
+	  Test cases for UDP:
+
+	  1 - incoming UDP request from 1.1.1.1:
+	    - previous:
+	      - pass 1:
+	        * peer1 or peer2 if from port 5060 (indeterminate, depends on peer
+	          ordering)
+	        * peer3 if from port 5061
+	        * peer5 if registered from 1.1.1.1 and source port matches
+	      - pass 2:
+	        * peer3
+	    - current: as per previous.
+	    - new:
+	      - pass 1:
+	        * peer2 if from port 5060
+	        * peer3 if from port 5061
+	        * peer5 if registered from 1.1.1.1 and source port matches
+	      - pass 2:
+	        * peer3
+
+	  2 - incoming UDP request from 1.1.1.2:
+	    - previous:
+	      - pass 1:
+	        * peer5 if registered from 1.1.1.2 and port matches
+	        * peer4 if source port is 5060
+	      - pass 2:
+	        * no match (guest)
+	    - current: as previous.
+	    - new as previous (with the variation that if peer5 didn't have udp as
+	            allowed transport it would not match peer5 whereas previous
+	            and current code could).
+
+	  3 - incoming UDP request from anywhere else:
+	    - previous:
+	      - pass 1:
+	        * peer5 if registered from that address and source port matches.
+	      - pass 2:
+	        * peer5 if insecure=port is additionally set.
+	        * no match (guest)
+	    - current - as per previous
+	    - new - as per previous
+
+	  Test cases for TCP based transports:
+
+	  4 - incoming TCP request from 1.1.1.1
+	    - previous:
+	      - pass 1 (indeterministic, depends on ordering of peers in memory):
+	        * peer1; or
+	        * peer5 if peer5 registered from 1.1.1.1 (irrespective of source port); or
+	        * peer2 if the source port happens to be 5060; or
+	        * peer3 if the source port happens to be 5061.
+	      - pass 2: cannot happen since pass 1 will always find a peer.
+	    - current:
+	      - pass 1:
+	        * peer1 or peer2 if from source port 5060
+	        * peer3 if from source port 5060
+	        * peer5 if registered as 1.1.1.1 and source port matches
+	      - pass 2:
+	        * no match (guest)
+	    - new:
+	      - pass 1:
+	        * peer 1 if from port 5060
+	        * peer 5 if registered and source port matches
+	      - pass 2:
+	        * peer 1
+
+	  5 - incoming TCP request from 1.1.1.2
+	    - previous (indeterminate, depends on ordering):
+	      - pass 1:
+	        * peer4; or
+	        * peer5 if peer5 registered from 1.1.1.2
+	      - pass 2: cannot happen since pass 1 will always find a peer.
+	    - current:
+	      - pass 1:
+	        * peer4 if source port is 5060
+	        * peer5 if peer5 registered as 1.1.1.2 and source port matches
+	      - pass 2:
+	        * no match (guest).
+	    - new:
+	      - pass 1:
+	        * peer4 if source port is 5060
+	        * peer5 if peer5 registered as 1.1.1.2 and source port matches
+	      - pass 2:
+	        * peer4
+
+	  6 - incoming TCP request from anywhere else:
+	    - previous:
+	      - pass 1:
+	        * peer5 if registered from that address
+	      - pass 2: cannot happen since pass 1 will always find a peer.
+	    - current:
+	      - pass 1:
+	        * peer5 if registered from that address and port matches.
+	      - pass 2:
+	        * no match (guest)
+	    - new: as per current.
+
+	  It should be noted the test cases don't make explicit mention of TLS, WS
+	  or WSS.  WS and WSS previously followed UDP semantics, they will now
+	  enforce source port matching.  TLS follow TCP semantics.
+
+	  The previous commit specifically tried to address test-case 6, but broke
+	  test-cases 4 and 5 in the process.
+
+	  ASTERISK-27881 #close
+
+	  Change-Id: I61a9804e4feba9c7224c481f7a10bf7eb7c7f2a2
+
+2018-08-20 07:23 +0000 [b528715fa0]  Jaco Kroon <jaco@uls.co.za>
+
+	* AMI: be less verbose when adding HTTP headers to AMI/HTTP messages.
+
+	  All HTTP/AMI message headers are being sent to the verbose channel.
+	  There are multiple places this is happening.  Consolidate the loop into
+	  a function.  Drop the debug/verbose message.
+
+	  Convert to using ast_asprintf to perform the length calculation, memory
+	  allocation and snprintf all in one step.
+
+	  Change-Id: Ic45e673fde05bd544be95ad5cdbc69518207c1a1
+
+2018-08-22 10:50 +0000 [adb3195697]  Matthew Fredrickson <creslin@digium.com>
+
+	* sample_configs: noload res_hep.so by default
+
+	  Change disables loading of res_hep.so in default installation.  Loading
+	  res_hep has a performance impact whether it's used or not.  This disables
+	  loading of it in sample config files.
+
+	  Change-Id: I5ec150cf941634fabc72973e5bf1a965cb0ef9d0
+	  (cherry picked from commit c8bacd45f17d2ae6f6d05c8cff538dd651f683a6)
+
+2018-08-23 06:57 +0000 [1928e00d90]  Florian Floimair <f.floimair@commend.com>
+
+	* alembic: increase uri column size
+
+	  When mobile SIP clients register with Asterisk that use some sort of
+	  push notifications, the URI can get quite lengthy due to the
+	  additional push-service annotations (things like tokens, pn-type, etc.)
+	  contained in it.
+
+	  ASTERISK-28022 #close
+
+	  Change-Id: I08e17b37af5a446c36cc7d1f903861f81fd41cca
+
+2018-08-21 13:50 +0000 [b9d9c0a8b9]  Sean Bright <sean.bright@gmail.com>
+
+	* app_queue: Silence GCC 8 compiler warning
+
+	  I'm only seeing an error in 14+, so I assume it is due to different
+	  compiler options:
+
+	  app_queue.c: In function ‘handle_queue_add_member’:
+	  app_queue.c:10234:19: error: ‘%d’ directive writing between 1 and 11
+	      bytes into a region of size 3 [-Werror=format-overflow=]
+	       sprintf(num, "%d", state);
+	                     ^~
+	  app_queue.c:10234:18: note: directive argument in the range
+	      [-2147483648, 99]
+	       sprintf(num, "%d", state);
+	                    ^~~~
+
+	  Compiler: gcc version 8.0.1 20180414 (experimental)
+	      [trunk revision 259383] (Ubuntu 8-20180414-1ubuntu2) 
+
+	  Change-Id: I18577590da46829c1ea7d8b82e41d69f105baa10
+
+2018-08-21 18:45 +0000 [6964bc37e0]  Alec Davis <sivad.a@paradise.net.nz>
+
+	* chan_sip:  remove unnecessary ast_channel_unlock(peer) as RAII looks after it
+
+	  Otherwise console output
+
+	          (get_refer_info): mutex 'peer' freed more times than we've locked!
+	          (get_refer_info): Error releasing mutex: Operation not permitted
+
+	      or
+	          (get_refer_info): attempted unlock mutex 'peer' without owning it!
+	          (__ast_read): 'peer' was locked here.
+	          ...dump_backtrace
+
+	          (get_refer_info): Error releasing mutex: Operation not permitted
+	          (__ast_read): mutex 'chan' freed more times than we've locked!
+
+	  ASTERISK-28011 #close
+
+	  Change-Id: I6e45f2764ba4f3273a943300f91ac9b461ac2893
+
+2018-08-21 07:59 +0000 [49d388bfa8]  Emmanuel BUU <emmanuel.buu@ives.fr>
+
+	* res/res_rtp_asterisk: remove debug traces generated by an empty frame
+
+	  The realtime text timer pops regularly and sends text frames even if
+	  the buffer is empty. This causes a lot of unecessary debug logging.
+
+	  * Made red_write() test if we need to send a frame before calling
+	  ast_rtp_write()
+
+	  ASTERISK-28002
+	  Reported by: Emmanuel BUU
+	  Tested by: Emmanuel BUU
+
+	  Change-Id: Icf81310c3b8080b615a42060afc02ab41f9523dd
+
+2018-08-20 11:23 +0000 [9b9dee2d2c]  Richard Mudgett <rmudgett@digium.com>
+
+	* AMI: Remove docs for nonexistent AMI ContactStatus event headers
+
+	  Change-Id: I5736965c64c44338f7330e85a24bb46818607f19
+
+2018-08-09 18:46 +0000 [a66fa4db24]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_sorcery_realtime.c: Fix unqualified fetch warning.
+
+	  The allow_unqualified_fetch option for the sorcery realtime backend
+	  blocked actually fetching all rows when the option is set to warn.
+
+	  * Made issue a warning and actually do the request when
+	  allow_unqualified_fetch=warn is set.
+
+	  Change-Id: I74456c80a03a62dce66fc3dc3cb0cf2351ac4312
+
+2018-08-15 21:31 +0000 [f3924b576a]  Richard Mudgett <rmudgett@digium.com>
+
+	* pbx_dundi.c: Misc memory management fixes when destroying peers
+
+	  * In destroy_peer(), fixed memory leaks of lookup history strings and
+	  qualify transactions when destroying peers.
+
+	  * In destroy_peer(), fixed leaving the registerexpire scheduled callback
+	  active when a peer is destroyed on a reload.  The reload marks and sweeps
+	  peers so any peers not explicitly configured get destroyed.  Peers created
+	  dynamically from the '*' peer will not exist until they re-register after
+	  the reload.  These destroyed peers caused memory corruption when the
+	  registerexpire timer expired.
+
+	  * Made build_peer() not schedule any callbacks on the '*' peer
+	  (empty_eid).  It is a special peer that is cloned to dynamically created
+	  peers so it doesn't actually get involved in any message transactions.
+
+	  * Made do_register_expire() remove the dundi/dpeers AstDB entry when a
+	  peer registration expires.
+
+	  * Fix deep_copy_peer() to not copy some things that cannot be copied to
+	  the cloned peer structure.  Timers, message transactions, and lookup
+	  history are specific to a peer instance.
+
+	  * Made set_config() lock around processing the mappings configuration.
+
+	  * Reordered unload_module() to handle load_module() declining the load due
+	  to error.
+
+	  Change-Id: Ib846b2b60d027f3a2c2b3b563d9a83a357dce1d6
+
+2018-08-15 23:49 +0000 [fbc53412f6]  Richard Mudgett <rmudgett@digium.com>
+
+	* pbx_dundi.c: Handle thread shutdown better.
+
+	  Change-Id: Id52f99bd6a948fe6dd82acc0a28b2447a224fe87
+
+2018-08-15 18:14 +0000 [ad2dfb07b0]  Richard Mudgett <rmudgett@digium.com>
+
+	* pbx_dundi: Fix debug frame decode string.
+
+	  * Fixed a typo in the name of the REGREQ frame decode string array.
+	  * Fixed off by one range check indexing into the frame decode string
+	  array.
+	  * Removed some unneeded casts associated with the decode string array.
+
+	  Change-Id: I77435e81cd284bab6209d545919bf236ad7933c2
+
+2018-08-16 16:21 +0000 [0a7dab8904]  Richard Mudgett <rmudgett@digium.com>
+
+	* pbx_dundi: Update sample config documentation.
+
+	  Change-Id: I33d0ad0611c2124ca3440f0f811fa0f45e4e2849
+
+2018-08-16 13:28 +0000 [33a1593fba]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Final version of setting correct gerrit creds
+
+	  Change-Id: I7729ecceedceb12f52bf18dae259846aa1d993b3
+
+2018-08-16 13:23 +0000 [ab095ca4c6]  George Joseph <gjoseph@digium.com>
+
+	* CI: Yet Another stab at creds
+
+	  Change-Id: I768850780d39151c5dd8e2bb1a4b24776727958e
+
+2018-08-16 13:11 +0000 [b1e294c670]  George Joseph <gjoseph@digium.com>
+
+	* CI: Another stab at creds
+
+	  Change-Id: I5b1dc3b354789e676c27a4e1fc42f5c3343cc994
+
+2018-08-16 12:08 +0000 [45d096fe8d]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Add https credentials to gerrit checkouts
+
+	  If the review to be tested is in a project with restricted access,
+	  we need to use the jenkins user's gerrit https credentials when we
+	  do the checkout or the checkout will fail.
+
+	  Change-Id: I9dc9994763c5ebfeb9f1cff60fb53f6902b7fd5f
+
+2018-08-15 13:51 +0000 [db367ddbbf]  Corey Farrell <git@cfware.com>
+
+	* res_pjsip: Resolve transport management leak at shutdown.
+
+	  Cleanup idle check scheduled events at shutdown.
+
+	  Change-Id: I61bfbb56bac69fe840c3242927d31ff3593be461
+
+2018-08-15 11:44 +0000 [7f4420a222]  Corey Farrell <git@cfware.com>
+
+	* CI: Disable res_odbc if REF_DEBUG is requested.
+
+	  This is for 13/15 only, res_odbc never unloads so it is impossible to do
+	  REF_DEBUG testing with that module.
+
+	  Change-Id: I2c1e32b80564e8fb08b6b5900ede6b5d304ebd10
+
+2018-08-15 11:12 +0000 [7df97d0a00]  Corey Farrell <git@cfware.com>
+
+	* res_pjsip: Fix leak in pjsip_options.
+
+	  sip_options_get_endpoint_state_compositor_state leaked a reference to
+	  the first available endpoint state compositor that was found.
+
+	  Change-Id: Idb6be19f7219b6eed1dfb19c1e740dd40cb3fdc7
+
+2018-08-14 11:55 +0000 [e8ac75eed0]  Richard Mudgett <rmudgett@digium.com>
+
+	* contrib/scripts: Make astgenkey executable
+
+	  Change-Id: I11641d65592536dea9cbca5aa94a24c25d24dd5f
+
+2018-08-14 07:29 +0000 [555516233d]  Joshua Colp <jcolp@digium.com>
+
+	* res_pjsip_caller_id: Add "party" parameter to RPID header.
+
+	  This change adds the "party" parameter to the Remote-Party-ID header
+	  which indicates which party the header information is applicable
+	  to. In Asterisk this is determined on whether we are the calling
+	  or called party. This is added to improve interoperability with some
+	  implementations.
+
+	  ASTERISK-28006
+
+	  Change-Id: I1eec3e377ffff8633b5c1dd59a05e9533122cfca
+
+2018-08-12 11:04 +0000 [f48761907a]  Ivan Poddubny <ivan.poddubny@gmail.com>
+
+	* app_queue: set QUEUESTATUS to LEAVEEMPTY instead of CONTINUE
+
+	  When a call leaves a queue on leaveempty condition, QUEUESTATUS
+	  must be set to LEAVEEMPTY, no matter whether Queue was executed with or
+	  without the "c" (continue) option.
+
+	  The regression was introduced in the fix for ASTERISK_25665.
+	  The following fix (ASTERISK_27065) was incomplete, as QUEUESTATUS was
+	  overwritten in case when "c" is set, regardless of what was the cause
+	  for leaving the queue.
+
+	  ASTERISK-27973 #close
+	  Reported-by: Valentin Safonov
+
+	  Change-Id: Iec013fe6a26a4e825ca572a1dda4f3cee5f6f80c
+
+2018-08-09 15:25 +0000 [dc786aa576]  Corey Farrell <git@cfware.com>
+
+	* Sample configs: Fix pjsip.conf syntax error.
+
+	  It is valid for a config file to be empty or contain only comments, but
+	  not valid for a config value to be set when no uncommented context
+	  exists.  This caused an error to be loged numerous times during start
+	  when loading the default pjsip.conf.
+
+	  Change-Id: Icf3b0d69b4ecb6e935eecd43c99ed8b32a5a1cf6
+
+2018-08-09 02:34 +0000 [a1b0db826a]  Torrey Searle <torrey@voxbone.com>
+
+	* res/res_pjsip_sdp_rtp:  put rtcp-mux in answer only if offered
+
+	  If in the initial sdp the caller doesn't include the line
+	  a=rtcp-mux
+
+	  Then asterisk shoud not include rtcp-mux in the response regardless
+	  of rtcp-mux being enabled on the endpoint
+
+	  ASTERISK-28007 #close
+
+	  Change-Id: I58e9b9f40a139afc0da5de41906cc608fb62adc7
+
+2018-07-19 22:28 +0000 [f3a8bfff36]  Corey Farrell <git@cfware.com>
+
+	* CI: Add support for coverage processing.
+
+	  Enable coverage with `./tests/CI/buildAsterisk.sh --coverage`.  This
+	  will cause Asterisk to be compiled with coverage support.  It also
+	  initializes 'before' coverage data for all sources.  Accept
+	  --tested-only to disable modules which are not run by any test.
+	  Enabling coverage also sets tested-only true by default.  To build
+	  everything with coverage enabled use `--coverage --tested-only=0`.
+
+	  ./tests/CI/processCoverage.sh is used to process the coverage and
+	  generate HTML reports.
+
+	  Fix utils/check_expr2 which failed to compiled with coverage enabled.
+
+	  Add status output 5 times per stage of astobj2_test_perf to ensure
+	  remote CLI does not timeout when compiled with coverage.  Remote CLI
+	  disconnects if no output is received for 60 seconds.  When coverage is
+	  enabled it takes about 70 seconds for my laptop to run the stages of
+	  this test, so with the change a message is printed every 14 seconds.
+
+	  Change-Id: I890f7d5665087426ad7d3e363187691b9afc2222
+
+2018-08-06 12:19 +0000 [b7f195b6fd]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_pjsip.h: Fix doxygen comments.
+
+	  Change-Id: I9cf97bdc756012d1f552ab007f4aa85e0ddb4e62
+
+2018-08-06 06:36 +0000 [856b6d1954]  Joshua Colp <jcolp@digium.com>
+
+	* stasis: Reduce calculation of stasis message type hash.
+
+	  When the stasis cache is used a hash is calculated for
+	  retrieving or inserting messages. This change calculates
+	  a hash when the message type is initialized that is then
+	  used each time needed. This ensures that the hash is
+	  calculated only once for the message type.
+
+	  Change-Id: I4fe6bfdafb55bf5c322dd313fbd8c32cce73ef37
+
+2018-07-30 07:49 +0000 [819842f7fb]  Alexander Traud <pabstraud@compuserve.com>
+
+	* pjproject_bundled: Fix for Solaris builds. Do not undef s_addr.
+
+	  The authors of PJProject undef s_addr because of some issue in Microsoft
+	  Windows. However in Oracle Solaris, s_addr is not a structure member, but
+	  defined to map to the real structure member.
+
+	  Updates the patch from ASTERISK_20366
+
+	  ASTERISK-27997
+
+	  Change-Id: I8223026d4d54e2a46521085fcc94bfa6ebe35b11
+
+2018-08-03 15:59 +0000 [1f97ea7e2c]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_pjsip: Make pjlib.h consistently included.
+
+	  * Don't include pjlib.h twice in res_pjsip.h
+	  * Consistently use #include <> form for pjproject includes.
+	  (pjsip.h and pjlib.h)
+
+	  Change-Id: I3f7b42044840de64edf7e9d7695cb60c45990dc7
+
+2018-07-30 06:05 +0000 [0d880fac93]  Alexander Traud <pabstraud@compuserve.com>
+
+	* pjproject_bundled: Find shared libraries in root --with-ssl=PATH.
+
+	  The script configure from Teluu expects shared libraries (.so) in a subfolder
+	  called 'lib', when --with-xyz=PATH is specified. However for OpenSSL, the
+	  default location is the root of the source folder = PATH. Furthermore, Asterisk
+	  supports both, 'lib' and root. For consistency and because Asterisk is using
+	  (only) OpenSSL in PJProject, it is enhanced to support both locations, just
+	  like Asterisk.
+
+	  ASTERISK-27995
+
+	  Change-Id: I8eb916a88b6b8c22e29bb40bee8faaca6c73406f
+
+2018-08-01 09:45 +0000 [a5ce9b6c4b]  Joshua Colp <jcolp@digium.com>
+
+	* res_pjsip_registrar: Improve performance on inbound handling.
+
+	  This change removes a sorcery lookup for retrieving all
+	  contacts at the end of the registration process by keeping
+	  track of the contacts that are added/updated/deleted.
+
+	  This ensures at the end of the process the container of
+	  contacts we have is the current state.
+
+	  Pool usage has also been reduced by allocating one for
+	  usage throughout the handling of a REGISTER and resetting
+	  it to a clean state. This ensures that in most cases
+	  we allocate once and just reuse it.
+
+	  ASTERISK-28001
+
+	  Change-Id: I1a78b2d46f9a2045dbbff1a3fd6dba84b612b3cb
+
+2018-08-02 14:37 +0000 [4aa91c6f11]  Salah Ahmed <txrubel@gmail.com>
+
+	* dialplan_functions: wrong srtp use status report of a dialplan function
+
+	  If asterisk offer an endpoint with SRTP and that endpoint respond
+	  with non srtp, in that case channel(rtp,secure,audio) reply wrong
+	  status.
+
+	  Why delete flag AST_SRTP_CRYPTO_OFFER_OK while check identical remote_key:
+	  Currently this flag has being set redundantly. In either case identical
+	  or different remote_key this flag has being set. So if we
+	  don't set it while we receive identical remote_key or non SRTP SDP
+	  response then we can take decision of srtp use by using that flag.
+
+	  ASTERISK-27999
+
+	  Change-Id: I29dc2843cf4e5ae2604301cb4ff258f1822dc2d7
+
+2018-07-17 07:13 +0000 [ff94fcb6f1]  Torrey Searle <torrey@voxbone.com>
+
+	* thirdparty/pjproject: fix deadlock in response retransmissions
+
+	  The tdata containing the response can be shared by both the dialog
+	  object and the tsx object.  In order to prevent the race condition
+	  between the tsx retransmission and the dialog sending a response,
+	  clone the tdata before modifying it for the dialog send response.
+
+	  ASTERISK-27966 #close
+
+	  Change-Id: Ic381004a3a212fe1d8eca0e707fe09dba4a6ab4e
+
+2018-07-31 11:24 +0000 [75131c9e1c]  Richard Mudgett <rmudgett@digium.com>
+
+	* pjsip_wizard.conf.sample: Update remote_hosts description.
+
+	  Remove the note that SRV records are not supported as that is no longer
+	  true.
+
+	  ASTERISK-27993
+
+	  Change-Id: Id0dd6ef40e52702be9727a2b6122216cb00bb4ca
+
+2018-07-27 13:23 +0000 [7f203d2bd8]  George Joseph <gjoseph@digium.com>
+
+	* CI: Add optional uninstall step before installing asterisk
+
+	  Change-Id: I7dedf1e925eafc3a0adf01dd9dfbe44eb642aab7
+
+2018-07-28 11:49 +0000 [4aa1a42159]  Alexander Traud <pabstraud@compuserve.com>
+
+	* BuildSystem: Enable ncurses for menuselect in Solaris 11.
+
+	  The check for the library ncurses should use not use the header <curses.h> but
+	  <ncurses.h>, because on some platforms <curses.h> is not a drop-in replacement
+	  for <ncurses.h>: For example in Solaris, the symbol initscr is a typedef in
+	  <curses.h> to a symbol which does not exist in the library ncurses (initscr32).
+	  Simply use <ncurses.h> when you link to ncurses.
+
+	  Furthermore in Solaris, the header <ncurses.h> is in a subdirectory
+	  /usr/include/ncurses and not available via pkg-config.
+
+	  ASTERISK-15331
+	  ASTERISK-14935
+	  ASTERISK-12382
+	  ASTERISK-9107
+
+	  Change-Id: Ife367776b0ccf17d3fefed868245376bfb93745d
+
+2018-07-28 08:08 +0000 [d9da161b5c]  Alexander Traud <pabstraud@compuserve.com>
+
+	* BuildSystem: Enable Jansson in Solaris 11.
+
+	  In Solaris, the header <jansson.h> is in /usr/include/jansson. To find
+	  Jansson even in such a subdirectory, the tool pkg-config is queried via
+	  AST_PKG_CONFIG_CHECK. For those platforms, which do not list Jansson via
+	  pkg-config, the previous check remains and is executed thereafter.
+
+	  Because the check for the NetBSD Editline library uses the tool pkg-config
+	  conditionally PKG_PROG_PKG_CONFIG must be used. Because that check happens
+	  earlier than Jansson, it must be placed in front of that.
+
+	  The script configure does some pre-checks for the script configure of the
+	  Asterisk internal NetBSD Editline library. The check for the library ncurses
+	  should use not use the header <curses.h> but <ncurses.h>, because on some
+	  platforms <curses.h> is not a drop-in replacement for <ncurses.h>: For example
+	  in Solaris, the symbol initscr is a typedef in <curses.h> to a symbol which
+	  does not exist in the library ncurses (initscr32). Simply use <ncurses.h> when
+	  you link to ncurses.
+
+	  ASTERISK-27991
+
+	  Change-Id: I69ea0f379f87a50049654b2487c76ee1c04fa53a
+
+2018-07-28 08:00 +0000 [edddcb3dc6]  Joshua Colp <jcolp@digium.com>
+
+	* res_pjsip_pubsub: Use ast_true for "prune_on_boot".
+
+	  Change-Id: Iedec4e7390b3e821987681da24d0298632b9873d
+
+2018-07-24 13:44 +0000 [8baedc2204]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_pjsip_endpoint_identifier_ip.c: Added regex support to match_header
+
+	  This patch adds regular expression support to make the identify section's
+	  match_header option more useful when attempting to match complex headers
+	  like the 'To' or 'From' headers.  The 'From' header has variable
+	  components such as the tag parameter that you cannot predict.  To specify
+	  a regular expression put slashes around the regular expression in place of
+	  the header value.
+
+	  [identify-alice]
+	  type=identify
+	  endpoint=alice
+	  match_header=From: /<sip:alice@127\\.0\\.0\\.1>/
+
+	  * Added regex support to match_header so you could match a 'To' header
+	  among other complex headers.
+
+	  Fixed reported crashes when trying to match special headers like 'Contact'.
+	  The identify section's match_header method used code that assumed you were
+	  matching a generic header.  Any other type of header could cause a crash
+	  if the header structure variant did not match the generic header enough.
+
+	  * Made use code that will work for any header type instead of code
+	  specific to generic headers.
+
+	  Other fixes while in the area:
+
+	  * Made check all headers of the requested name.
+	  * Added some more sanity checks to the configured identify matching
+	  options when applying the configuration.
+
+	  ASTERISK-27548
+
+	  Change-Id: I27dfd4ff5e2259b906640e3c330681b76b4ed1f1
+
+2018-07-27 10:46 +0000 [d33ed08afc]  Joshua Colp <jcolp@digium.com>
+
+	* res_pjsip_pubsub: Treat "prune_on_boot" as a yes / no.
+
+	  The alembic for the PJSIP subscription persistence table has the
+	  "prune_on_boot" field as a boolean. While in Asterisk we are
+	  tolerant of many different definitions of true and false in the
+	  database we only accept "yes" and "no". This change makes the
+	  field treated as a yes/no instead of an integer, thus storing
+	  "yes" and "no" instead of "1" and "0".
+
+	  Change-Id: Ic8b9211b36babefe78f70def6828a135a6ae7ab6
+
+2018-07-27 08:54 +0000 [a4b105c99b]  Alexander Traud <pabstraud@compuserve.com>
+
+	* res_rtp_asterisk: In Developer Mode, do not require OpenSSL.
+
+	  OpenSSL is an optional external library and should stay optional even when
+	  Developer Mode is configured.
+
+	  ASTERISK-27990
+
+	  Change-Id: Ia68a4cd5474b26d45e0f43b04032ad598022853b
+
+2018-07-26 18:54 +0000 [2b0d003a35]  George Joseph <gjoseph@digium.com>
+
+	* CI: Fix placement of job summary statments
+
+	  Change-Id: Iace19e718f4e8fb48eb7dc9f98af53b115cc45f3
+
+2018-07-26 11:34 +0000 [5fbf2ce248]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Add docker info to job summary
+
+	  Change-Id: I45d52005a9b692ad303c11792f226ace1e449901
+
+2018-07-23 13:49 +0000 [eacf8fe96c]  Corey Farrell <git@cfware.com>
+
+	* Build System: Create 'make install-configs' target.
+
+	  This target requires specifying CONFIG_SRC=path_to_configs.  This can be
+	  used to install custom configs for the Asterisk build while still
+	  performing directory replacements on asterisk.conf.
+
+	  Modify internal INSTALL_CONFIGS so first argument requires full path to
+	  the config sources relative to Asterisk source root.
+
+	  Change-Id: Idcd841df3c8d5bfe23d566bb9e2e448e9df4f8ab
+
+2018-07-25 15:33 +0000 [059e1e3bc8]  Kevin Harwell <kharwell@digium.com>
+
+	* json.c: improve ast_json_to_ast_variables performance
+
+	  When converting from a json object to an ast variables list the conversion
+	  algorithm was doing a complete traversal of the entire variables list for
+	  every item appended from the json structure.
+
+	  This patch makes it so the list is no longer traversed for each new ast
+	  variable being appended.
+
+	  Change-Id: I8bf496a1fc449485150d6db36bfc0354934a3977
+
+2018-07-25 05:32 +0000 [dd1b4b38cf]  Joshua Colp <jcolp@digium.com>
+
+	* devicestate: Don't create topic when change isn't cached.
+
+	  When publishing a device state the change can be marked as being
+	  cachable or not. If it is not cached the change is just published
+	  to all interested and not stored away for later query. This was not
+	  fully taken into account when publishing in stasis. The act of
+	  publishing would create a topic for the device even if it may be
+	  ephemeral.
+
+	  This change makes it so messages which are not cached won't create
+	  a topic for the device. If a topic does already exist it will be
+	  published to but otherwise the change will only be published to
+	  the device state all topic.
+
+	  ASTERISK-27591
+
+	  Change-Id: I18da0e8cbb18e79602e731020c46ba4101e59f0a
+
+2018-07-25 10:20 +0000 [21168ba931]  George Joseph <gjoseph@digium.com>
+
+	* CI: Explicitly pass BRANCH_NAME to buildAsterisk and installAsterisk
+
+	  Change-Id: I652f4a0ea5107c778e27a78bccb67b18b0c4e087
+
+2018-07-24 13:29 +0000 [9b4fb9d1aa]  George Joseph <gjoseph@digium.com>
+
+	* CI: Add options to initialize and cleanup database to runTestsuite.sh
+
+	  Change-Id: I352333233bab5377723bf37d490ba84fc55bc853
+
+2018-07-25 09:07 +0000 [90325f0569]  Corey Farrell <git@cfware.com>
+
+	* CI: Do not `mkdir 2`.
+
+	  Change-Id: Ib7377d26a6c98b38bad463f47c84f1875ac84eb7
+
+2018-07-25 07:34 +0000 [3ed6abcc1f]  Corey Farrell <git@cfware.com>
+
+	* Build System: Silence build of bundled jansson.
+
+	  Change-Id: I7392c79c0173057f5378010bf1fe65e300e8fc56
+
+2018-07-25 07:13 +0000 [b971faf740]  George Joseph <gjoseph@digium.com>
+
+	* CI: RefDebug: Fix reference to testsuite URL
+
+	  Change-Id: I0ee41d95a87f0d97b01f2757012b846bcfe6443d
+
+2018-07-24 14:28 +0000 [ab103d66db]  Corey Farrell <git@cfware.com>
+
+	* Build System: Fix bundled jansson install.
+
+	  Update the bundled jansson Makefile to do nothing during Asterisk
+	  install, use a target that is not phony to initiate the jansson make and
+	  install.
+
+	  Change-Id: I7643cc3d39af9feba8fc0da676b646efc5f8b3bb
+
+2018-07-24 04:57 +0000 [fd1b8c57e9]  Florian Floimair <f.floimair@commend.com>
+
+	* res_pjsip: Change log message from error to warning for valid use cases
+
+	  If a SIP MESSAGE is triggered for an endpoint that is currently not registered
+	  - and therefore has no valid contact associated - an error message was logged.
+	  Since this is a valid request in a valid use cases this is now changed to a
+	  warning, as discussed with Matt Fredrickson on the asterisk-dev mailing list.
+
+	  Change-Id: I55eb62d2712818a58c7532119dec288bd98cf0c0
+
+2018-07-24 05:39 +0000 [eccd5886c3]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Add --privileged flag to docker options
+
+	  Change-Id: If92d55f15306e55dd7091ac3c47b13ebbbb03488
+
+2018-07-24 05:22 +0000 [32ae565da2]  George Joseph <gjoseph@digium.com>
+
+	* CI: Set correct user:group when publishing docs
+
+	  Change-Id: Ibabeb9ac730d9755cf54318d0da74771c939b86b
+
+2018-07-23 10:23 +0000 [46ea59a0ca]  Corey Farrell <git@cfware.com>
+
+	* CI: Split --test-command argument.
+
+	  The --test-command argument has now been split, unit tests now use
+	  `--unittest-command` and the testsuite uses --testsuite-command.
+
+	  This will make it easier to create a script which run everything by
+	  forwarding the same arguments to all CI scripts.
+
+	  Change-Id: Ia54aa4848eaffbdf13175fcda40fc0b23080ad71
+
+2018-07-21 11:58 +0000 [f34c59e745]  Corey Farrell <git@cfware.com>
+
+	* CI: Fix mkdir CACHE_DIR.
+
+	  Change-Id: Ic9f9a61e230047836c836206731f8ff7eb3538c9
+
+2018-07-21 11:22 +0000 [82d351ca0e]  Corey Farrell <git@cfware.com>
+
+	* build_tools/make_version: Get MAINLINE_BRANCH from .gitreview.
+
+	  Use .gitreview defaultbranch setting to determine the mainline branch.
+	  This allows the script to be used against other directories which might
+	  not be on the same defaultbranch.  This can be used by CI scripts to
+	  report the testsuite version being used:
+	  ./build_tools/make_version ${TESTSUITE_DIR}
+
+	  Change-Id: Ifdad4a9d8a26138c41bc6b630ecc3e34ea1c2758
+
+2018-07-22 10:41 +0000 [1fbe1b1eff]  Joshua Colp <jcolp@digium.com>
+
+	* sched: Make ABI compatible between dev mode and non-dev mode.
+
+	  In the past there was an assertion in the ast_sched_del function
+	  and in order to ensure it was useful the calling function name,
+	  line number, and filename had to be passed in. This cause the ABI
+	  to be different between dev mode and non-dev mode.
+
+	  This assertion is no longer present so the special logic can be
+	  removed to make it the same between them both.
+
+	  Change-Id: Icbc69c801e357d7004efc5cf2ab936d9b83b6ab8
+
+2018-07-16 15:08 +0000 [f36b4091f5]  Corey Farrell <git@cfware.com>
+
+	* Enable bundling of jansson.
+
+	  Change-Id: Ib3111b151d37cbda40768cf2a8a9c6cf6c5c7cbd
+
+2018-07-18 09:32 +0000 [e5721b01f6]  Emmanuel BUU <emmanuel.buu@ives.fr>
+
+	* res_rtp_asterisk: Avoid merging command and regular T.140 text packets
+
+	  When realtime text packets are to be sent, the text is accumulated in a
+	  buffer and sent regularly by a timer.  It can happen that commands such as
+	  a backspace, CR, or LF get merged with regular text.  This breaks some
+	  UAs.
+
+	  The proposed change:
+	  * We test if the current packet contains a command.  If so we send the
+	  buffer immediately.
+	  * We test if the buffer contained a command.  If so we send the buffer
+	  immediately.
+	  * We accumulate the text (or the command) in the buffer.
+
+	  ASTERISK-27970
+
+	  Change-Id: Ifbe993311410fa855cb8aa4a12084db75f413462
+
+2018-07-20 09:25 +0000 [fd84eb65b3]  Corey Farrell <git@cfware.com>
+
+	* CI: Fix logger.conf for unit tests.
+
+	  Change-Id: Idea59d60eab20105de50b34f0f0d506e6ef55d5c
+
+2018-07-19 10:34 +0000 [2acba0f418]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Add wiki doc publish to periodics
+
+	  Change-Id: I29ba26134e5083bc6788ede235f1a5d4383c148a
+
+2018-07-20 06:54 +0000 [18e9acc3c1]  Joshua Colp <jcolp@digium.com>
+
+	* res_pjsip: Update default keepalive interval to 90 seconds.
+
+	  A change recently went in which disabled the built-in PJSIP
+	  keepalive. This defaulted to 90 seconds and kept TCP/TLS
+	  connections alive. Disabling this functionality has resulted
+	  in a behavior change of not doing keepalives by default resulting
+	  in TCP/TLS connections dropping for some people.
+
+	  This change makes our default keepalive interval 90 seconds
+	  to match the previous behavior and preserve it.
+
+	  ASTERISK-27978
+
+	  Change-Id: Ibd9a45f3cbe5d9bb6d2161268696645ff781b1d6
+
+2018-07-20 06:20 +0000 [58c7b64ed6]  George Joseph <gjoseph@digium.com>
+
+	* xmldoc.c:  Fix dump of xml document
+
+	  The "xmldoc dump" cli command was simply concatenating xml documents
+	  into the output file.  The resulting file had multiple "xml"
+	  processing instructions and multiple root elements which is illegal.
+	  Normally this isn't an issue because Asterisk has only 1 main xml
+	  documentation file but codec_opus has its own file so if it's
+	  downloaded and you do "xmldoc dump", the result is invalid.
+
+	  * Added 2 new functions to xml.c:
+	      ast_xml_copy_node_list creates a copy of a list of children.
+	      ast_xml_add_child_list adds a list to an existing list.
+
+	  * Modified handle_dump_docs to create a new output document and
+	    add to it the children from each input file.  It then dumps the
+	    new document to the output file.
+
+	  Change-Id: I3f182d38c75776aee76413dadd2d489d54a85c07
+
+2018-07-19 16:17 +0000 [0ade9df3b6]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_pjsip: Update endpoint transport option documentation.
+
+	  Change-Id: I5394fdff6a296efc8e1695a156e616acd932ae52
+
+2018-07-09 04:42 +0000 [bd36ec69e2]  Torrey Searle <torrey@voxbone.com>
+
+	* res_pjsip_sdp_rtp: include ice in ANSWER only if offered
+
+	  Keep track if ICE candidates were in the SDP offer & only put them
+	  in the corresponding SDP answer if the offer condaind ICE candidates
+
+	  ASTERISK-27957 #close
+
+	  Change-Id: Idf2597ee48e9a287e07aa4030bfa705430a13a92
+
+2018-05-29 09:31 +0000 [6cf1aefff8]  Alexander Traud <pabstraud@compuserve.com>
+
+	* pjproject_bundled: Repair ./configure --with-ssl=PATH.
+
+	  Previously, Asterisk did not tell its bundled PJProject about this configure
+	  parameter. Therefore, PJProject used the platform provided OpenSSL always.
+
+	  ASTERISK-27880
+
+	  Change-Id: Iea545aec854dd0e2c061c69bb118a76ce56c5dc6
+
+2018-07-18 11:34 +0000 [ae5ba776ae]  Chris-Savinovich <csavinovich@digium.com>
+
+	* stasis: Improve message type "Use of before/init after destruction"
+
+	  Fixes issue where error msg
+	  "Use of before/init after destruction"
+	  was being printed on disabled messages
+	  in dev mode.  With this
+	  fix if message is disabled
+	  a warning will print.
+
+	  ASTERISK-25548
+	  Change-Id: Ie0d866d1cbc60c16dbef08bc65e99505c3c1adfa
+
+2018-07-18 11:12 +0000 [03c1bbffd2]  Joshua Colp <jcolp@digium.com>
+
+	* res_sorcery_config: Allow configuration section to be used based on name.
+
+	  A problem I've seen countless times is a global or system section
+	  for PJSIP not getting applied. This is inevitably the result of
+	  the "type=" line missing. This change alleviates that problem.
+
+	  The ability to specify an explicit section name has been
+	  added to res_sorcery_config. If the configured section
+	  name matches this and there are no unknown things configured
+	  the section is taken as being for the given type.
+
+	  Both the PJSIP "global" and "system" types now support this
+	  so you can just name your section "global" or "system" and it
+	  will be matched and used, even without a "type=" line.
+
+	  ASTERISK-27972
+
+	  Change-Id: Ie22723663c1ddd24f869af8c9b4c1b59e2476893
+
+2018-07-17 13:56 +0000 [6a0847cfc6]  Nick French <naf@ou.edu>
+
+	* SRTP: Lower SDES key lifetime minimum to 2^20
+
+	  SRTP SDES key lifetime support was added in ASTERISK_17899.
+
+	  In that addition, the minimum key lifetime to be accepted was
+	  set at the 10 hours @ 20ms/packet = 1800000 packets.
+
+	  The firmware in the obi1xx ATA uses a hardcoded lifetime of
+	  2^20 packets.
+
+	  Lower the limit to 2^20 to support a wider field of clients.
+
+	  ASTERISK-27967 #close
+
+	  Change-Id: I81a0703c595a0c9101dfdf02300149a3cc39bf94
+
+2018-07-17 11:09 +0000 [f8fa7182ac]  George Joseph <gjoseph@digium.com>
+
+	* CI: Fix merge strategy
+
+	  Change-Id: I5e3fb6adfa6cbf694c0deecf02e3879297b0c12e
+
+2018-07-17 10:41 +0000 [ca651c8973]  George Joseph <gjoseph@digium.com>
+
+	* CI: Fix regex in daily and ref_debug jobs
+
+	  Change-Id: Icf2e67818b2155a158d2390b138613e1f653ea92
+
+2018-07-17 09:09 +0000 [47572a5831]  Nick French <naf@ou.edu>
+
+	* res_pjsip:  Remove spurious error logging when printing silent headers
+
+	  Asterisk patched the pjproject source to avoid crashing when pjproject
+	  sip_msg headers are encountered with NULL vptr's, but the patch also
+	  output error messages for some valid headers which simply did not need
+	  to be added to the message itself, such as hidden route headers.
+
+	  pjproject has since applied a similar patch to their baseline to avoid
+	  crashes, but their version also avoids the spurious error logging.
+
+	  Lets use their patch instead.
+
+	  ASTERISK-27961 #close
+
+	  Change-Id: I2ddbd82c8da10e0dcc9807a48089d1f3c2d6e389
+
+2018-07-17 10:18 +0000 [33668ab46a]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_config_ldap.c: Fix mem leak in CLI "realtime show ldap status"
+
+	  Change-Id: Ib2a3622b297b0363c62d23958f7a20039bcb9b4c
+
+2018-07-17 10:15 +0000 [081f689bc5]  George Joseph <gjoseph@digium.com>
+
+	* CI: Add pre-build merge back in as RECURSIVE
+
+	  Change-Id: I0ff1730ef4a4f0ac9f18ccc9bc0dfe7a782f57a8
+
+2018-07-17 09:01 +0000 [694503d378]  George Joseph <gjoseph@digium.com>
+
+	* CI: Remove pre-build merge from gates and checks
+
+	  Change-Id: Ibc151f63dcec4db847915c2f3cbe5b467dd59574
+
+2018-07-17 07:13 +0000 [65cf0001fe]  George Joseph <gjoseph@digium.com>
+
+	* CI: Fix logic inversion in runTestsuite
+
+	  Change-Id: I56399aa384468f45494c2c3650420563a0b6efe1
+
+2018-07-17 04:03 +0000 [c025f09452]  George Joseph <gjoseph@digium.com>
+
+	* CI: Add teardownRealtime
+
+	  Change-Id: I2fe55c38607eaec2fbf69ef23a5019e0c443a64b
+
+2018-07-16 13:30 +0000 [0da16dd5d0]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Prevent Jenkins from triggering jobs back to itself
+
+	  Change-Id: I9cae8bb3d1a2cea335d3ccd88d471832549666fd
+
+2018-07-13 18:26 +0000 [c8ea924b50]  Richard Mudgett <rmudgett@digium.com>
+
+	* Build: Fix modules getting their optimization setting overridden.
+
+	  Asterisk modules that use PJPROJECT services have their compiler
+	  optimization and possibly their symbolic debug options overridden by the
+	  PJPROJECT configure script selected settings.
+
+	  * We need to filter-out any -O and -g options in PJ_CFLAGS before echoing
+	  out the result so the PJPROJECT_INCLUDE variable does not override the
+	  Asterisk module settings when using bundled PJPROJECT.
+
+	  NOTE: This patch only has an effect when using bundled PJPROJECT.
+
+	  ASTERISK-27563
+
+	  Change-Id: If124169735ecf572ad1535cd43bff94cb44d5b30
+
+2018-07-16 11:08 +0000 [bb52ce0b64]  George Joseph <gjoseph@digium.com>
+
+	* CI: runUnittests: loop a few times on waitfullybooted
+
+	  Change-Id: Icebc0d013896f3b2a7214945cac60647435c1651
+
+2018-07-16 10:49 +0000 [a5e6ffa1f2]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Add realtime checks to dailies
+
+	  Change-Id: I6dc8ab1679b3505c6dde1d47e1b9276df47814f8
+
+2018-07-16 09:13 +0000 [1817d5a3e7]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Add weekly REF_DEBUG testsuite run
+
+	  Change-Id: I5b581d0a0d1d1bb9b38961d40b112fb448355037
+
+2018-07-16 08:44 +0000 [0023e40308]  George Joseph <gjoseph@digium.com>
+
+	* CI: Fix bad reporting of status by the verification pub
+
+	  Change-Id: I6f31a130b3ba0187149aaaa2ce94195a79e0f6a6
+
+2018-07-16 07:16 +0000 [014f226bf1]  George Joseph <gjoseph@digium.com>
+
+	* CI: Make build tag an acceptable docker name
+
+	  Change-Id: I3a4b8a4a9c488ddabf9daf651dc1334222056f38
+
+2018-07-13 22:44 +0000 [871715f77c]  Corey Farrell <git@cfware.com>
+
+	* Fix declaration of PBX_CURL for ./configure --without-libcurl
+
+	  When `--without-libcurl` is used PBX_CURL is never set.  Set default
+	  value 0 so the proper value is passed to menuselect.
+
+	  Change-Id: I03e2842a00899cbca2dbde52bb1f6636d54bae1e
+
+2018-07-13 06:56 +0000 [b97b39fe1b]  George Joseph <gjoseph@digium.com>
+
+	* CI: Add daily periodics to CI
+
+	  Change-Id: I26933e73928e091ae72e838c02f4f2ec7c3983d6
+
+2018-07-12 16:34 +0000 [1b1271c3ea]  George Joseph <gjoseph@digium.com>
+
+	* CI: Add Asterisk Gates
+
+	  Change-Id: I7e2467f9120812551238d8005deb97f965279205
+
+2018-07-11 15:55 +0000 [df67a98938]  George Joseph <gjoseph@digium.com>
+
+	* CI: Remove duplicate checkout
+
+	  Change-Id: If5f925b4c4ed7000b153f3ed8386ce2140c886f8
+
+2018-07-11 15:09 +0000 [947d024539]  George Joseph <gjoseph@digium.com>
+
+	* CI: Update cleanup steps and permissions
+
+	  Change-Id: I7ca92935979d94845af8e1caf4468cbd6209b7de
+
+2018-07-11 14:54 +0000 [578d381164]  George Joseph <gjoseph@digium.com>
+
+	* CI: Fix log artifact paths
+
+	  Change-Id: I55136de8f4d9c3b56bd4d054306a187bb04a4b7d
+
+2018-07-11 14:45 +0000 [96464a523b]  George Joseph <gjoseph@digium.com>
+
+	* CI: Remove CleanBeforeCheckout option for testsuite
+
+	  Change-Id: I510231c9087f7be5272b8ef3f3223eadaaffb754
+
+2018-07-11 14:00 +0000 [2d16c85574]  George Joseph <gjoseph@digium.com>
+
+	* CI: Move gates into source repo
+
+	  Change-Id: If028ede5f3b127fa274c63ce166bc04ad7c1e5db
+
+2018-07-11 11:57 +0000 [d739aa71f8]  Alexander Traud (License 6520)
+
+	* Bundled PJPROJECT: Disable internal connection oriented keep-alive.
+
+	  Turn off the periodic sending of CRLNCRLN.  Default is on (90 seconds),
+	  which conflicts with the global section's keep_alive_interval option in
+	  pjsip.conf.
+
+	  patches:
+	    pjsip_keep_not_alive.patch submitted by Alexander Traud (License 6520)
+
+	  ASTERISK-27347
+
+	  Change-Id: I6a197f56e1830d3b7e5ec70f17025840a290b057
+
+2018-07-11 06:14 +0000 [8167048804]  George Joseph <gjoseph@digium.com>
+
+	* CI:  Initial commit for moving CI into source repo
+
+	  Create tests/CI directory and add files used by Jenkins to
+	  build and test Asterisk.
+
+	  With this commit, Jenkins will run the Asterisk Unit Tests using
+	  the Jenkinsfile at tests/CI/unittests.jenkinsfile.  Bash scripts
+	  to do the actual building and testing are also in the same directory.
+	  Output is placed in tests/CI/output so that directory has been
+	  added to .gitignore.
+
+	  Change-Id: I9448065465e6de2b878634510ace8fd1ef378608
+
+2018-06-23 01:40 +0000 [167baff944]  Alexander Traud <pabstraud@compuserve.com>
+
+	* chan_ooh323: IPTOS_MINCOST is not defined on Solaris.
+
+	  Furthermore, <sys/sockio.h> is required for SIOCGIF*.
+
+	  ASTERISK-27938
+
+	  Change-Id: Idc9153ece769944765b66122efb11728d8d8ebde
+
+2018-07-05 16:02 +0000 [9e615dac63]  Alexei Gradinari <alex2grad@gmail.com>
+
+	* res_pjsip_pubsub: segfault in function publish_expire
+
+	  The function pubsub_on_rx_publish_request incorrectly uses
+	  of AST_SCHED_REPLACE_UNREF.
+
+	  The AST_SCHED_REPLACE_UNREF should unref old '_data'.
+
+	  Because of this, there may be a double unref
+	  of variable 'publication' when ast_sched_del is unsuccessful
+	  that leads to use after free of the 'publication' in publish_expire.
+
+	  ASTERISK-27956 #close
+
+	  Change-Id: Ie0f0cfc7e036953d890b188656010b325a5cdc82
+
+2018-07-06 09:04 +0000 [7666b80378]  George Joseph <gjoseph@digium.com>
+
+	* test.c:  Make output jUnit compatible
+
+	  Separate "name" into "classname" and "name".
+	  Use '.' for classname separator instead of '/'.
+	  Prefix reserved words with '_'.
+	  Wrap output with a top-level "testsuites" element.
+
+	  Change-Id: Iec1a985eba1c478e5c1d65d5dfd95cb708442099
+
+2018-07-06 07:57 +0000 [3470409dd6]  George Joseph <gjoseph@digium.com>
+
+	* res_pjsip:  Add 'suppress_q850_reason_headers' option to endpoint
+
+	  A new option 'suppress_q850_reason_headers' has been added to the
+	  endpoint object. Some devices can't accept multiple Reason headers and
+	  get confused when both 'SIP' and 'Q.850' Reason headers are received.
+	  This option allows the 'Q.850' Reason header to be suppressed.
+	  The default value is 'no'.
+
+	  ASTERISK-27949
+	  Reported-by: Ross Beer
+
+	  Change-Id: I54cf37a827d77de2079256bb3de7e90fa5e1deb1
+
+2018-07-05 15:43 +0000 [76f2699d2d]  Joshua Colp <jcolp@digium.com>
+
+	* res_pjsip_t38: Decline T.38 stream on failure case.
+
+	  When negotiating an incoming T.38 stream the code incorrectly
+	  returned failure instead of a decline for the stream when a
+	  problem occurred or the configuration didn't allow it. This
+	  resulted in SDP offers being rejected with a 488 response
+	  in all cases, even when another valid stream was present.
+
+	  This change makes it so the stream is now declined. If no
+	  streams are accepted a 488 response is sent while if at least
+	  one stream is accepted all the declined streams are, well,
+	  declined.
+
+	  ASTERISK-27763
+
+	  Change-Id: I88bcf793788c412a9839d111a5c736bf6867807c
+
+2018-07-02 18:43 +0000 [a82f9762fd]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_pjsip_t38.c: Be smarter about how we respond when T.38 is disabled.
+
+	  We were blindly responding with AST_T38_REFUSED when ANY T.38 control
+	  frame came accross the bridge.  This causes T.38 Gateway to get confused
+	  and the T.38 session to get in a strange state.
+
+	  * Made the T.38 framehook only respond to request frames and ignore
+	  response frames.
+
+	  ASTERISK-27657
+	  ASTERISK-27080
+
+	  Change-Id: I5fb5967c7d1efb30a7ff375f82887ca82a55b05b
+
+2018-07-03 12:10 +0000 [b6b49071af]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_pjsip/pjsip_transport_management.c: Fix deadlock with transport keep alive.
+
+	  Using the keep_alive_interval option can result in a deadlock between the
+	  pjproject transport manager group lock and the monitored transports ao2
+	  container lock.  The pjproject transport manager group lock has to be
+	  superior in the locking order to the monitored transports ao2 container
+	  lock because of pjproject callbacks called when already holding the group
+	  lock.  The lock inversion happens when Asterisk attempts to send a keep
+	  alive packet over the reliable transports.
+
+	  * Made keepalive_transport_thread() iterate over the monitored transports
+	  container rather than use the ao2_callback() method.  This avoids holding
+	  the container lock when sending the keep alive packet.
+
+	  ASTERISK-26686
+
+	  Change-Id: I5d5392a52e698bbe41a93f7d8e92bf0e61fe3951
+
+2018-06-29 18:28 +0000 [140ce56f50]  Richard Mudgett <rmudgett@digium.com>
+
+	* res_pjsip_t38.c: Fix crash by ignoring 1xx messages.
+
+	  If we initiated a T.38 reINVITE, we would crash if we received any other
+	  1xx response message except 100 if it were followed by a 200 response.
+
+	  * Made ignore any 1xx response so we do not close out the T.38 negotiation
+	  too early.  For good measure we'll now accept any 2xx response as
+	  acceptance of the reINVITE T.38 offer.
+
+	  NOTE: In v13 we don't actually crash but we should deal with the non-final
+	  response messages and not switch to rejected and then to enabled when the
+	  200 comes in.
+
+	  ASTERISK-27944
+
+	  Change-Id: I0ca88aae708d091db7335af73f41035a212adff4
 
 2018-07-03 18:07 +0000  Asterisk Development Team <asteriskteam@digium.com>
 

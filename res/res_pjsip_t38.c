@@ -245,8 +245,6 @@ static struct t38_state *t38_state_get_or_alloc(struct ast_sip_session *session)
 	/* This will get bumped up before scheduling */
 	pj_timer_entry_init(&state->timer, 0, session, t38_automatic_reject_timer_cb);
 
-	datastore->data = state;
-
 	return state;
 }
 
@@ -296,18 +294,22 @@ static int t38_reinvite_response_cb(struct ast_sip_session *session, pjsip_rx_da
 	struct t38_state *state;
 	struct ast_sip_session_media *session_media = NULL;
 
-	if (status.code == 100) {
+	if (status.code / 100 <= 1) {
+		/* Ignore any non-final responses (1xx) */
 		return 0;
 	}
 
 	if (!session->channel || !(state = t38_state_get_or_alloc(session)) ||
 		!(session_media = ao2_find(session->media, "image", OBJ_KEY))) {
-		ast_log(LOG_WARNING, "Received response to T.38 re-invite on '%s' but state unavailable\n",
+		ast_log(LOG_WARNING, "Received %d response to T.38 re-invite on '%s' but state unavailable\n",
+			status.code,
 			session->channel ? ast_channel_name(session->channel) : "unknown channel");
 		return 0;
 	}
 
-	t38_change_state(session, session_media, state, (status.code == 200) ? T38_ENABLED : T38_REJECTED);
+	/* Accept any 2xx response as successfully negotiated */
+	t38_change_state(session, session_media, state,
+		(status.code / 100 == 2) ? T38_ENABLED : T38_REJECTED);
 
 	ao2_cleanup(session_media);
 	return 0;
@@ -404,21 +406,42 @@ static int t38_interpret_parameters(void *obj)
 static struct ast_frame *t38_framehook_write(struct ast_channel *chan,
 	struct ast_sip_session *session, struct ast_frame *f)
 {
-	if (f->frametype == AST_FRAME_CONTROL && f->subclass.integer == AST_CONTROL_T38_PARAMETERS) {
+	if (f->frametype == AST_FRAME_CONTROL
+		&& f->subclass.integer == AST_CONTROL_T38_PARAMETERS) {
 		if (session->endpoint->media.t38.enabled) {
-			struct t38_parameters_task_data *data = t38_parameters_task_data_alloc(session, f);
+			struct t38_parameters_task_data *data;
 
-			if (!data) {
-				return f;
-			}
-
-			if (ast_sip_push_task(session->serializer, t38_interpret_parameters, data)) {
+			data = t38_parameters_task_data_alloc(session, f);
+			if (data
+				&& ast_sip_push_task(session->serializer,
+					t38_interpret_parameters, data)) {
 				ao2_ref(data, -1);
 			}
 		} else {
-			struct ast_control_t38_parameters parameters = { .request_response = AST_T38_REFUSED, };
-			ast_debug(2, "T.38 support not enabled, rejecting T.38 control packet\n");
-			ast_queue_control_data(session->channel, AST_CONTROL_T38_PARAMETERS, &parameters, sizeof(parameters));
+			static const struct ast_control_t38_parameters rsp_refused = {
+				.request_response = AST_T38_REFUSED,
+			};
+			static const struct ast_control_t38_parameters rsp_terminated = {
+				.request_response = AST_T38_TERMINATED,
+			};
+			const struct ast_control_t38_parameters *parameters = f->data.ptr;
+
+			switch (parameters->request_response) {
+			case AST_T38_REQUEST_NEGOTIATE:
+				ast_debug(2, "T.38 support not enabled on %s, refusing T.38 negotiation\n",
+					ast_channel_name(chan));
+				ast_queue_control_data(chan, AST_CONTROL_T38_PARAMETERS,
+					&rsp_refused, sizeof(rsp_refused));
+				break;
+			case AST_T38_REQUEST_TERMINATE:
+				ast_debug(2, "T.38 support not enabled on %s, 'terminating' T.38 session\n",
+					ast_channel_name(chan));
+				ast_queue_control_data(chan, AST_CONTROL_T38_PARAMETERS,
+					&rsp_terminated, sizeof(rsp_terminated));
+				break;
+			default:
+				break;
+			}
 		}
 	} else if (f->frametype == AST_FRAME_MODEM) {
 		struct ast_sip_session_media *session_media;
@@ -690,17 +713,17 @@ static int negotiate_incoming_sdp_stream(struct ast_sip_session *session, struct
 
 	if (!session->endpoint->media.t38.enabled) {
 		ast_debug(3, "Declining; T.38 not enabled on session\n");
-		return -1;
+		return 0;
 	}
 
 	if (!(state = t38_state_get_or_alloc(session))) {
-		return -1;
+		return 0;
 	}
 
 	if ((session->t38state == T38_REJECTED) || (session->t38state == T38_DISABLED)) {
 		ast_debug(3, "Declining; T.38 state is rejected or declined\n");
 		t38_change_state(session, session_media, state, T38_DISABLED);
-		return -1;
+		return 0;
 	}
 
 	ast_copy_pj_str(host, stream->conn ? &stream->conn->addr : &sdp->conn->addr, sizeof(host));
@@ -709,7 +732,7 @@ static int negotiate_incoming_sdp_stream(struct ast_sip_session *session, struct
 	if (ast_sockaddr_resolve(&addrs, host, PARSE_PORT_FORBID, AST_AF_INET) <= 0) {
 		/* The provided host was actually invalid so we error out this negotiation */
 		ast_debug(3, "Declining; provided host is invalid\n");
-		return -1;
+		return 0;
 	}
 
 	/* Check the address family to make sure it matches configured */
@@ -717,7 +740,7 @@ static int negotiate_incoming_sdp_stream(struct ast_sip_session *session, struct
 		(ast_sockaddr_is_ipv4(addrs) && session->endpoint->media.t38.ipv6)) {
 		/* The address does not match configured */
 		ast_debug(3, "Declining, provided host does not match configured address family\n");
-		return -1;
+		return 0;
 	}
 
 	return 1;
