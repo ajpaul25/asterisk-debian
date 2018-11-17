@@ -50,10 +50,10 @@ Last-Update: 2016-03-19
 +
  include $(ASTTOPDIR)/Makefile.moddir_rules
  
- clean::
+ $(call MOD_ADD_C,app_confbridge,$(wildcard confbridge/*.c))
 --- a/Makefile.moddir_rules
 +++ b/Makefile.moddir_rules
-@@ -37,7 +37,7 @@
+@@ -29,7 +29,7 @@
  # Use MODULE_EXCLUDE to specify additional modules to exclude.
  
  ifneq ($(MODULE_PREFIX),)

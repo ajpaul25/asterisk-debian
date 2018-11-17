@@ -7,7 +7,7 @@ Last-Update: 2016-03-19
 --- a/utils/utils.xml
 +++ b/utils/utils.xml
 @@ -37,7 +37,7 @@
- 	<support_level>extended</support_level>
+ 	<support_level>deprecated</support_level>
    </member>
    <member name="smsq">
 -	<defaultenabled>no</defaultenabled>
