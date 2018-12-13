@@ -53,8 +53,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/astobj2.h"
 #include "asterisk/callerid.h"
 #include "asterisk/module.h"
@@ -150,10 +148,10 @@ static struct ast_json *stasis_start_to_json(struct stasis_message *message,
 		return NULL;
 	}
 
-	msg = ast_json_pack("{s: s, s: o, s: o, s: o}",
+	msg = ast_json_pack("{s: s, s: O, s: O, s: o}",
 		"type", "StasisStart",
-		"timestamp", ast_json_copy(ast_json_object_get(payload->blob, "timestamp")),
-		"args", ast_json_deep_copy(ast_json_object_get(payload->blob, "args")),
+		"timestamp", ast_json_object_get(payload->blob, "timestamp"),
+		"args", ast_json_object_get(payload->blob, "args"),
 		"channel", ast_channel_snapshot_to_json(payload->channel, NULL));
 	if (!msg) {
 		ast_log(LOG_ERROR, "Failed to pack JSON for StasisStart message\n");
@@ -474,29 +472,6 @@ static int bridges_channel_sort_fn(const void *obj_left, const void *obj_right, 
 	return cmp;
 }
 
-/*! Removes the bridge to music on hold channel link */
-static void remove_bridge_moh(char *bridge_id)
-{
-	ao2_find(app_bridges_moh, bridge_id, OBJ_SEARCH_KEY | OBJ_UNLINK | OBJ_NODATA);
-	ast_free(bridge_id);
-}
-
-/*! After bridge failure callback for moh channels */
-static void moh_after_bridge_cb_failed(enum ast_bridge_after_cb_reason reason, void *data)
-{
-	char *bridge_id = data;
-
-	remove_bridge_moh(bridge_id);
-}
-
-/*! After bridge callback for moh channels */
-static void moh_after_bridge_cb(struct ast_channel *chan, void *data)
-{
-	char *bridge_id = data;
-
-	remove_bridge_moh(bridge_id);
-}
-
 /*! Request a bridge MOH channel */
 static struct ast_channel *prepare_bridge_moh_channel(void)
 {
@@ -519,10 +494,33 @@ static struct ast_channel *prepare_bridge_moh_channel(void)
 /*! Provides the moh channel with a thread so it can actually play its music */
 static void *moh_channel_thread(void *data)
 {
-	struct ast_channel *moh_channel = data;
+	struct stasis_app_bridge_channel_wrapper *moh_wrapper = data;
+	struct ast_channel *moh_channel = ast_channel_get_by_name(moh_wrapper->channel_id);
+	struct ast_frame *f;
 
-	while (!ast_safe_sleep(moh_channel, 1000)) {
+	if (!moh_channel) {
+		ao2_unlink(app_bridges_moh, moh_wrapper);
+		ao2_ref(moh_wrapper, -1);
+		return NULL;
 	}
+
+	/* Read and discard any frame coming from the stasis bridge. */
+	for (;;) {
+		if (ast_waitfor(moh_channel, -1) < 0) {
+			/* Error or hungup */
+			break;
+		}
+
+		f = ast_read(moh_channel);
+		if (!f) {
+			/* Hungup */
+			break;
+		}
+		ast_frfree(f);
+	}
+
+	ao2_unlink(app_bridges_moh, moh_wrapper);
+	ao2_ref(moh_wrapper, -1);
 
 	ast_moh_stop(moh_channel);
 	ast_hangup(moh_channel);
@@ -541,14 +539,9 @@ static void *moh_channel_thread(void *data)
  */
 static struct ast_channel *bridge_moh_create(struct ast_bridge *bridge)
 {
-	RAII_VAR(struct stasis_app_bridge_channel_wrapper *, new_wrapper, NULL, ao2_cleanup);
-	RAII_VAR(char *, bridge_id, ast_strdup(bridge->uniqueid), ast_free);
+	struct stasis_app_bridge_channel_wrapper *new_wrapper;
 	struct ast_channel *chan;
 	pthread_t threadid;
-
-	if (!bridge_id) {
-		return NULL;
-	}
 
 	chan = prepare_bridge_moh_channel();
 	if (!chan) {
@@ -559,14 +552,6 @@ static struct ast_channel *bridge_moh_create(struct ast_bridge *bridge)
 		ast_hangup(chan);
 		return NULL;
 	}
-
-	/* The after bridge callback assumes responsibility of the bridge_id. */
-	if (ast_bridge_set_after_callback(chan,
-		moh_after_bridge_cb, moh_after_bridge_cb_failed, bridge_id)) {
-		ast_hangup(chan);
-		return NULL;
-	}
-	bridge_id = NULL;
 
 	if (ast_unreal_channel_push_to_bridge(chan, bridge,
 		AST_BRIDGE_CHANNEL_FLAG_IMMOVABLE | AST_BRIDGE_CHANNEL_FLAG_LONELY)) {
@@ -581,21 +566,25 @@ static struct ast_channel *bridge_moh_create(struct ast_bridge *bridge)
 		return NULL;
 	}
 
-	if (ast_string_field_init(new_wrapper, 32)) {
+	if (ast_string_field_init(new_wrapper, AST_UUID_STR_LEN + AST_CHANNEL_NAME)
+		|| ast_string_field_set(new_wrapper, bridge_id, bridge->uniqueid)
+		|| ast_string_field_set(new_wrapper, channel_id, ast_channel_uniqueid(chan))) {
+		ao2_ref(new_wrapper, -1);
 		ast_hangup(chan);
 		return NULL;
 	}
-	ast_string_field_set(new_wrapper, bridge_id, bridge->uniqueid);
-	ast_string_field_set(new_wrapper, channel_id, ast_channel_uniqueid(chan));
 
 	if (!ao2_link_flags(app_bridges_moh, new_wrapper, OBJ_NOLOCK)) {
+		ao2_ref(new_wrapper, -1);
 		ast_hangup(chan);
 		return NULL;
 	}
 
-	if (ast_pthread_create_detached(&threadid, NULL, moh_channel_thread, chan)) {
+	/* Pass the new_wrapper ref to moh_channel_thread() */
+	if (ast_pthread_create_detached(&threadid, NULL, moh_channel_thread, new_wrapper)) {
 		ast_log(LOG_ERROR, "Failed to create channel thread. Abandoning MOH channel creation.\n");
 		ao2_unlink_flags(app_bridges_moh, new_wrapper, OBJ_NOLOCK);
+		ao2_ref(new_wrapper, -1);
 		ast_hangup(chan);
 		return NULL;
 	}
@@ -769,7 +758,7 @@ static void control_unlink(struct stasis_app_control *control)
 	ao2_cleanup(control);
 }
 
-struct ast_bridge *stasis_app_bridge_create(const char *type, const char *name, const char *id)
+static struct ast_bridge *bridge_create_common(const char *type, const char *name, const char *id, int invisible)
 {
 	struct ast_bridge *bridge;
 	char *requested_type, *requested_types = ast_strdupa(S_OR(type, "mixing"));
@@ -777,6 +766,11 @@ struct ast_bridge *stasis_app_bridge_create(const char *type, const char *name, 
 	int flags = AST_BRIDGE_FLAG_MERGE_INHIBIT_FROM | AST_BRIDGE_FLAG_MERGE_INHIBIT_TO
 		| AST_BRIDGE_FLAG_SWAP_INHIBIT_FROM | AST_BRIDGE_FLAG_SWAP_INHIBIT_TO
 		| AST_BRIDGE_FLAG_TRANSFER_BRIDGE_ONLY;
+	enum ast_bridge_video_mode_type video_mode = AST_BRIDGE_VIDEO_MODE_TALKER_SRC;
+
+	if (invisible) {
+		flags |= AST_BRIDGE_FLAG_INVISIBLE;
+	}
 
 	while ((requested_type = strsep(&requested_types, ","))) {
 		requested_type = ast_strip(requested_type);
@@ -789,7 +783,15 @@ struct ast_bridge *stasis_app_bridge_create(const char *type, const char *name, 
 		} else if (!strcmp(requested_type, "dtmf_events") ||
 			!strcmp(requested_type, "proxy_media")) {
 			capabilities &= ~AST_BRIDGE_CAPABILITY_NATIVE;
+		} else if (!strcmp(requested_type, "video_sfu")) {
+			video_mode = AST_BRIDGE_VIDEO_MODE_SFU;
 		}
+	}
+
+	/* For an SFU video bridge we ensure it always remains in multimix for the best experience. */
+	if (video_mode == AST_BRIDGE_VIDEO_MODE_SFU) {
+		capabilities = AST_BRIDGE_CAPABILITY_MULTIMIX;
+		flags &= ~AST_BRIDGE_FLAG_SMART;
 	}
 
 	if (!capabilities
@@ -801,13 +803,31 @@ struct ast_bridge *stasis_app_bridge_create(const char *type, const char *name, 
 
 	bridge = bridge_stasis_new(capabilities, flags, name, id);
 	if (bridge) {
-		ast_bridge_set_talker_src_video_mode(bridge);
+		if (video_mode == AST_BRIDGE_VIDEO_MODE_SFU) {
+			ast_bridge_set_sfu_video_mode(bridge);
+			/* We require a minimum 5 seconds between video updates to stop floods from clients,
+			 * this should rarely be changed but should become configurable in the future.
+			 */
+			ast_bridge_set_video_update_discard(bridge, 5);
+		} else {
+			ast_bridge_set_talker_src_video_mode(bridge);
+		}
 		if (!ao2_link(app_bridges, bridge)) {
 			ast_bridge_destroy(bridge, 0);
 			bridge = NULL;
 		}
 	}
 	return bridge;
+}
+
+struct ast_bridge *stasis_app_bridge_create(const char *type, const char *name, const char *id)
+{
+	return bridge_create_common(type, name, id, 0);
+}
+
+struct ast_bridge *stasis_app_bridge_create_invisible(const char *type, const char *name, const char *id)
+{
+	return bridge_create_common(type, name, id, 1);
 }
 
 void stasis_app_bridge_destroy(const char *bridge_id)
@@ -1273,8 +1293,6 @@ static void remove_stasis_end_published(struct ast_channel *chan)
 int stasis_app_exec(struct ast_channel *chan, const char *app_name, int argc,
 		    char *argv[])
 {
-	SCOPED_MODULE_USE(ast_module_info->self);
-
 	RAII_VAR(struct stasis_app *, app, NULL, ao2_cleanup);
 	RAII_VAR(struct stasis_app_control *, control, NULL, control_unlink);
 	struct ast_bridge *bridge = NULL;
@@ -1352,7 +1370,7 @@ int stasis_app_exec(struct ast_channel *chan, const char *app_name, int argc,
 		}
 
 		if (bridge) {
-			/* Bridge is handling channel frames */
+			/* Bridge/dial is handling channel frames */
 			control_wait(control);
 			control_dispatch_all(control, chan);
 			continue;
@@ -1625,11 +1643,6 @@ void stasis_app_register_event_source(struct stasis_app_event_source *obj)
 {
 	AST_RWLIST_WRLOCK(&event_sources);
 	AST_LIST_INSERT_TAIL(&event_sources, obj, next);
-	/* only need to bump the module ref on non-core sources because the
-	   core ones are [un]registered by this module. */
-	if (!stasis_app_is_core_event_source(obj)) {
-		ast_module_ref(ast_module_info->self);
-	}
 	AST_RWLIST_UNLOCK(&event_sources);
 }
 
@@ -1641,9 +1654,6 @@ void stasis_app_unregister_event_source(struct stasis_app_event_source *obj)
 	AST_RWLIST_TRAVERSE_SAFE_BEGIN(&event_sources, source, next) {
 		if (source == obj) {
 			AST_RWLIST_REMOVE_CURRENT(next);
-			if (!stasis_app_is_core_event_source(obj)) {
-				ast_module_unref(ast_module_info->self);
-			}
 			break;
 		}
 	}
@@ -2007,16 +2017,6 @@ enum stasis_app_user_event_res stasis_app_user_event(const char *app_name,
 	return STASIS_APP_USER_OK;
 }
 
-void stasis_app_ref(void)
-{
-	ast_module_ref(ast_module_info->self);
-}
-
-void stasis_app_unref(void)
-{
-	ast_module_unref(ast_module_info->self);
-}
-
 static int unload_module(void)
 {
 	stasis_app_unregister_event_sources();
@@ -2024,6 +2024,9 @@ static int unload_module(void)
 	messaging_cleanup();
 
 	cleanup();
+
+	stasis_app_control_shutdown();
+
 	ao2_cleanup(apps_registry);
 	apps_registry = NULL;
 
@@ -2164,12 +2167,15 @@ static int load_module(void)
 	if (STASIS_MESSAGE_TYPE_INIT(end_message_type) != 0) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
-	apps_registry = ao2_container_alloc(APPS_NUM_BUCKETS, app_hash, app_compare);
-	app_controls = ao2_container_alloc(CONTROLS_NUM_BUCKETS, control_hash, control_compare);
-	app_bridges = ao2_container_alloc(BRIDGES_NUM_BUCKETS, bridges_hash, bridges_compare);
+	apps_registry = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		APPS_NUM_BUCKETS, app_hash, NULL, app_compare);
+	app_controls = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		CONTROLS_NUM_BUCKETS, control_hash, NULL, control_compare);
+	app_bridges = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		BRIDGES_NUM_BUCKETS, bridges_hash, NULL, bridges_compare);
 	app_bridges_moh = ao2_container_alloc_hash(
-		AO2_ALLOC_OPT_LOCK_MUTEX, AO2_CONTAINER_ALLOC_OPT_DUPS_REJECT,
-		37, bridges_channel_hash_fn, bridges_channel_sort_fn, NULL);
+		AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		37, bridges_channel_hash_fn, NULL, NULL);
 	app_bridges_playback = ao2_container_alloc_hash(
 		AO2_ALLOC_OPT_LOCK_MUTEX, AO2_CONTAINER_ALLOC_OPT_DUPS_REJECT,
 		37, bridges_channel_hash_fn, bridges_channel_sort_fn, NULL);
@@ -2195,4 +2201,4 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_
 	.support_level = AST_MODULE_SUPPORT_CORE,
 	.load = load_module,
 	.unload = unload_module,
-	);
+);

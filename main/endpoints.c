@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/astobj2.h"
 #include "asterisk/endpoints.h"
 #include "asterisk/stasis.h"
@@ -204,7 +202,7 @@ static void endpoint_cache_clear(void *data,
 	endpoint_publish_snapshot(endpoint);
 }
 
-static void endpoint_default(void *data,
+static void endpoint_subscription_change(void *data,
 	struct stasis_subscription *sub,
 	struct stasis_message *message)
 {
@@ -265,6 +263,8 @@ static struct ast_endpoint *endpoint_internal_create(const char *tech, const cha
 		if (!endpoint->topics) {
 			return NULL;
 		}
+		stasis_cp_single_accept_message_type(endpoint->topics, ast_endpoint_snapshot_type());
+		stasis_cp_single_set_filter(endpoint->topics, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 
 		endpoint->router = stasis_message_router_create_pool(ast_endpoint_topic(endpoint));
 		if (!endpoint->router) {
@@ -273,8 +273,9 @@ static struct ast_endpoint *endpoint_internal_create(const char *tech, const cha
 		r |= stasis_message_router_add(endpoint->router,
 			stasis_cache_clear_type(), endpoint_cache_clear,
 			endpoint);
-		r |= stasis_message_router_set_default(endpoint->router,
-			endpoint_default, endpoint);
+		r |= stasis_message_router_add(endpoint->router,
+			stasis_subscription_change_type(), endpoint_subscription_change,
+			endpoint);
 		if (r) {
 			return NULL;
 		}
@@ -290,6 +291,8 @@ static struct ast_endpoint *endpoint_internal_create(const char *tech, const cha
 		if (!endpoint->topics) {
 			return NULL;
 		}
+		stasis_cp_single_accept_message_type(endpoint->topics, ast_endpoint_snapshot_type());
+		stasis_cp_single_set_filter(endpoint->topics, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 
 		ao2_link(tech_endpoints, endpoint);
 	}
@@ -479,14 +482,14 @@ int ast_endpoint_init(void)
 {
 	ast_register_cleanup(endpoint_cleanup);
 
-	endpoints = ao2_container_alloc(ENDPOINT_BUCKETS, ast_endpoint_hash_fn,
-		ast_endpoint_cmp_fn);
+	endpoints = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, ENDPOINT_BUCKETS,
+		ast_endpoint_hash_fn, NULL, ast_endpoint_cmp_fn);
 	if (!endpoints) {
 		return -1;
 	}
 
-	tech_endpoints = ao2_container_alloc(TECH_ENDPOINT_BUCKETS, ast_endpoint_hash_fn,
-		ast_endpoint_cmp_fn);
+	tech_endpoints = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		TECH_ENDPOINT_BUCKETS, ast_endpoint_hash_fn, NULL, ast_endpoint_cmp_fn);
 	if (!tech_endpoints) {
 		return -1;
 	}

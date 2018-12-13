@@ -25,8 +25,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "include/sip.h"
 #include "include/sip_utils.h"
 #include "include/reqresp_parser.h"

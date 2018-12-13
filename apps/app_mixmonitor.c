@@ -40,8 +40,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/paths.h"	/* use ast_config_AST_MONITOR_DIR */
 #include "asterisk/stringfields.h"
 #include "asterisk/file.h"
@@ -311,12 +309,12 @@ struct vm_recipient {
 
 struct mixmonitor {
 	struct ast_audiohook audiohook;
-	struct ast_callid *callid;
 	char *filename;
 	char *filename_read;
 	char *filename_write;
 	char *post_process;
 	char *name;
+	ast_callid callid;
 	unsigned int flags;
 	struct ast_autochan *autochan;
 	struct mixmonitor_ds *mixmonitor_ds;
@@ -561,9 +559,6 @@ static void mixmonitor_free(struct mixmonitor *mixmonitor)
 		/* clean stringfields */
 		ast_string_field_free_memory(mixmonitor);
 
-		if (mixmonitor->callid) {
-			ast_callid_unref(mixmonitor->callid);
-		}
 		ast_free(mixmonitor);
 	}
 }
@@ -1561,4 +1556,9 @@ static int load_module(void)
 	return res;
 }
 
-AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Mixed Audio Monitoring Application");
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Mixed Audio Monitoring Application",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.optional_modules = "func_periodic_hook",
+);

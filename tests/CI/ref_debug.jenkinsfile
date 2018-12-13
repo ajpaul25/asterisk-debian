@@ -10,7 +10,19 @@
  * we need to dynamically determine which docker image we're going to use and
  * you can't do that in a delcarative pipeline.
  */
+def timeoutTime = 24
+def timeoutUnits = 'HOURS'
+if (env.TIMEOUT_REF_DEBUG) {
+	def _timeout = env.TIMEOUT_REF_DEBUG.split()
+	timeoutTime = _timeout[0].toInteger()
+	timeoutUnits = _timeout[1]
+}
+
 pipeline {
+	options {
+		timestamps()
+		timeout(time: timeoutTime, unit: timeoutUnits)
+	}
 	triggers {
 		cron 'H H(0-4) * * 0'
 	}
@@ -38,7 +50,7 @@ pipeline {
 					def ri = images[(int)r]
 					def randomImage = env.DOCKER_REGISTRY + "/" + ri
 					def dockerOptions = "--privileged --ulimit core=0 --ulimit nofile=10240 " +
-						" -v /srv/jenkins:/srv/jenkins:rw -v /srv/cache:/srv/cache:rw " +
+						" --mount type=tmpfs,tmpfs-size=1g,dst=/tmp -v /srv/jenkins:/srv/jenkins:rw -v /srv/cache:/srv/cache:rw " +
 						" --entrypoint=''"
 					def bt = env.BUILD_TAG.replaceAll(/[^a-zA-Z0-9_.-]/, '-')
 					def outputdir = "tests/CI/output/Testsuite"
@@ -115,8 +127,8 @@ pipeline {
 	}
 	post {
 		cleanup {
-			sh "sudo make distclean 2&>/dev/null || : "
-			sh "sudo rm -rf tests/CI/output  2&>/dev/null || : "
+			sh "sudo make distclean >/dev/null 2>&1 || : "
+			sh "sudo rm -rf tests/CI/output >/dev/null 2>&1 || : "
 		}
 		success {
 			echo "Reporting ${currentBuild.currentResult} Passed"

@@ -1,14 +1,14 @@
 """add pjsip identify by header
 
 Revision ID: 52798ad97bdf
-Revises: 20abce6d1e3c
+Revises: e2f04d309071
 Create Date: 2018-01-08 12:16:02.782277
 
 """
 
 # revision identifiers, used by Alembic.
 revision = '52798ad97bdf'
-down_revision = '20abce6d1e3c'
+down_revision = 'e2f04d309071'
 
 from alembic import op
 import sqlalchemy as sa

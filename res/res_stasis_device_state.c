@@ -23,8 +23,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/astdb.h"
 #include "asterisk/astobj2.h"
 #include "asterisk/module.h"
@@ -396,6 +394,9 @@ static int subscribe_device_state(struct stasis_app *app, void *obj)
 		ao2_ref(sub, -1);
 		return -1;
 	}
+	stasis_subscription_accept_message_type(sub->sub, ast_device_state_message_type());
+	stasis_subscription_accept_message_type(sub->sub, stasis_subscription_change_type());
+	stasis_subscription_set_filter(sub->sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 
 	ao2_link_flags(device_state_subscriptions, sub, OBJ_NOLOCK);
 	ao2_unlock(device_state_subscriptions);
@@ -460,9 +461,10 @@ static int load_module(void)
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
-	if (!(device_state_subscriptions = ao2_container_alloc(
-		      DEVICE_STATE_BUCKETS, device_state_subscriptions_hash,
-		      device_state_subscriptions_cmp))) {
+	device_state_subscriptions = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		DEVICE_STATE_BUCKETS, device_state_subscriptions_hash, NULL,
+		device_state_subscriptions_cmp);
+	if (!device_state_subscriptions) {
 		ast_devstate_prov_del(DEVICE_STATE_PROVIDER_STASIS);
 		return AST_MODULE_LOAD_DECLINE;
 	}
@@ -484,4 +486,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS, "Stasis applicatio
 	.support_level = AST_MODULE_SUPPORT_CORE,
 	.load = load_module,
 	.unload = unload_module,
-	.nonoptreq = "res_stasis");
+	.requires = "res_stasis",
+);

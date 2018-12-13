@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/_private.h"
 #include "asterisk/module.h"
 #include "asterisk/time.h"
@@ -69,10 +67,8 @@ struct tps_taskprocessor_stats {
 
 /*! \brief A ast_taskprocessor structure is a singleton by name */
 struct ast_taskprocessor {
-	/*! \brief Friendly name of the taskprocessor */
-	const char *name;
 	/*! \brief Taskprocessor statistics */
-	struct tps_taskprocessor_stats *stats;
+	struct tps_taskprocessor_stats stats;
 	void *local_data;
 	/*! \brief Taskprocessor current queue size */
 	long tps_queue_size;
@@ -93,6 +89,8 @@ struct ast_taskprocessor {
 	unsigned int high_water_alert:1;
 	/*! Indicates if the taskprocessor is currently suspended */
 	unsigned int suspended:1;
+	/*! \brief Friendly name of the taskprocessor */
+	char name[0];
 };
 
 /*!
@@ -237,7 +235,11 @@ static void default_listener_shutdown(struct ast_taskprocessor_listener *listene
 	/* Hold a reference during shutdown */
 	ao2_t_ref(listener->tps, +1, "tps-shutdown");
 
-	ast_taskprocessor_push(listener->tps, default_listener_die, pvt);
+	if (ast_taskprocessor_push(listener->tps, default_listener_die, pvt)) {
+		/* This will cause the thread to exit early without completing tasks already
+		 * in the queue.  This is probably the least bad option in this situation. */
+		default_listener_die(pvt);
+	}
 
 	ast_assert(pvt->poll_thread != AST_PTHREADT_NULL);
 
@@ -276,7 +278,9 @@ static void tps_shutdown(void)
 /* initialize the taskprocessor container and register CLI operations */
 int ast_tps_init(void)
 {
-	if (!(tps_singletons = ao2_container_alloc(TPS_MAX_BUCKETS, tps_hash_cb, tps_cmp_cb))) {
+	tps_singletons = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		TPS_MAX_BUCKETS, tps_hash_cb, NULL, tps_cmp_cb);
+	if (!tps_singletons) {
 		ast_log(LOG_ERROR, "taskprocessor container failed to initialize!\n");
 		return -1;
 	}
@@ -513,13 +517,8 @@ static char *cli_tps_report(struct ast_cli_entry *e, int cmd, struct ast_cli_arg
 	while ((tps = ao2_iterator_next(&iter))) {
 		ast_copy_string(name, tps->name, sizeof(name));
 		qsize = tps->tps_queue_size;
-		if (tps->stats) {
-			maxqsize = tps->stats->max_qsize;
-			processed = tps->stats->_tasks_processed_count;
-		} else {
-			maxqsize = 0;
-			processed = 0;
-		}
+		maxqsize = tps->stats.max_qsize;
+		processed = tps->stats._tasks_processed_count;
 		ast_cli(a->fd, FMT_FIELDS, name, processed, qsize, maxqsize,
 			tps->tps_queue_low, tps->tps_queue_high);
 		ast_taskprocessor_unreference(tps);
@@ -643,10 +642,6 @@ static void tps_taskprocessor_dtor(void *tps)
 		tps_alert_add(t, -1);
 	}
 
-	ast_free(t->stats);
-	t->stats = NULL;
-	ast_free((char *) t->name);
-	t->name = NULL;
 	ao2_cleanup(t->listener);
 	t->listener = NULL;
 }
@@ -738,11 +733,22 @@ static void *default_listener_pvt_alloc(void)
 	return pvt;
 }
 
+/*!
+ * \internal
+ * \brief Allocate a task processor structure
+ *
+ * \param name Name of the task processor.
+ * \param listener Listener to associate with the task processor.
+ *
+ * \return The newly allocated task processor.
+ *
+ * \pre tps_singletons must be locked by the caller.
+ */
 static struct ast_taskprocessor *__allocate_taskprocessor(const char *name, struct ast_taskprocessor_listener *listener)
 {
 	struct ast_taskprocessor *p;
 
-	p = ao2_alloc(sizeof(*p), tps_taskprocessor_dtor);
+	p = ao2_alloc(sizeof(*p) + strlen(name) + 1, tps_taskprocessor_dtor);
 	if (!p) {
 		ast_log(LOG_WARNING, "failed to create taskprocessor '%s'\n", name);
 		return NULL;
@@ -752,12 +758,7 @@ static struct ast_taskprocessor *__allocate_taskprocessor(const char *name, stru
 	p->tps_queue_low = (AST_TASKPROCESSOR_HIGH_WATER_LEVEL * 9) / 10;
 	p->tps_queue_high = AST_TASKPROCESSOR_HIGH_WATER_LEVEL;
 
-	p->stats = ast_calloc(1, sizeof(*p->stats));
-	p->name = ast_strdup(name);
-	if (!p->stats || !p->name) {
-		ao2_ref(p, -1);
-		return NULL;
-	}
+	strcpy(p->name, name); /*SAFE*/
 
 	ao2_ref(listener, +1);
 	p->listener = listener;
@@ -767,17 +768,23 @@ static struct ast_taskprocessor *__allocate_taskprocessor(const char *name, stru
 	ao2_ref(p, +1);
 	listener->tps = p;
 
-	if (!(ao2_link(tps_singletons, p))) {
+	if (!(ao2_link_flags(tps_singletons, p, OBJ_NOLOCK))) {
 		ast_log(LOG_ERROR, "Failed to add taskprocessor '%s' to container\n", p->name);
 		listener->tps = NULL;
 		ao2_ref(p, -2);
 		return NULL;
 	}
 
-	if (p->listener->callbacks->start(p->listener)) {
+	return p;
+}
+
+static struct ast_taskprocessor *__start_taskprocessor(struct ast_taskprocessor *p)
+{
+	if (p && p->listener->callbacks->start(p->listener)) {
 		ast_log(LOG_ERROR, "Unable to start taskprocessor listener for taskprocessor %s\n",
 			p->name);
 		ast_taskprocessor_unreference(p);
+
 		return NULL;
 	}
 
@@ -797,40 +804,51 @@ struct ast_taskprocessor *ast_taskprocessor_get(const char *name, enum ast_tps_o
 		ast_log(LOG_ERROR, "requesting a nameless taskprocessor!!!\n");
 		return NULL;
 	}
-	p = ao2_find(tps_singletons, name, OBJ_KEY);
-	if (p) {
+	ao2_lock(tps_singletons);
+	p = ao2_find(tps_singletons, name, OBJ_KEY | OBJ_NOLOCK);
+	if (p || (create & TPS_REF_IF_EXISTS)) {
+		/* calling function does not want a new taskprocessor to be created if it doesn't already exist */
+		ao2_unlock(tps_singletons);
 		return p;
 	}
-	if (create & TPS_REF_IF_EXISTS) {
-		/* calling function does not want a new taskprocessor to be created if it doesn't already exist */
-		return NULL;
-	}
+
 	/* Create a new taskprocessor. Start by creating a default listener */
 	pvt = default_listener_pvt_alloc();
 	if (!pvt) {
+		ao2_unlock(tps_singletons);
 		return NULL;
 	}
 	listener = ast_taskprocessor_listener_alloc(&default_listener_callbacks, pvt);
 	if (!listener) {
+		ao2_unlock(tps_singletons);
 		default_listener_pvt_destroy(pvt);
 		return NULL;
 	}
 
 	p = __allocate_taskprocessor(name, listener);
-
+	ao2_unlock(tps_singletons);
+	p = __start_taskprocessor(p);
 	ao2_ref(listener, -1);
+
 	return p;
 }
 
 struct ast_taskprocessor *ast_taskprocessor_create_with_listener(const char *name, struct ast_taskprocessor_listener *listener)
 {
-	struct ast_taskprocessor *p = ao2_find(tps_singletons, name, OBJ_KEY);
+	struct ast_taskprocessor *p;
 
+	ao2_lock(tps_singletons);
+	p = ao2_find(tps_singletons, name, OBJ_KEY | OBJ_NOLOCK);
 	if (p) {
+		ao2_unlock(tps_singletons);
 		ast_taskprocessor_unreference(p);
 		return NULL;
 	}
-	return __allocate_taskprocessor(name, listener);
+
+	p = __allocate_taskprocessor(name, listener);
+	ao2_unlock(tps_singletons);
+
+	return __start_taskprocessor(p);
 }
 
 void ast_taskprocessor_set_local(struct ast_taskprocessor *tps,
@@ -983,13 +1001,11 @@ int ast_taskprocessor_execute(struct ast_taskprocessor *tps)
 	size = ast_taskprocessor_size(tps);
 
 	/* Update the stats */
-	if (tps->stats) {
-		++tps->stats->_tasks_processed_count;
+	++tps->stats._tasks_processed_count;
 
-		/* Include the task we just executed as part of the queue size. */
-		if (size >= tps->stats->max_qsize) {
-			tps->stats->max_qsize = size + 1;
-		}
+	/* Include the task we just executed as part of the queue size. */
+	if (size >= tps->stats.max_qsize) {
+		tps->stats.max_qsize = size + 1;
 	}
 	ao2_unlock(tps);
 

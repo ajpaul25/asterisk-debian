@@ -36,8 +36,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/astobj2.h"
 #include "asterisk/strings.h"
 #include "asterisk/ccss.h"
@@ -682,11 +680,7 @@ void ast_cc_default_config_params(struct ast_cc_config_params *params)
 
 struct ast_cc_config_params *__ast_cc_config_params_init(const char *file, int line, const char *function)
 {
-#if defined(__AST_DEBUG_MALLOC)
 	struct ast_cc_config_params *params = __ast_malloc(sizeof(*params), file, line, function);
-#else
-	struct ast_cc_config_params *params = ast_malloc(sizeof(*params));
-#endif
 
 	if (!params) {
 		return NULL;
@@ -1439,6 +1433,8 @@ static struct generic_monitor_instance_list *create_new_generic_list(struct ast_
 		cc_unref(generic_list, "Failed to subscribe to device state");
 		return NULL;
 	}
+	stasis_subscription_accept_message_type(generic_list->sub, ast_device_state_message_type());
+	stasis_subscription_set_filter(generic_list->sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 	generic_list->current_state = ast_device_state(monitor->interface->device_name);
 	ao2_t_link(generic_monitors, generic_list, "linking new generic monitor instance list");
 	return generic_list;
@@ -2810,6 +2806,9 @@ static int cc_generic_agent_start_monitoring(struct ast_cc_agent *agent)
 	if (!(generic_pvt->sub = stasis_subscribe(device_specific_topic, generic_agent_devstate_cb, agent))) {
 		return -1;
 	}
+	stasis_subscription_accept_message_type(generic_pvt->sub, ast_device_state_message_type());
+	stasis_subscription_accept_message_type(generic_pvt->sub, stasis_subscription_change_type());
+	stasis_subscription_set_filter(generic_pvt->sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 	cc_ref(agent, "Ref agent for subscription");
 	return 0;
 }
@@ -4621,7 +4620,7 @@ static struct ast_cli_entry cc_cli[] = {
 	AST_CLI_DEFINE(handle_cc_kill, "Kill a CC transaction"),
 };
 
-static void cc_shutdown(void)
+static int unload_module(void)
 {
 	ast_devstate_prov_del("ccss");
 	ast_cc_agent_unregister(&generic_agent_callbacks);
@@ -4647,30 +4646,37 @@ static void cc_shutdown(void)
 		ao2_t_ref(generic_monitors, -1, "Unref generic_monitor container in cc_shutdown");
 		generic_monitors = NULL;
 	}
+
+	return 0;
 }
 
-int ast_cc_init(void)
+static int load_module(void)
 {
 	int res;
 
-	if (!(cc_core_instances = ao2_t_container_alloc(CC_CORE_INSTANCES_BUCKETS,
-					cc_core_instance_hash_fn, cc_core_instance_cmp_fn,
-					"Create core instance container"))) {
-		return -1;
+	cc_core_instances = ao2_t_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		CC_CORE_INSTANCES_BUCKETS,
+		cc_core_instance_hash_fn, NULL, cc_core_instance_cmp_fn,
+		"Create core instance container");
+	if (!cc_core_instances) {
+		return AST_MODULE_LOAD_FAILURE;
 	}
-	if (!(generic_monitors = ao2_t_container_alloc(CC_CORE_INSTANCES_BUCKETS,
-			generic_monitor_instance_list_hash_fn, generic_monitor_instance_list_cmp_fn,
-			"Create generic monitor container"))) {
-		return -1;
+
+	generic_monitors = ao2_t_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		CC_CORE_INSTANCES_BUCKETS,
+		generic_monitor_instance_list_hash_fn, NULL, generic_monitor_instance_list_cmp_fn,
+		"Create generic monitor container");
+	if (!generic_monitors) {
+		return AST_MODULE_LOAD_FAILURE;
 	}
 	if (!(cc_core_taskprocessor = ast_taskprocessor_get("CCSS_core", TPS_REF_DEFAULT))) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 	if (!(cc_sched_context = ast_sched_context_create())) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 	if (ast_sched_start_thread(cc_sched_context)) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 	res = ast_register_application2(ccreq_app, ccreq_exec, NULL, NULL, NULL);
 	res |= ast_register_application2(cccancel_app, cccancel_exec, NULL, NULL, NULL);
@@ -4686,7 +4692,12 @@ int ast_cc_init(void)
 	initialize_cc_devstate_map();
 	res |= ast_devstate_prov_add("ccss", ccss_device_state);
 
-	ast_register_cleanup(cc_shutdown);
-
-	return res;
+	return res ? AST_MODULE_LOAD_FAILURE : AST_MODULE_LOAD_SUCCESS;
 }
+
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Call Completion Supplementary Services",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_CORE,
+);

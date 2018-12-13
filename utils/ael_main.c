@@ -11,14 +11,13 @@
 	<support_level>extended</support_level>
  ***/
 
+#define ASTMM_LIBC ASTMM_IGNORE
 #include "asterisk.h"
 
 #include <locale.h>
 #include <ctype.h>
 #include <regex.h>
 #include <limits.h>
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "asterisk/backtrace.h"
 #include "asterisk/channel.h"
@@ -32,10 +31,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 int option_debug = 0;
 int option_verbose = 0;
-#if !defined(LOW_MEMORY)
-void ast_register_file_version(const char *file, const char *version) { }
-void ast_unregister_file_version(const char *file) { }
-#endif
 
 /*** MODULEINFO
   	<depend>res_ael_share</depend>
@@ -103,7 +98,7 @@ static char var_dir[PATH_MAX];
 const char *ast_config_AST_CONFIG_DIR = config_dir;
 const char *ast_config_AST_VAR_DIR = var_dir;
 
-void ast_cli_register_multiple(void);
+void __ast_cli_register_multiple(void);
 int ast_add_extension2(struct ast_context *con,
 					   int replace, const char *extension, int priority, const char *label, const char *callerid,
 						const char *application, void *data, void (*datad)(void *),
@@ -180,7 +175,6 @@ struct ast_custom_function *ast_custom_function_find(const char *name)
 	return 0; /* in "standalone" mode, functions are just not avail */
 }
 
-#if !defined(LOW_MEMORY)
 int ast_add_profile(const char *x, uint64_t scale)
 {
 	if (!no_comp)
@@ -188,7 +182,6 @@ int ast_add_profile(const char *x, uint64_t scale)
 
 	return 0;
 }
-#endif
 
 int ast_loader_register(int (*updater)(void))
 {
@@ -208,7 +201,7 @@ void ast_module_unregister(const struct ast_module_info *x)
 }
 
 
-void ast_cli_register_multiple(void)
+void __ast_cli_register_multiple(void)
 {
 	if(!no_comp)
         	printf("Executed ast_cli_register_multiple();\n");
@@ -606,11 +599,9 @@ unsigned int ast_hashtab_hash_contexts(const void *obj)
 }
 
 #ifdef DEBUG_THREADS
-#if !defined(LOW_MEMORY)
 void ast_mark_lock_acquired(void *lock_addr)
 {
 }
-#ifdef HAVE_BKTR
 void ast_remove_lock_info(void *lock_addr, struct ast_bt *bt)
 {
 }
@@ -620,30 +611,15 @@ void ast_store_lock_info(enum ast_lock_type type, const char *filename,
 {
 }
 
+#ifdef HAVE_BKTR
 int __ast_bt_get_addresses(struct ast_bt *bt)
 {
 	return 0;
 }
 
-char **__ast_bt_get_symbols(void **addresses, size_t num_frames)
+struct ast_vector_string *__ast_bt_get_symbols(void **addresses, size_t num_frames)
 {
-	char **foo = calloc(num_frames, sizeof(char *) + 1);
-	if (foo) {
-		int i;
-		for (i = 0; i < num_frames; i++) {
-			foo[i] = (char *) foo + sizeof(char *) * num_frames;
-		}
-	}
-	return foo;
-}
-#else
-void ast_remove_lock_info(void *lock_addr)
-{
-}
-
-void ast_store_lock_info(enum ast_lock_type type, const char *filename,
-	int line_num, const char *func, const char *lock_name, void *lock_addr)
-{
+	return NULL;
 }
 #endif /* HAVE_BKTR */
 void ast_suspend_lock_info(void *lock_addr)
@@ -652,5 +628,4 @@ void ast_suspend_lock_info(void *lock_addr)
 void ast_restore_lock_info(void *lock_addr)
 {
 }
-#endif /* !defined(LOW_MEMORY) */
 #endif /* DEBUG_THREADS */

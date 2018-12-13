@@ -28,6 +28,7 @@ PACKAGES_DEBIAN="$PACKAGES_DEBIAN libpq-dev unixodbc-dev libneon27-dev libgmime-
 PACKAGES_DEBIAN="$PACKAGES_DEBIAN libvpb-dev libmysqlclient-dev libbluetooth-dev libradcli-dev freetds-dev libosptk-dev libjack-jackd2-dev bash"
 PACKAGES_DEBIAN="$PACKAGES_DEBIAN libsnmp-dev libiksemel-dev libcorosync-common-dev libcpg-dev libcfg-dev libnewt-dev libpopt-dev libical-dev libspandsp-dev"
 PACKAGES_DEBIAN="$PACKAGES_DEBIAN libresample1-dev libc-client2007e-dev binutils-dev libsrtp0-dev libsrtp2-dev libgsm1-dev doxygen graphviz zlib1g-dev libldap2-dev"
+PACKAGES_DEBIAN="$PACKAGES_DEBIAN libcodec2-dev libfftw3-dev libsndfile1-dev libunbound-dev"
 # Asterisk: for the unpackaged below:
 PACKAGES_DEBIAN="$PACKAGES_DEBIAN wget subversion"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -43,6 +44,7 @@ PACKAGES_RH="$PACKAGES_RH postgresql-devel unixODBC-devel neon-devel gmime-devel
 PACKAGES_RH="$PACKAGES_RH mysql-devel bluez-libs-devel radcli-devel freetds-devel jack-audio-connection-kit-devel bash"
 PACKAGES_RH="$PACKAGES_RH net-snmp-devel iksemel-devel corosynclib-devel newt-devel popt-devel libical-devel spandsp-devel"
 PACKAGES_RH="$PACKAGES_RH libresample-devel uw-imap-devel binutils-devel libsrtp-devel gsm-devel doxygen graphviz zlib-devel openldap-devel hoard"
+PACKAGES_RH="$PACKAGES_RH codec2-devel fftw-devel libsndfile-devel unbound-devel"
 # Asterisk: for the unpackaged below:
 PACKAGES_RH="$PACKAGES_RH wget subversion"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -58,6 +60,7 @@ PACKAGES_SUSE="$PACKAGES_SUSE postgresql-devel unixODBC-devel libneon-devel gmim
 PACKAGES_SUSE="$PACKAGES_SUSE libmysqlclient-devel bluez-devel freeradius-client-devel freetds-devel bash"
 PACKAGES_SUSE="$PACKAGES_SUSE net-snmp-devel iksemel-devel libcorosync-devel newt-devel popt-devel libical-devel spandsp-devel"
 PACKAGES_SUSE="$PACKAGES_SUSE imap-devel libsrtp2-devel libgsm-devel doxygen graphviz zlib-devel openldap2-devel"
+PACKAGES_SUSE="$PACKAGES_SUSE codec2-devel fftw3-devel libsndfile-devel unbound-devel"
 # Asterisk: for the unpackaged below:
 PACKAGES_SUSE="$PACKAGES_SUSE wget subversion"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -73,6 +76,7 @@ PACKAGES_ARCH="$PACKAGES_ARCH postgresql-libs unixodbc neon gmime lua uriparser 
 PACKAGES_ARCH="$PACKAGES_ARCH libmariadbclient bluez-libs radcli freetds bash"
 PACKAGES_ARCH="$PACKAGES_ARCH net-snmp libnewt popt libical spandsp"
 PACKAGES_ARCH="$PACKAGES_ARCH c-client binutils libsrtp gsm doxygen graphviz zlib libldap"
+PACKAGES_ARCH="$PACKAGES_ARCH fftw libsndfile unbound"
 # Asterisk: for the unpackaged below:
 PACKAGES_ARCH="$PACKAGES_ARCH wget subversion"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -88,6 +92,7 @@ PACKAGES_GENTOO="$PACKAGES_GENTOO dev-db/postgresql dev-db/unixODBC net-libs/neo
 PACKAGES_GENTOO="$PACKAGES_GENTOO virtual/libmysqlclient net-wireless/bluez net-dialup/radiusclient-ng dev-db/freetds app-shells/bash"
 PACKAGES_GENTOO="$PACKAGES_GENTOO net-analyzer/net-snmp dev-libs/iksemel sys-cluster/corosync dev-libs/newt dev-libs/popt dev-libs/libical media-libs/spandsp"
 PACKAGES_GENTOO="$PACKAGES_GENTOO net-libs/c-client sys-devel/binutils net-libs/libsrtp media-sound/gsm media-libs/libilbc app-doc/doxygen sys-libs/zlib net-nds/openldap"
+PACKAGES_GENTOO="$PACKAGES_GENTOO sci-libs/fftw media-libs/libsndfile net-dns/unbound"
 # Asterisk: for the unpackaged below:
 PACKAGES_GENTOO="$PACKAGES_GENTOO net-misc/wget dev-vcs/subversion"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -103,6 +108,7 @@ PACKAGES_NBSD="$PACKAGES_NBSD postgresql10-client unixodbc neon gmime lua52 urip
 PACKAGES_NBSD="$PACKAGES_NBSD mysql-client radiusclient-ng freetds bash"
 PACKAGES_NBSD="$PACKAGES_NBSD net-snmp iksemel popt libical spandsp"
 PACKAGES_NBSD="$PACKAGES_NBSD imap-uw srtp gsm doxygen graphviz libzip openldap-client"
+PACKAGES_NBSD="$PACKAGES_NBSD codec2 fftw libsndfile unbound"
 # Asterisk: for the unpackaged below:
 PACKAGES_NBSD="$PACKAGES_NBSD wget subversion-base"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -118,6 +124,7 @@ PACKAGES_OBSD="$PACKAGES_OBSD postgresql-client iodbc neon gmime lua%5.2 uripars
 PACKAGES_OBSD="$PACKAGES_OBSD mariadb-client radcli freetds"
 PACKAGES_OBSD="$PACKAGES_OBSD net-snmp iksemel popt libical spandsp"
 PACKAGES_OBSD="$PACKAGES_OBSD c-client libsrtp gsm doxygen graphviz"
+PACKAGES_OBSD="$PACKAGES_OBSD fftw3 libsndfile"
 # Asterisk: for the unpackaged below:
 PACKAGES_OBSD="$PACKAGES_OBSD wget subversion"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -133,6 +140,7 @@ PACKAGES_FBSD="$PACKAGES_FBSD postgresql10-client unixODBC neon gmime26 lua52 ur
 PACKAGES_FBSD="$PACKAGES_FBSD mysql57-client radcli freetds"
 PACKAGES_FBSD="$PACKAGES_FBSD net-snmp iksemel corosync newt popt libical spandsp"
 PACKAGES_FBSD="$PACKAGES_FBSD cclient libbfd libsrtp gsm libilbc doxygen graphviz libzip openldap-client libhoard"
+PACKAGES_FBSD="$PACKAGES_FBSD codec2 fftw3 libsndfile unbound"
 # Asterisk: for the unpackaged below:
 PACKAGES_FBSD="$PACKAGES_FBSD wget subversion"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -148,6 +156,7 @@ PACKAGES_DBSD="$PACKAGES_DBSD postgresql10-client unixODBC neon gmime26 lua52 ur
 PACKAGES_DBSD="$PACKAGES_DBSD mariadb101-client radcli freetds"
 PACKAGES_DBSD="$PACKAGES_DBSD net-snmp iksemel corosync newt popt libical spandsp"
 PACKAGES_DBSD="$PACKAGES_DBSD cclient binutils libsrtp gsm libilbc doxygen graphviz libzip openldap-client libhoard"
+PACKAGES_DBSD="$PACKAGES_DBSD codec2 fftw3 libsndfile unbound"
 # Asterisk: for the unpackaged below:
 PACKAGES_DBSD="$PACKAGES_DBSD wget subversion"
 # Asterisk: for ./configure --with-pjproject-bundled:
@@ -155,7 +164,7 @@ PACKAGES_DBSD="$PACKAGES_DBSD bzip2 patch python"
 
 KVERS=`uname -r`
 
-JANSSON_VER=2.11
+JANSSON_VER=2.12
 
 case "$1" in
 test)

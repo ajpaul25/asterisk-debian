@@ -41,8 +41,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/module.h"
 #include "asterisk/config.h"
 #include "asterisk/cli.h"
@@ -284,7 +282,9 @@ static int unload_module(void)
  */
 static int load_module(void)
 {
-	if (!(cli_aliases = ao2_container_alloc(MAX_ALIAS_BUCKETS, alias_hash_cb, alias_cmp_cb))) {
+	cli_aliases = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		MAX_ALIAS_BUCKETS, alias_hash_cb, NULL, alias_cmp_cb);
+	if (!cli_aliases) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
@@ -296,8 +296,8 @@ static int load_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "CLI Aliases",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload_module,
-		);
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload_module,
+);

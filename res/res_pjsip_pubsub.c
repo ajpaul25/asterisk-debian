@@ -1160,28 +1160,6 @@ static int build_resource_tree(struct ast_sip_endpoint *endpoint, const struct a
 	}
 }
 
-static int datastore_hash(const void *obj, int flags)
-{
-	const struct ast_datastore *datastore = obj;
-	const char *uid = flags & OBJ_KEY ? obj : datastore->uid;
-
-	ast_assert(uid != NULL);
-
-	return ast_str_hash(uid);
-}
-
-static int datastore_cmp(void *obj, void *arg, int flags)
-{
-	const struct ast_datastore *datastore1 = obj;
-	const struct ast_datastore *datastore2 = arg;
-	const char *uid2 = flags & OBJ_KEY ? arg : datastore2->uid;
-
-	ast_assert(datastore1->uid != NULL);
-	ast_assert(uid2 != NULL);
-
-	return strcmp(datastore1->uid, uid2) ? 0 : CMP_MATCH | CMP_STOP;
-}
-
 static void add_subscription(struct sip_subscription_tree *obj)
 {
 	AST_RWLIST_WRLOCK(&subscriptions);
@@ -1251,7 +1229,7 @@ static struct ast_sip_subscription *allocate_subscription(const struct ast_sip_s
 	}
 	strcpy(sub->resource, resource); /* Safe */
 
-	sub->datastores = ao2_container_alloc(DATASTORE_BUCKETS, datastore_hash, datastore_cmp);
+	sub->datastores = ast_datastores_alloc();
 	if (!sub->datastores) {
 		destroy_subscription(sub);
 		return NULL;
@@ -1430,7 +1408,7 @@ static struct sip_subscription_tree *allocate_subscription_tree(struct ast_sip_e
 		ast_taskprocessor_build_name(tps_name, sizeof(tps_name), "pjsip/pubsub/%s",
 			ast_sorcery_object_get_id(endpoint));
 
-		sub_tree->serializer = ast_sip_create_serializer_named(tps_name);
+		sub_tree->serializer = ast_sip_create_serializer(tps_name);
 	}
 	if (!sub_tree->serializer) {
 		ao2_ref(sub_tree, -1);
@@ -2619,92 +2597,49 @@ static int sip_subscription_accept(struct sip_subscription_tree *sub_tree, pjsip
 	return pjsip_evsub_accept(sub_tree->evsub, rdata, response, &res_hdr) == PJ_SUCCESS ? 0 : -1;
 }
 
-static void subscription_datastore_destroy(void *obj)
-{
-	struct ast_datastore *datastore = obj;
-
-	/* Using the destroy function (if present) destroy the data */
-	if (datastore->info->destroy != NULL && datastore->data != NULL) {
-		datastore->info->destroy(datastore->data);
-		datastore->data = NULL;
-	}
-
-	ast_free((void *) datastore->uid);
-	datastore->uid = NULL;
-}
-
 struct ast_datastore *ast_sip_subscription_alloc_datastore(const struct ast_datastore_info *info, const char *uid)
 {
-	RAII_VAR(struct ast_datastore *, datastore, NULL, ao2_cleanup);
-	char uuid_buf[AST_UUID_STR_LEN];
-	const char *uid_ptr = uid;
-
-	if (!info) {
-		return NULL;
-	}
-
-	datastore = ao2_alloc(sizeof(*datastore), subscription_datastore_destroy);
-	if (!datastore) {
-		return NULL;
-	}
-
-	datastore->info = info;
-	if (ast_strlen_zero(uid)) {
-		/* They didn't provide an ID so we'll provide one ourself */
-		uid_ptr = ast_uuid_generate_str(uuid_buf, sizeof(uuid_buf));
-	}
-
-	datastore->uid = ast_strdup(uid_ptr);
-	if (!datastore->uid) {
-		return NULL;
-	}
-
-	ao2_ref(datastore, +1);
-	return datastore;
+	return ast_datastores_alloc_datastore(info, uid);
 }
 
 int ast_sip_subscription_add_datastore(struct ast_sip_subscription *subscription, struct ast_datastore *datastore)
 {
-	ast_assert(datastore != NULL);
-	ast_assert(datastore->info != NULL);
-	ast_assert(!ast_strlen_zero(datastore->uid));
-
-	if (!ao2_link(subscription->datastores, datastore)) {
-		return -1;
-	}
-	return 0;
+	return ast_datastores_add(subscription->datastores, datastore);
 }
 
 struct ast_datastore *ast_sip_subscription_get_datastore(struct ast_sip_subscription *subscription, const char *name)
 {
-	return ao2_find(subscription->datastores, name, OBJ_KEY);
+	return ast_datastores_find(subscription->datastores, name);
 }
 
 void ast_sip_subscription_remove_datastore(struct ast_sip_subscription *subscription, const char *name)
 {
-	ao2_find(subscription->datastores, name, OBJ_SEARCH_KEY | OBJ_UNLINK | OBJ_NODATA);
+	ast_datastores_remove(subscription->datastores, name);
+}
+
+struct ao2_container *ast_sip_subscription_get_datastores(const struct ast_sip_subscription *subscription)
+{
+	return subscription->datastores;
 }
 
 int ast_sip_publication_add_datastore(struct ast_sip_publication *publication, struct ast_datastore *datastore)
 {
-	ast_assert(datastore != NULL);
-	ast_assert(datastore->info != NULL);
-	ast_assert(!ast_strlen_zero(datastore->uid));
-
-	if (!ao2_link(publication->datastores, datastore)) {
-		return -1;
-	}
-	return 0;
+	return ast_datastores_add(publication->datastores, datastore);
 }
 
 struct ast_datastore *ast_sip_publication_get_datastore(struct ast_sip_publication *publication, const char *name)
 {
-	return ao2_find(publication->datastores, name, OBJ_KEY);
+	return ast_datastores_find(publication->datastores, name);
 }
 
 void ast_sip_publication_remove_datastore(struct ast_sip_publication *publication, const char *name)
 {
-	ao2_callback(publication->datastores, OBJ_KEY | OBJ_UNLINK | OBJ_NODATA, NULL, (void *) name);
+	ast_datastores_remove(publication->datastores, name);
+}
+
+struct ao2_container *ast_sip_publication_get_datastores(const struct ast_sip_publication *publication)
+{
+	return publication->datastores;
 }
 
 AST_RWLIST_HEAD_STATIC(publish_handlers, ast_sip_publish_handler);
@@ -2741,16 +2676,15 @@ int ast_sip_register_publish_handler(struct ast_sip_publish_handler *handler)
 		return -1;
 	}
 
-	if (!(handler->publications = ao2_container_alloc(PUBLICATIONS_BUCKETS,
-		publication_hash_fn, publication_cmp_fn))) {
+	handler->publications = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		PUBLICATIONS_BUCKETS, publication_hash_fn, NULL, publication_cmp_fn);
+	if (!handler->publications) {
 		ast_log(LOG_ERROR, "Could not allocate publications container for event '%s'\n",
 			handler->event_name);
 		return -1;
 	}
 
 	publish_add_handler(handler);
-
-	ast_module_ref(ast_module_info->self);
 
 	return 0;
 }
@@ -2764,7 +2698,6 @@ void ast_sip_unregister_publish_handler(struct ast_sip_publish_handler *handler)
 		if (handler == iter) {
 			AST_RWLIST_REMOVE_CURRENT(next);
 			ao2_cleanup(handler->publications);
-			ast_module_unref(ast_module_info->self);
 			break;
 		}
 	}
@@ -2778,7 +2711,6 @@ static void sub_add_handler(struct ast_sip_subscription_handler *handler)
 {
 	AST_RWLIST_WRLOCK(&subscription_handlers);
 	AST_RWLIST_INSERT_TAIL(&subscription_handlers, handler, next);
-	ast_module_ref(ast_module_info->self);
 	AST_RWLIST_UNLOCK(&subscription_handlers);
 }
 
@@ -2837,7 +2769,6 @@ void ast_sip_unregister_subscription_handler(struct ast_sip_subscription_handler
 	AST_RWLIST_TRAVERSE_SAFE_BEGIN(&subscription_handlers, iter, next) {
 		if (handler == iter) {
 			AST_RWLIST_REMOVE_CURRENT(next);
-			ast_module_unref(ast_module_info->self);
 			break;
 		}
 	}
@@ -3181,7 +3112,7 @@ static struct ast_sip_publication *sip_create_publication(struct ast_sip_endpoin
 
 	ast_module_ref(ast_module_info->self);
 
-	if (!(publication->datastores = ao2_container_alloc(DATASTORE_BUCKETS, datastore_hash, datastore_cmp))) {
+	if (!(publication->datastores = ast_datastores_alloc())) {
 		ao2_ref(publication, -1);
 		return NULL;
 	}
@@ -3450,6 +3381,11 @@ const char *ast_sip_publication_get_resource(const struct ast_sip_publication *p
 const char *ast_sip_publication_get_event_configuration(const struct ast_sip_publication *pub)
 {
 	return pub->event_configuration_name;
+}
+
+int ast_sip_pubsub_is_body_generator_registered(const char *type, const char *subtype)
+{
+	return !!find_body_generator_type_subtype(type, subtype);
 }
 
 int ast_sip_pubsub_register_body_generator(struct ast_sip_pubsub_body_generator *generator)
@@ -5544,8 +5480,6 @@ static int load_module(void)
 	static const pj_str_t str_PUBLISH = { "PUBLISH", 7 };
 	struct ast_sorcery *sorcery;
 
-	CHECK_PJSIP_MODULE_LOADED();
-
 	sorcery = ast_sip_get_sorcery();
 
 	if (!(sched = ast_sched_context_create())) {
@@ -5634,7 +5568,11 @@ static int load_module(void)
 	if (ast_test_flag(&ast_options, AST_OPT_FLAG_FULLY_BOOTED)) {
 		ast_sip_push_task(NULL, subscription_persistence_load, NULL);
 	} else {
-		stasis_subscribe_pool(ast_manager_get_topic(), subscription_persistence_event_cb, NULL);
+		struct stasis_subscription *sub;
+
+		sub = stasis_subscribe_pool(ast_manager_get_topic(), subscription_persistence_event_cb, NULL);
+		stasis_subscription_accept_message_type(sub, ast_manager_get_generic_type());
+		stasis_subscription_set_filter(sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 	}
 
 	ast_manager_register_xml(AMI_SHOW_SUBSCRIPTIONS_INBOUND, EVENT_FLAG_SYSTEM,
@@ -5684,8 +5622,9 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "PJSIP event resource",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+	.requires = "res_pjsip",
 );

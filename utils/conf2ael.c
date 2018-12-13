@@ -24,11 +24,11 @@
 
 /*** MODULEINFO
 	<depend>res_ael_share</depend>
-	<support_level>extended</support_level>
+	<support_level>deprecated</support_level>
  ***/
 
+#define ASTMM_LIBC ASTMM_IGNORE
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "asterisk/paths.h"	/* CONFIG_DIR */
 #include <locale.h>
@@ -79,18 +79,7 @@ char ast_config_AST_SYSTEM_NAME[20] = ""; */
 int option_debug = 0;
 int option_verbose = 0;
 
-void ast_register_file_version(const char *file, const char *version);
-void ast_register_file_version(const char *file, const char *version)
-{
-}
-
-void ast_unregister_file_version(const char *file);
-void ast_unregister_file_version(const char *file)
-{
-}
-#if !defined(LOW_MEMORY)
 int ast_add_profile(const char *x, uint64_t scale) { return 0;}
-#endif
 /* Our own version of ast_log, since the expr parser uses it. -- stolen from utils/check_expr.c */
 void ast_log(int level, const char *file, int line, const char *function, const char *fmt, ...) __attribute__((format(printf,5,6)));
 
@@ -573,7 +562,7 @@ void pbx_substitute_variables_helper(struct ast_channel *c,const char *cp1,char 
 int ast_add_extension2(struct ast_context *con,
 					   int replace, const char *extension, int priority, const char *label, const char *callerid,
 					   const char *application, void *data, void (*datad)(void *),
-					   const char *registrar)
+					   const char *registrar, const char *registrar_file, int registrar_line)
 {
 	return localized_add_extension2(con, replace, extension, priority, label, callerid, application, data, datad, registrar);
 }
@@ -605,9 +594,9 @@ struct ast_context *ast_context_find_or_create(struct ast_context **extcontexts,
 	return localized_context_find_or_create(extcontexts, exttable, name, registrar);
 }
 
-void ast_cli_register_multiple(void);
+void __ast_cli_register_multiple(void);
 
-void ast_cli_register_multiple(void)
+void __ast_cli_register_multiple(void)
 {
 }
 
@@ -664,20 +653,8 @@ struct ast_exten *ast_walk_context_extensions(struct ast_context *con, struct as
 	return NULL;
 }
 
-struct ast_include *ast_walk_context_includes(struct ast_context *con, struct ast_include *inc);
-struct ast_include *ast_walk_context_includes(struct ast_context *con, struct ast_include *inc)
-{
-	return NULL;
-}
-
-struct ast_ignorepat *ast_walk_context_ignorepats(struct ast_context *con, struct ast_ignorepat *ip);
-struct ast_ignorepat *ast_walk_context_ignorepats(struct ast_context *con, struct ast_ignorepat *ip)
-{
-	return NULL;
-}
-
-struct ast_sw *ast_walk_context_switches(struct ast_context *con, struct ast_sw *sw);
-struct ast_sw *ast_walk_context_switches(struct ast_context *con, struct ast_sw *sw)
+const struct ast_include *ast_walk_context_includes(const struct ast_context *con, const struct ast_include *inc);
+const struct ast_include *ast_walk_context_includes(const struct ast_context *con, const struct ast_include *inc)
 {
 	return NULL;
 }
@@ -720,11 +697,9 @@ unsigned int ast_hashtab_hash_contexts(const void *obj)
 }
 
 #ifdef DEBUG_THREADS
-#if !defined(LOW_MEMORY)
 void ast_mark_lock_acquired(void *lock_addr)
 {
 }
-#ifdef HAVE_BKTR
 void ast_remove_lock_info(void *lock_addr, struct ast_bt *bt)
 {
 }
@@ -734,31 +709,15 @@ void ast_store_lock_info(enum ast_lock_type type, const char *filename,
 {
 }
 
+#ifdef HAVE_BKTR
 int __ast_bt_get_addresses(struct ast_bt *bt)
 {
 	return 0;
 }
 
-char **__ast_bt_get_symbols(void **addresses, size_t num_frames)
+struct ast_vector_string *__ast_bt_get_symbols(void **addresses, size_t num_frames)
 {
-	char **foo = calloc(num_frames, sizeof(char *) + 1);
-	if (foo) {
-		int i;
-		for (i = 0; i < num_frames; i++) {
-			foo[i] = (char *) foo + sizeof(char *) * num_frames;
-		}
-	}
-	return foo;
-}
-
-#else
-void ast_remove_lock_info(void *lock_addr)
-{
-}
-
-void ast_store_lock_info(enum ast_lock_type type, const char *filename,
-	int line_num, const char *func, const char *lock_name, void *lock_addr)
-{
+	return NULL;
 }
 #endif /* HAVE_BKTR */
 void ast_suspend_lock_info(void *lock_addr)
@@ -767,5 +726,4 @@ void ast_suspend_lock_info(void *lock_addr)
 void ast_restore_lock_info(void *lock_addr)
 {
 }
-#endif /* !defined(LOW_MEMORY) */
 #endif /* DEBUG_THREADS */

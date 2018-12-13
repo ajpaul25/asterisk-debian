@@ -9,7 +9,182 @@
 ==============================================================================
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.22.0 to Asterisk 13.23.0 ----------
+--- Functionality changes from Asterisk 16.0.0 to Asterisk 16.1.0 ------------
+------------------------------------------------------------------------------
+
+pbx_config
+------------------
+ * pbx_config will now find and process multiple 'globals' sections from
+   extensions.conf.  Variables are processed in the order they are found
+   and duplicate variables overwrite the previous value.
+
+chan_pjsip
+------------------
+ * New dialplan function PJSIP_PARSE_URI added to parse an URI and return
+   a specified part of the URI.
+
+Core
+------------------
+ * ast_bt_get_symbols() now returns a vector of strings instead of an
+   array of strings.  This must be freed with ast_bt_free_symbols.
+
+res_pjsip
+------------------
+ * New options 'trust_connected_line' and 'send_connected_line' have been
+   added to the endpoint. The option 'trust_connected_line' is to control
+   if connected line updates are accepted from this endpoint.
+   The option 'send_connected_line' is to control if connected line updates
+   can be sent to this endpoint.
+   The default value is 'yes' for both options.
+
+res_rtp_asterisk
+------------------
+ * The existing strictrtp option in rtp.conf has a new choice availabe, called
+   'seqno', which behaves the same way as setting strictrtp to 'yes', but will
+   ignore the time interval during learning so that bursts of packets can still
+   trigger learning our source.
+
+------------------------------------------------------------------------------
+--- Functionality changes from Asterisk 15 to Asterisk 16 --------------------
+------------------------------------------------------------------------------
+
+app_fax
+------------------
+ * The app_fax module is now deprecated, users should migrate to the
+   replacement module res_fax.
+
+app_originate
+------------------
+ * An 'a' option has been added to the Originate dialplan application which
+   will execute the originate in an asynchronous fashion. If set then the
+   application will return immediately without waiting for the originated
+   channel to answer.
+
+Build System
+------------------
+ * MALLOC_DEBUG no longer has an effect on Asterisk's ABI.  Asterisk built
+   with MALLOC_DEBUG can now successfully load binary modules built without
+   MALLOC_DEBUG and vice versa.  Third-party pre-compiled modules no longer
+   need to have a special build with it enabled.
+
+ * Asterisk now depends on libjansson >= 2.11.  If this version is not
+   available on your distro you can use `./configure --with-jansson-bundled`.
+
+app_macro
+------------------
+ * The app_macro module is now deprecated and by default it is no longer
+   built.  Users should migrate to app_stack (Gosub).  A warning is logged
+   the first time any Macro is used.
+
+app_setcallerid
+------------------
+ * The app_setcallerid module has been removed. The CALLERID dialplan function
+   should be used instead.
+
+chan_sip
+------------------
+ * New function SIP_HEADERS() enumerates all headers in the incoming INVITE.
+
+ * The variable GET_TRANSFERRER_DATA set in the peer channel causes matching
+   headers be retrieved from the REFER message and made accessible to the
+   dialplan in the hash TRANSFER_DATA.
+
+chan_dahdi
+------------------
+ * Timeouts for reading digits from analog phones are now configurable in
+   chan_dahdi.conf: firstdigit_timeout, interdigit_timeout, matchdigit_timeout.
+
+AMI
+------------------
+ * The ContactStatus and Status fields for the manager events ContactStatus
+   and ContactStatusDetail are now set to "NonQualified" when a contact exists
+   but has not been qualified.
+
+ * The "Newexten" event is now part of the "dialplan" class. The documentation
+   for Asterisk 15 already specified this, but the implementation was actually
+   using the "call" class instead.
+
+ARI
+------------------
+ * The ContactInfo event's contact_status field is now set to "NonQualified"
+   when a contact exists but has not been qualified.
+
+app_queue
+------------------
+ * Added the ability to set the wrapuptime in the configuration of member.
+   When set the wrapuptime on the member is used instead of the wrapuptime
+   defined for the queue itself.
+
+ * Added predial handler support for caller and callee channels with the
+   B and b options respectively.  This is similar to the predial support
+   in app_dial.
+
+res_config_sqlite
+------------------
+ * The res_config_sqlite module is now deprecated, users should migrate to the
+   replacement module res_config_sqlite3.
+
+res_monitor
+------------------
+ * The res_monitor module is now deprecated, users should migrate to the
+   replacement module app_mixmonitor.
+
+res_pjsip
+------------------
+ * A new AMI action, PJSIPShowAors, has been added which displays information
+   about all configured PJSIP AORs.
+
+ * A new AMI action, PJSIPShowAuths, has been added which displays information
+   about all configured PJSIP Auths.
+
+ * A new AMI action, PJSIPShowContacts, has been added which displays information
+   about all configured PJSIP Contacts.
+
+res_pjsip_registrar_expire
+------------------
+ * The res_pjsip_registrar_expire module has been removed.  The functionality has
+   been moved into res_pjsip_registrar.
+
+func_audiohookinherit
+------------------
+ * The func_audiohookinherit module has been removed. Due to architectural changes
+   in Asterisk 12, audiohook inheritance is performed automatically and this
+   function now lacks function.
+
+cdr_syslog
+------------------
+ * The cdr_syslog module is now deprecated and by default it is no longer
+   built.
+
+cdr_sqlite
+------------------
+ * The cdr_sqlite module has been removed. Users should move to using the
+   cdr_sqlite3_custom module instead.
+
+format_jpeg
+------------------
+ * The format_jpeg module has been removed.
+
+pbx_dundi
+------------------
+ * DUNDi now supports IPv6
+
+Core:
+------------------
+ * libedit is no longer available as an embedded library and must be provided
+   by the system.
+ * The STATIC_BUILD functionality has been removed as it has not been maintained
+   and has not worked in quite some time.
+ * The module loader now enforces inter-module dependencies.  This ensures that
+   a module is not started before another it depends on, even if preload is used.
+   If a dependency is not available or fails to startup this will block any
+   dependants from startup.
+ * Parts of the Asterisk core which can load configuration from realtime are now
+   built-in modules.  It is no longer necessary to preload realtime drivers as
+   they are always initialized before the built-in modules.
+
+------------------------------------------------------------------------------
+--- Functionality changes from Asterisk 15.5.0 to Asterisk 15.6.0 ------------
 ------------------------------------------------------------------------------
 
 res_pjsip
@@ -27,7 +202,7 @@ res_pjsip_endpoint_identifier_ip
    match_header = SIPHeader: /regex/
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.21.0 to Asterisk 13.22.0 ----------
+--- Functionality changes from Asterisk 15.4.0 to Asterisk 15.5.0 ------------
 ------------------------------------------------------------------------------
 
 Core
@@ -41,16 +216,22 @@ Core
 
 app_sendtext
 ------------------
-    Support Enhanced Messaging.  SendText now accepts new channel variables
-    that can be used to override the To and From display names and set the
-    Content-Type of a message.  Since you can now set Content-Type, other
-    text/* content types are now valid.
+ * Support Enhanced Messaging.  SendText now accepts new channel variables
+   that can be used to override the To and From display names and set the
+   Content-Type of a message.  Since you can now set Content-Type, other
+   text/* content types are now valid.
 
 app_confbridge
 ------------------
-  * ConfbridgeList now shows talking status. This utilizes the same voice
-    detection as the ConfbridgeTalking event, so bridges must be configured
-    with "talk_detection_events=yes" for this flag to have meaning.
+ * ConfbridgeList now shows talking status. This utilizes the same voice
+   detection as the ConfbridgeTalking event, so bridges must be configured
+   with "talk_detection_events=yes" for this flag to have meaning.
+
+ * ConfBridge can now send events to participants via in-dialog MESSAGEs.
+   All current Confbridge events are supported, such as ConfbridgeJoin,
+   ConfbridgeLeave, etc.  In addition to those events, a new event
+   ConfbridgeWelcome has been added that will send a list of all
+   current participants to a new participant.
 
 res_pjsip
 ------------------
@@ -77,14 +258,8 @@ res_pjsip
     functionality.
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.20.0 to Asterisk 13.21.0 ----------
+--- Functionality changes from Asterisk 15.3.0 to Asterisk 15.4.0 ------------
 ------------------------------------------------------------------------------
-
-Build System
-------------------
- * RADIUS backends for CEL and CDR can now also be built using the radcli
-   client library, in addition to the existing support for building them
-   using either freeradius or radiusclient-ng.
 
 Core
 ------------------
@@ -106,7 +281,7 @@ res_pjsip_notify
    channel.
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.19.0 to Asterisk 13.20.0 ----------
+--- Functionality changes from Asterisk 15.2.0 to Asterisk 15.3.0 ------------
 ------------------------------------------------------------------------------
 
 Core
@@ -138,7 +313,7 @@ res_pjsip
    identifier method split into the "ip" and "header" endpoint identifier
    methods.
 
- * The pjsip_transport_event feature introduced in 13.18.0 has been refactored.
+ * The pjsip_transport_event feature introduced in 15.1.0 has been refactored.
    Any external modules that may have used that feature (highly unlikey) will
    need to be changed as the API has been altered slightly.
 
@@ -155,12 +330,6 @@ res_pjsip_endpoint_identifier_ip
    for endpoint alice and the other matches by SIP header for endpoint bob then
    you can now predict which endpoint is matched when a request comes in that
    matches both.
-
-res_pjsip_registrar_expire
-------------------
- * The res_pjsip_registrar_expire module is now deprecated and will be removed
-   from Asterisk 16.  The existing functionality was moved into
-   res_pjsip_registrar.
 
 res_pjsip_pubsub
 ------------------
@@ -181,7 +350,7 @@ res_pjsip_transport_management
    be available if res_pjsip is loaded.
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.18.0 to Asterisk 13.19.0 ----------
+--- Functionality changes from Asterisk 15.1.0 to Asterisk 15.2.0 ------------
 ------------------------------------------------------------------------------
 
 Core
@@ -198,6 +367,14 @@ chan_sip
  * Calls to invalid extensions are now reported as an ACL failure security event
    "no_extension_match".
 
+res_rtp_asterisk
+------------------
+ * The X.509 certificate used for DTLS negotation can now be automatically
+   generated. This is supported by res_pjsip by specifying
+   "dtls_auto_generate_cert = yes" on a PJSIP endpoint. For chan_sip, you
+   would set "dtlsautogeneratecert = yes" either in the [general] section of
+   sip.conf or on a specific peer.
+
 res_pjsip
 ------------------
  * The "identify_by" on endpoints can now be set to "ip" to restrict an endpoint
@@ -205,20 +382,49 @@ res_pjsip
    default has been changed to "username,ip".
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.17.0 to Asterisk 13.18.0 ----------
+--- Functionality changes from Asterisk 15.0.0 to Asterisk 15.1.0 ------------
 ------------------------------------------------------------------------------
 
-Core
+res_pjsip
 ------------------
- * VP9 is now a supported passthrough video codec and it can be used by
-   specifying "vp9" in the allow line.
+ * The "remove_existing" option now allows a registration to succeed by
+   displacing any existing contacts that now exceed the "max_contacts" count.
+   Any removed contacts are the next to expire.  The behaviour change is
+   beneficial when "rewrite_contact" is enabled and "max_contacts" is greater
+   than one.  The removed contact is likely the old contact created by
+   "rewrite_contact" that the device is refreshing.
+
+AMI
+------------------
+ * Added a new CancelAtxfer action that cancels an attended transfer.
+
+------------------------------------------------------------------------------
+--- Functionality changes from Asterisk 14 to Asterisk 15 --------------------
+------------------------------------------------------------------------------
+
+app_queue
+------------------
+ * PAUSEALL/UNPAUSEALL now sets the pause reason in the queue_log if it has
+   been defined.
+
+ * A new option, "announce-position-only-up," has been added that, when set to
+   yes, causes position announcements to only be played when the caller's
+   queue position has improved since the last time that we annouced their
+   position. This default is no.
 
 Build System
 ------------------
+ * '--with-pjproject-bundled' is now the default when running ./configure
+   It can be disabled with '--without-pjproject-bundled'.
+
  * A '--with-download-cache' option is now available which is equivalent to
    setting '--with-sounds-cache' and '--with-externals-cache' to the same
    value.  The download cache can also be set via the AST_DOWNLOAD_CACHE
    environment variable.
+
+------------------------------------------------------------------------------
+--- Functionality changes from Asterisk 14.6.0 to Asterisk 14.7.0 ------------
+------------------------------------------------------------------------------
 
 res_pjsip
 ------------------
@@ -229,13 +435,6 @@ res_pjsip
  * A new endpoint parameter "incoming_mwi_mailbox" allows Asterisk to receive
    unsolicited MWI NOTIFY requests and make them available to other modules via
    the stasis message bus.
-
- * The "remove_existing" option now allows a registration to succeed by
-   displacing any existing contacts that now exceed the "max_contacts" count.
-   Any removed contacts are the next to expire.  The behaviour change is
-   beneficial when "rewrite_contact" is enabled and "max_contacts" is greater
-   than one.  The removed contact is likely the old contact created by
-   "rewrite_contact" that the device is refreshing.
 
 res_musiconhold
 ------------------
@@ -253,8 +452,6 @@ res_musiconhold
    which sends signals to the application and its descendants directly, or
    "process" which sends signals only to the application itself.
 
-res_pjsip
-------------------
  * New dialplan function PJSIP_DTMF_MODE added to get or change the DTMF mode
    of a channel on a per-call basis.
 
@@ -264,16 +461,8 @@ res_xmpp
    instructions in xmpp.conf.sample to retrieve and configure the necessary
    tokens.
 
-app_queue
-------------------
- * Add priority to callers in AMI QueueStatus response.
-
-AMI
-------------------
- * Added a new CancelAtxfer action that cancels an attended transfer.
-
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.16.0 to Asterisk 13.17.0 ----------
+--- Functionality changes from Asterisk 14.5.0 to Asterisk 14.6.0 ------------
 ------------------------------------------------------------------------------
 
 app_voicemail
@@ -327,7 +516,7 @@ Build System
    options to match those supplied for the asterisk configure.
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.15.0 to Asterisk 13.16.0 ----------
+--- Functionality changes from Asterisk 14.4.0 to Asterisk 14.5.0 ------------
 ------------------------------------------------------------------------------
 
 res_rtp_asterisk
@@ -367,7 +556,89 @@ res_hep_rtcp
    SIP Call-ID instead of the Asterisk channel name.
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.14.0 to Asterisk 13.15.0 ----------
+--- Functionality changes from Asterisk 14.3.0 to Asterisk 14.4.0 ------------
+------------------------------------------------------------------------------
+
+Build System
+------------------
+ * LOW_MEMORY no longer has an effect on Asterisk ABI.  Symbols that were
+   previously suppressed by LOW_MEMORY are now replaced by stub functions.
+   Asterisk built with LOW_MEMORY can now successfully load binary modules
+   built without LOW_MEMORY and vice versa.
+
+ * RADIUS backends for CEL and CDR can now also be built using the radcli
+   client library, in addition to the existing support for building them
+   using either freeradius or radiusclient-ng.
+
+Core
+------------------
+ * ASTERISK_REGISTER_FILE was no longer useful and has been removed.  Sources
+   which use mtx_prof must now manually declare and initialize the variable.
+
+chan_sip
+------------------
+ * If an offer is received with optional SRTP (a media stream with RTP/AVP but
+   which contains a crypto line) chan_sip will now accept it and enable SRTP.
+   If you would like to do optional SRTP on outbound you will need to create
+   a dialplan that dials with it enabled initially and if it fails fall back to
+   without.
+
+res_pjsip
+------------------
+ * Added endpoint configuration parameter "preferred_codec_only".
+   This allow asterisk response to a SIP invite with the single most
+   preferred codec rather than advertising all joint codec capabilities.
+   This limits the other side's codec choice to exactly what we prefer.
+
+cdr_radius
+------------------
+ * To fix a memory leak the syslog channel is now empty if it has not been set
+   and used by a syslog channel in the logger.
+
+cel_radius
+------------------
+ * To fix a memory leak the syslog channel is now empty if it has not been set
+   and used by a syslog channel in the logger.
+
+RTP
+------------------
+ * New setting "rtp_pt_dynamic = 35" in asterisk.conf:
+   Normally the Dynamic RTP Payload Type numbers are 96-127, which allow just 32
+   formats. To avoid the message "No Dynamic RTP mapping available", the range
+   was changed to 35-63,96-127. This is allowed by RFC 3551 section 3. However,
+   when you use more than 32 formats and calls are not accepted by a remote
+   implementation, please report this and go back to rtp_pt_dynamic = 96.
+
+ * A new setting, "rtp_use_dynamic", has been added in asterisk.conf". When set
+   to "yes" RTP dynamic payload types are assigned dynamically per RTP instance.
+   When set to "no" RTP dynamic payload types are globally initialized to pre-
+   designated numbers and function similar to static payload types.
+
+app_originate
+------------------
+ * Added support to gosub predial routines on both original channel and on the
+   created channel using options parameter (like app_dial) B() and b().  This
+   allows for adding variables to newly created channel or, e.g. setting callerid.
+
+CLI Commands
+------------------
+ * 'dialplan show' output will now show [config_file:line_number] instead of
+   [registrar] when that information is available. Currently only extensions
+   registered by pbx_config when loading/reloading will use this format.
+
+app_queue
+------------------
+ * Add 'QueueUpdate' application which can be used to track outbound calls
+   using app_queue.
+
+pbx_spool
+------------------
+ * Asterisk will now set the AST_OUTGOING_ATTEMPT channel variable so that
+   attempt-specific behavior is possible. This is a 1-based number that
+   simply increases by 1 for each attempt.
+
+------------------------------------------------------------------------------
+--- Functionality changes from Asterisk 14.3.0 to Asterisk 14.4.0 ------------
 ------------------------------------------------------------------------------
 
 AMI
@@ -456,7 +727,7 @@ res_rtp_asterisk
    a PJSIP endpoint in pjsip.conf to enable the feature.
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.13.0 to Asterisk 13.14.0 ----------
+--- Functionality changes from Asterisk 14.2.0 to Asterisk 14.3.0 ------------
 ------------------------------------------------------------------------------
 
 res_pjproject
@@ -506,7 +777,7 @@ ARI
  * 'ari set debug' now displays requests and responses as well as events.
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.12.0 to Asterisk 13.13.0 ----------
+--- Functionality changes from Asterisk 14.1.0 to Asterisk 14.2.0 ------------
 ------------------------------------------------------------------------------
 
 AMI
@@ -540,6 +811,12 @@ ARI
    Applications subscribed to a bridge will receive this event when the source
    of video changes in a mixing bridge.
 
+ * The ARI major version has been bumped. There are not any known breaking changes
+   in ARI. The major version has been bumped because otherwise we can end up with
+   overlapping version numbers between different Asterisk versions. Now each major
+   version of Asterisk will bring with it a change in the major version of ARI.
+   The ARI version in Asterisk 14 is now 2.0.0.
+
 res_pjsip
 ------------------
  * Automatic dual stack support is now implemented. Depending on DNS resolution
@@ -567,29 +844,20 @@ CLI Commands
       Enable/disable debugging of an ARI application. When debugged, verbose
       information will be sent to the Asterisk CLI.
 
-RTP
-------------------
- * New setting "rtp_pt_dynamic = 96" in asterisk.conf:
-   Normally the Dynamic RTP Payload Type numbers are 96-127, which allow 32
-   formats. When you use more and receive the message "No Dynamic RTP mapping
-   available", extend the dynamic range by going for rtp_pt_dynamic = 35 (or 0)
-   instead of 96. This allows 29 (or 64) additional formats. On default this is
-   disabled and the range is 96-127 because any number below might be rejected
-   by a remote implementation; although no such broken implementation is known.
 
 Queue
 ------------------
  * A new dialplan variable, ABANDONED, is set when the call is not answered
    by an agent.
 
-Core
+res_ari
 ------------------
- * The TLS core in Asterisk now supports X.509 certificate subject alternative
-   names. This way one X.509 certificate can be used for hosts that can be
-   reached under multiple DNS names or for multiple hosts.
+ * The configuration file ari.conf now supports a channelvars option, which
+   specifies a list of channel variables to include in each channel-oriented
+   ARI event.
 
 ------------------------------------------------------------------------------
---- Functionality changes from Asterisk 13.11.0 to Asterisk 13.12.0 ----------
+--- Functionality changes from Asterisk 14.0.0 to Asterisk 14.1.0 ------------
 ------------------------------------------------------------------------------
 
 Build System
@@ -662,12 +930,6 @@ app_confbridge
     instance, allows a channel to immediately exit the ConfBridge without having
     to wait for a leave announcement to play.
 
-Core
-------------------
-  * If Asterisk is built with systemd support, and run under systemd, it will
-    notify systemd of its state using sd_notify. Use 'Type=notify' in
-    asterisk.service.
-
 app_dial
 ------------------
  * Added the "Q" option which sets the Q.850/Q.931 cause on unanswered channels
@@ -682,6 +944,376 @@ res_ari
    setting in asterisk.conf.
 
 ------------------------------------------------------------------------------
+--- Functionality changes from Asterisk 13 to Asterisk 14 --------------------
+------------------------------------------------------------------------------
+
+AMI
+-----------------
+ * A new event, "DialState" has been added. This is similar to "DialBegin" and
+ "DialEnd" in that it tracks the state of a dialed call. The difference is that
+ this indicates some intermediate state change in the dial attempt, such as
+ "RINGING", "PROGRESS", or "PROCEEDING".
+
+ARI
+-----------------
+ * A new ARI method has been added to the channels resource. "create" allows for
+   you to create a new channel and place that channel into a Stasis application.
+   This is similar to origination except that the specified channel is not
+   dialed. This allows for an application writer to create a channel, perform
+   manipulations on it, and then delay dialing the channel until later.
+
+ * To complement the "create" method, a "dial" method has been added to the
+   channels resource in order to place a call to a created channel.
+
+ * All operations that initiate playback of media on a resource now support
+   a list of media URIs. The list of URIs are played in the order they are
+   presented to the resource. A new event, "PlaybackContinuing", is raised when
+   a media URI finishes but before the next media URI starts. When a list is
+   played, the "Playback" model will contain the optional attribute
+   "next_media_uri", which specifies the next media URI in the list to be played
+   back to the resource. The "PlaybackFinished" event is raised when all media
+   URIs are done.
+
+ * Stored recordings now allow for the media associated with a stored recording
+   to be retrieved. The new route, GET /recordings/stored/{name}/file, will
+   transmit the raw media file to the requester as binary.
+
+
+ * "Dial" events have been modified to not only be sent when dialing begins and ends.
+ They now are also sent for intermediate states, such as "RINGING", "PROGRESS", and
+ "PROCEEDING".
+
+Applications
+------------------
+
+BridgeAdd
+------------------
+ * A new application in Asterisk, this will join the calling channel
+   to an existing bridge containing the named channel prefix.
+
+ChanSpy
+------------------
+ * Added the 'l' option, which forces ChanSpy's audiohook to use a long queue
+   to store the audio frames. This option is useful if audio loss is
+   experienced when using ChanSpy, but may introduce some delay in the audio
+   feed on the listening channel.
+
+Codecs
+------------------
+ * Added format attribute negotiation for the iLBC audio codec. Format attribute
+   negotiation is provided by the res_format_attr_ilbc module. iLBC 20 is the
+   default now. Falls back to iLBC 30, when the remote party requests this.
+
+ConfBridge
+------------------
+ * Added the ability to pass options to MixMonitor when recording is used with
+   ConfBridge. This includes the addition of the following configuration
+   parameters for the 'bridge' object:
+   - record_file_timestamp: whether or not to append the start time to the
+     recorded file name
+   - record_options: the options to pass to the MixMonitor application
+   - record_command: a command to execute when recording is finished
+   Note that these options may also be with the CONFBRIDGE function.
+
+ControlPlayback
+------------------
+ * Remote files can now be retrieved and played back. See the Playback
+   dialplan application for more details.
+
+FollowMe
+------------------
+ * It is now possible to disable the prompt from a callee by setting
+   'enable_callee_prompt = no' in followme.conf.
+
+Playback
+------------------
+ * Remote files can now be retrieved and played back via the Playback and other
+   media playback dialplan applications. This is done by directly providing
+   the URL to play to the dialplan application:
+     same => n,Playback(http://1.1.1.1/howler-monkeys-fl.wav)
+   Note that unlike 'normal' media files, the entire URI to the file must be
+   provided, including the file extension. Currently, on HTTP and HTTPS URI
+   schemes are supported.
+
+Queue
+-------------------
+ * Added field ReasonPause on QueueMemberStatus if set when paused, the reason
+   the queue member was paused.
+
+ * Added field LastPause on QueueMemberStatus for time when started the last
+   pause for a queue member.
+
+ * Show the time when started the last pause for queue member on CLI for command
+   'queue show'.
+
+SMS
+------------------
+ * Added the 'n' option, which prevents the SMS from being written to the log
+   file. This is needed for those countries with privacy laws that require
+   providers to not log SMS content.
+
+
+Channel Drivers
+------------------
+
+chan_dahdi
+------------------
+ * The CALLERID(ani2) value for incoming calls is now populated in featdmf
+   signaling mode.  The information was previously discarded.
+
+ * Added the force_restart_unavailable_chans compatibility option.  When
+   enabled it causes Asterisk to restart the ISDN B channel if an outgoing
+   call receives cause 44 (Requested channel not available).
+
+chan_iax2
+------------------
+ * The iax.conf forcejitterbuffer option has been removed.  It is now always
+   forced if you set iax.conf jitterbuffer=yes.  If you put a jitter buffer
+   on a channel it will be on the channel.
+
+ * A new configuration parameters, 'calltokenexpiration', has been added that
+   controls the duration before a call token expires. Default duration is 10
+   seconds. Setting this to a higher value may help in lagged networks or those
+   experiencing high packet loss.
+
+ * Plaintext auth mode is deprecated and removed from possible default modes.
+
+chan_rtp (was chan_multicast_rtp)
+------------------
+ * Added unicast RTP support and renamed chan_multicast_rtp to chan_rtp.
+
+ * The format for dialing a unicast RTP channel is:
+   UnicastRTP/<destination-addr>[/[<options>]]
+   Where <destination-addr> is something like '127.0.0.1:5060'.
+   Where <options> are in standard Asterisk flag options format:
+   c(<codec>) - Specify which codec/format to use such as 'ulaw'.
+   e(<engine>) - Specify which RTP engine to use such as 'asterisk'.
+
+ * New options were added for a multicast RTP channel.  The format for
+   dialing a multicast RTP channel is:
+   MulticastRTP/<type>/<destination-addr>[/[<control-addr>][/[<options>]]]
+   Where <type> can be either 'basic' or 'linksys'.
+   Where <destination-addr> is something like '224.0.0.3:5060'.
+   Where <control-addr> is something like '127.0.0.1:5060'.
+   Where <options> are in standard Asterisk flag options format:
+   c(<codec>) - Specify which codec/format to use such as 'ulaw'.
+   i(<address>) - Specify the interface address from which multicast RTP
+     is sent.
+   l(<enable>) - Set whether packets are looped back to the sender.  The
+     enable value can be 0 to set looping to off and non-zero to set
+     looping on.
+   t(<ttl>) - Set the time-to-live (TTL) value for multicast packets.
+
+chan_sip
+------------------
+ * New 'rtpbindaddr' global setting. This allows a user to define which
+   ipaddress to bind the rtpengine to. For example, chan_sip might bind
+   to eth0 (10.0.0.2) but rtpengine to eth1 (192.168.1.10).
+
+ * DTLS related configuration options can now be set at a general level.
+   Enabling DTLS support, though, requires enabling it at the user
+   or peer level.
+
+ * Added the possibility to set the From: header through the the SIP dial
+   string (populating the fromuser/fromdomain fields), complementing the
+   [!dnid] option for the To: header that has existed since 1.6.0 (1d6b192).
+   NOTE: This is again separated by an exclamation mark, so the To: header may
+   not contain one of those.
+
+ * Session-Timers (RFC 4028) work for TCP (and TLS) transports as well now.
+   Previously Asterisk dropped calls only with UDP transports. However with
+   longer international calls via TCP, the SIP channel might break, because
+   all hops on the Internet route must stay online (have not a single power
+   outage, for example). Therefore with Session-Timers enabled (which are
+   enabled at default), you might see additional dropped calls. Consequently
+   please, consider to go for session-timers=refuse in your sip.conf.
+
+chan_pjsip
+------------------
+ * New 'user_eq_phone' endpoint setting. This adds a 'user=phone' parameter
+   to the request URI and From URI if the user is determined to be a phone
+   number.
+
+ * New 'moh_passthrough' endpoint setting. This will pass hold and unhold
+   requests through using SIP re-invites with sendonly and sendrecv accordingly.
+
+ * Added the pjsip.conf system type disable_tcp_switch option.  The option
+   allows the user to disable switching from UDP to TCP transports described
+   by RFC 3261 section 18.1.1.
+
+ * New 'line' and 'endpoint' options added on outbound registrations. This
+   allows some identifying information to be added to the Contact of the
+   outbound registration. If this information is present on messages received
+   from the remote server the message will automatically be associated with the
+   configured endpoint on the outbound registration.
+
+
+Core
+------------------
+ * The core of Asterisk uses a message bus called "Stasis" to distribute
+   information to internal components. For performance reasons, the message
+   distribution was modified to make use of a thread pool instead of a
+   dedicated thread per consumer in certain cases. The initial settings for
+   the thread pool can now be configured in 'stasis.conf'.
+
+ * A new core DNS API has been implemented which provides a common interface
+   for DNS functionality. Modules that use this functionality will require that
+   a DNS resolver module is loaded and available.
+
+ * Modified processing of command-line options to first parse only what
+   is necessary to read asterisk.conf. Once asterisk.conf is fully loaded,
+   the remaining options are processed.  The -X option now applies to
+   asterisk.conf only.  To enable #exec for other config files you must
+   set execincludes=yes in asterisk.conf.  Any other option set on the
+   command-line will now override the equivalent setting from asterisk.conf.
+
+ * The TLS core in Asterisk now supports X.509 certificate subject alternative
+   names. This way one X.509 certificate can be used for hosts that can be
+   reached under multiple DNS names or for multiple hosts.
+
+ * The Asterisk logging system now supports JSON structured logging. Log
+   channels specified in logger.conf or added dynamically via CLI commands now
+   support an optional specifier prior to their levels that determines their
+   formatting. To set a log channel to format its entries as JSON, a formatter
+   of '[json]' can be set, e.g.,
+      full => [json]debug,verbose,notice,warning,error
+
+ * The core now supports a 'media cache', which stores temporary media files
+   retrieved from external sources. CLI commands have been added to manipulate
+   and display the cached files, including:
+   - 'media cache show <all>' - show all cached media files, or details about
+     one particular cached media file
+   - 'media cache refresh <item>' - force a refresh of a particular media file
+     in the cache
+   - 'media cache delete <item>' - remove an item from the cache
+   - 'media cache create <uri>' - retrieve a URI and store it in the cache
+
+ * The ability for device state hints to be automatically created as a result of
+   device state changes now exists in the PBX. This functionality is referred to
+   as "autohints" and is configurable in extensions.conf by placing "autohints=yes"
+   in the context. If enabled a device state hint will be automatically created
+   with the name of the device.
+
+* If Asterisk is built with systemd support, and run under systemd, it will
+  notify systemd of its state using sd_notify. Use 'Type=notify' in
+  asterisk.service.
+
+Functions
+------------------
+ * The func_odbc global option "single_db_connection" default value has been
+   changed to 'no'.
+
+
+Formats
+------------------
+ * New module format_ogg_speex added which supports Speex codec inside
+   Ogg containers (filename extension .spx).
+
+
+CHANNEL
+------------------
+ * Added CHANNEL(onhold) item that returns 1 (onhold) and 0 (not-onhold) for
+   the hold status of a channel.
+
+CURL
+------------------
+ * The CURL function now supports a write option, which will save the retrieved
+   file to a location on disk. As an example:
+     same => n,Set(CURL(https://1.1.1.1/foo.wav)=/tmp/foo.wav)
+   will save 'foo.wav' to /tmp.
+
+DTMF Features
+------------------
+ * The transferdialattempts default value has been changed from 1 to 3. The
+   transferinvalidsound has been changed from "pbx-invalid" to
+   "privacy-incorrect". These were changed to make DTMF transfers be more
+   user-friendly by default.
+
+
+Resources
+------------------
+
+res_http_media_cache
+------------------
+ * A backend for the core media cache, this module retrieves media files from
+   a remote HTTP(S) server and stores them in the core media cache for later
+   playback.
+
+res_musiconhold
+------------------
+ * Added sort=randstart to the sort options. It sorts the files by name and
+   then chooses the first file to play at random.
+ * Added preferchannelclass=no option to prefer the application-passed class
+   over the channel-set musicclass. This allows separate hold-music from
+   application (e.g. Queue or Dial) specified music.
+
+res_resolver_unbound
+------------------
+ * Added a res_resolver_unbound module which uses the libunbound resolver library
+   to perform DNS resolution. This module requires the libunbound library to be
+   installed in order to be used.
+
+res_pjsip
+------------------
+ * A new SIP resolver using the core DNS API has been implemented. This relies on
+   external SIP resolver support in PJSIP which is only available as of PJSIP
+   2.4. If this support is unavailable the existing built-in PJSIP SIP resolver
+   will be used instead. The new SIP resolver provides NAPTR support, improved
+   SRV support, and AAAA record support.
+
+res_pjsip_info_empty
+--------------------
+ * A new module that can respond to empty Content-Type INFO packets during call.
+   Some SBCs will terminate a call if their empty INFO packets are not responded
+   to within a predefined time.
+
+res_pjsip_outbound_registration
+-------------------------------
+* A new 'fatal_retry_interval' option has been added to outbound registration.
+  When set (default is zero), and upon receiving a failure response to an
+  outbound registration, registration is retried at the given interval up to
+  'max_retries'.
+
+res_pjsip_outbound_publish
+------------------
+ * Added a new multi_user option that when set to 'yes' allows a given configuration
+   to be used for multiple users.
+
+
+CEL Backends
+------------------
+
+cel_pgsql
+------------------
+ * Added a new option, 'usegmtime', which causes timestamps in CEL events
+   to be logged in GMT.
+
+ * Added support to set schema where located the table cel. This settings is
+   configurable for cel_pgsql via the 'schema' in configuration file
+   cel_pgsql.conf.
+
+
+CDR Backends
+------------------
+
+cdr_adaptive_odbc
+------------------
+ * Added the ability to set the character to quote identifiers. This
+   allows adding the character at the start and end of table and column
+   names. This setting is configurable for cdr_adaptive_odbc via the
+   quoted_identifiers in configuration file cdr_adaptive_odbc.conf.
+
+cdr_odbc
+------------------
+ * Added a new configuration option, "newcdrcolumns", which enables use of the
+   post-1.8 CDR columns 'peeraccount', 'linkedid', and 'sequence'.
+
+cdr_csv
+------------------
+ * Added a new configuration option, "newcdrcolumns", which enables use of the
+   post-1.8 CDR columns 'peeraccount', 'linkedid', and 'sequence'.
+
+------------------------------------------------------------------------------
 --- Functionality changes from Asterisk 13.10.0 to Asterisk 13.11.0 ----------
 ------------------------------------------------------------------------------
 
@@ -690,16 +1322,6 @@ chan_dahdi
  * Added "faxdetect_timeout" option.
    The option determines how many seconds into a call before faxdetect
    is disabled for the call.  Setting the value to zero disables the timeout.
-
-chan_sip
-------------------
- * Session-Timers (RFC 4028) work for TCP (and TLS) transports as well now.
-   Previously Asterisk dropped calls only with UDP transports. However with
-   longer international calls via TCP, the SIP channel might break, because
-   all hops on the Internet route must stay online (have not a single power
-   outage, for example). Therefore with Session-Timers enabled (which are
-   enabled at default), you might see additional dropped calls. Consequently
-   please, consider to go for session-timers=refuse in your sip.conf.
 
 res_pjsip
 ------------------
@@ -738,36 +1360,6 @@ Core
 ------------------
  * A channel variable FORWARDERNAME is now set which indicates which channel
    was responsible for a forwarding requests received on dial attempt.
-
-chan_multicast_rtp
-------------------
- * Deprecated in favor of chan_rtp which is basically chan_multicast_rtp
-   renamed to chan_rtp with UnicastRTP channels added and some internal code
-   improvements.
-
-chan_rtp
-------------------
- * The format for dialing a unicast RTP channel is:
-   UnicastRTP/<destination-addr>[/[<options>]]
-   Where <destination-addr> is something like '127.0.0.1:5060'.
-   Where <options> are in standard Asterisk flag options format:
-   c(<codec>) - Specify which codec/format to use such as 'ulaw'.
-   e(<engine>) - Specify which RTP engine to use such as 'asterisk'.
-
- * More options are available over what chan_multicast_rtp supports.
-   The format for dialing a multicast RTP channel is:
-   MulticastRTP/<type>/<destination-addr>[/[<control-addr>][/[<options>]]]
-   Where <type> can be either 'basic' or 'linksys'.
-   Where <destination-addr> is something like '224.0.0.3:5060'.
-   Where <control-addr> is something like '127.0.0.1:5060'.
-   Where <options> are in standard Asterisk flag options format:
-   c(<codec>) - Specify which codec/format to use such as 'ulaw'.
-   i(<address>) - Specify the interface address from which multicast RTP
-     is sent.
-   l(<enable>) - Set whether packets are looped back to the sender.  The
-     enable value can be 0 to set looping to off and non-zero to set
-     looping on.
-   t(<ttl>) - Set the time-to-live (TTL) value for multicast packets.
 
 func_odbc
 ------------------
@@ -815,12 +1407,6 @@ res_hep
    valid value using the specified 'uuid_type', the module may fallback to a
    more readily available source for the correlation UUID.
 
-res_pjsip_info_empty
---------------------
- * A new module that can respond to empty Content-Type INFO packets during call.
-   Some SBCs will terminate a call if their empty INFO packets are not responded
-   to within a predefined time.
-
 res_odbc
 ------------------
  * A new option has been added, 'max_connections', which sets the maximum number
@@ -850,6 +1436,15 @@ res_ari_channels
 ------------------------------------------------------------------------------
 --- Functionality changes from Asterisk 13.8.0 to Asterisk 13.9.0 ------------
 ------------------------------------------------------------------------------
+
+res_parking:
+ - The dynamic parking lot creation channel variables PARKINGDYNAMIC,
+   PARKINGDYNCONTEXT, PARKINGDYNEXTEN, and PARKINGDYNPOS are now looked
+   for in the parker's channel instead of the parked channel.  This is only
+   of significance if the parker uses blind transfer or the DTMF one-step
+   parking feature.  You need to use the double underscore '__' inheritance
+   for these variables.  The indefinite inheritance is also recommended
+   for the PARKINGEXTEN variable.
 
 res_pjsip
 ------------------
@@ -1012,11 +1607,6 @@ Voicemail
    app_voicemail will be skipped.  Use 'preload=app_voicemail.so' in
    modules.conf to force app_voicemail to be the voicemail provider.
 
-Queue
--------------------
- * Added field ReasonPause on QueueMemberStatus if set when paused, the reason
-   the queue member was paused.
-
 res_pjsip_sdp_rtp
 ------------------
  * A new option (bind_rtp_to_media_address) has been added to endpoint which
@@ -1065,11 +1655,6 @@ Dialplan Functions
 
 res_pjsip_outbound_registration
 -------------------------------
- * A new 'fatal_retry_interval' option has been added to outbound registration.
-   When set (default is zero), and upon receiving a failure response to an
-   outbound registration, registration is retried at the given interval up to
-   'max_retries'.
-
  * If res_statsd is loaded and a StatsD server is configured, basic statistics
    regarding the state of outbound registrations will now be emitted. This
    includes:
@@ -1139,7 +1724,6 @@ ARI
    ContactStatusChange. In particular, these events are useful when subscribing
    to all event sources, as they provide additional endpoint related
    information beyond the addition/removal of channels from an endpoint.
-   The ARI version has been bumped to 1.9.0 as a result.
 
  * Added the ability to subscribe to all ARI events in Asterisk, regardless
    of whether the application 'controls' the resource. This is useful for
@@ -1213,28 +1797,22 @@ chan_pjsip
  * The configuration setting 'progressinband' now defaults to 'no', which
    matches the actual behavior of previous versions.
 
- * New 'line' and 'endpoint' options added on outbound registrations. This allows some
-   identifying information to be added to the Contact of the outbound registration.
-   If this information is present on messages received from the remote server
-   the message will automatically be associated with the configured endpoint on the
-   outbound registration.
-
 res_pjsip
 ------------------
  * A new CLI command has been added: "pjsip show settings", which shows
    both the global and system configuration settings.
 
- * A new global option has been added: "max_initial_qualify_time", which
-   sets the maximum amount of time from startup that qualifies should be
-   attempted on all contacts.
-
-* A new aor option has been added: "qualify_timeout", which sets the timeout
+ * A new aor option has been added: "qualify_timeout", which sets the timeout
    in seconds for a qualify.  The default is 3 seconds.  This overrides the
    hard coded 32 seconds in pjproject.
 
  * Endpoint status will now change to "Unreachable" when all contacts are
    unavailable.  When any contact becomes available, the endpoint will status
    will change back to "Reachable".
+
+ * A new global option has been added: "max_initial_qualify_time", which
+   sets the maximum amount of time from startup that qualifies should be
+   attempted on all contacts.
 
 res_ari_channels
 ------------------
@@ -1279,6 +1857,9 @@ res_pjsip
 --- Functionality changes from Asterisk 13.1.0 to Asterisk 13.2.0 ------------
 ------------------------------------------------------------------------------
 
+ * New 'PJSIP_AOR' and 'PJSIP_CONTACT' dialplan functions have been added which
+   allow examining PJSIP AORs or contacts from the dialplan.
+
 res_pjsip_outbound_registration
 ------------------
  * The 'pjsip send unregister' command now stops further registrations.
@@ -1287,22 +1868,10 @@ res_pjsip_outbound_registration
    start or restart periodic registration.  It can be used after a
    'send unregister' or after a 401 permanent error.
 
-chan_pjsip
-------------------
- * New 'user_eq_phone' endpoint setting. This adds a 'user=phone' parameter
-   to the request URI and From URI if the user is determined to be a phone number.
-
- * New global setting 'keep_alive_interval'. Setting this to a non-zero value
-   will cause keep alive messages to be sent periodically over connection
-   oriented transports.
-
- * New 'PJSIP_AOR' and 'PJSIP_CONTACT' dialplan functions have been added which
-   allow examining PJSIP AORs or contacts from the dialplan.
-
 res_pjsip_config_wizard
 ------------------
  * This is a new module that adds streamlined configuration capability for
-   chan_pjsip.  It's targetted at users who have lots of basic configuration
+   chan_pjsip.  It's targeted at users who have lots of basic configuration
    scenarios like 'phone' or 'agent' or 'trunk'.  Additional information
    can be found in the sample configuration file at
    config/samples/pjsip_wizard.conf.sample.
@@ -1353,26 +1922,20 @@ AMI
  * Event NewConnectedLine is emitted when the connected line information on
    a channel changes.
 
- * The version of AMI has been bumped to 2.6.0 to account for the backwards
-   compatible feature listed above.
-
 ARI
 ------------------
  * Event ChannelConnectedLine is emitted when the connected line information
    on a channel changes.
-
- * The version of ARI has been bumped to 1.6.0 to account for the backwards
-   compatible feature listed above.
 
 Core Transfers
 -----------------
 
 The features.conf general section has three new configurable options:
     * transferdialattempts
-	* transferretrysound
-	* transferinvalidsound
+    * transferretrysound
+    * transferinvalidsound
 For more information on what these options do, see the Asterisk wiki:
-	https://wiki.asterisk.org/wiki/x/W4fAAQ
+ https://wiki.asterisk.org/wiki/x/W4fAAQ
 
 Channel Drivers
 ------------------
@@ -1432,6 +1995,7 @@ included in Asterisk 13.
 Finally, all users upgrading to Asterisk 13 should read the UPGRADE.txt file
 delivered with this release.
 
+
 Build System
 ------------------
  * Sample config files have been moved from configs/ to a sub-folder of that
@@ -1490,6 +2054,8 @@ Say
    language. The 'language' parameter in say.conf now recognizes a setting of
    'ja', which will enable Japanese language specific mechanisms for playing
    back numbers, dates, and other items.
+ * Counting, enumeration and dates now supports Icelandic grammar with the
+   'language' parameter set to 'is'.
 
 SayCountPL
 ------------------
@@ -5643,6 +6209,7 @@ Voicemail Changes
      the message as urgent after he has recorded a voicemail by following the voice instructions.
     When listening to voicemails using VoiceMailMain urgent messages will be presented before other
      messages
+  * Added "is" language support
 
 Queue changes
 -------------

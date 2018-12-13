@@ -113,6 +113,9 @@
 				<configOption name="allowed_origins">
 					<synopsis>Comma separated list of allowed origins, for Cross-Origin Resource Sharing. May be set to * to allow all origins.</synopsis>
 				</configOption>
+				<configOption name="channelvars">
+					<synopsis>Comma separated list of channel variables to display in channel json.</synopsis>
+				</configOption>
 			</configObject>
 
 			<configObject name="user">
@@ -140,8 +143,6 @@
 ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "ari/internal.h"
 #include "asterisk/ari.h"
@@ -195,7 +196,6 @@ int ast_ari_add_handler(struct stasis_rest_handlers *handler)
 	ao2_cleanup(root_handler);
 	ao2_ref(new_handler, +1);
 	root_handler = new_handler;
-	ast_module_ref(ast_module_info->self);
 	return 0;
 }
 
@@ -221,7 +221,6 @@ int ast_ari_remove_handler(struct stasis_rest_handlers *handler)
 	memcpy(new_handler, root_handler, sizeof(*new_handler));
 	for (i = 0, j = 0; i < root_handler->num_children; ++i) {
 		if (root_handler->children[i] == handler) {
-			ast_module_unref(ast_module_info->self);
 			continue;
 		}
 		new_handler->children[j++] = root_handler->children[i];
@@ -880,7 +879,7 @@ static int ast_ari_callback(struct ast_tcptls_session_instance *ser,
 	RAII_VAR(struct ast_ari_conf *, conf, NULL, ao2_cleanup);
 	RAII_VAR(struct ast_str *, response_body, ast_str_create(256), ast_free);
 	RAII_VAR(struct ast_ari_conf_user *, user, NULL, ao2_cleanup);
-	struct ast_ari_response response = {};
+	struct ast_ari_response response = { .fd = -1, 0 };
 	RAII_VAR(struct ast_variable *, post_vars, NULL, ast_variables_destroy);
 	struct ast_variable *var;
 	const char *app_name = NULL;
@@ -1087,11 +1086,14 @@ request_failed:
 
 	ast_http_send(ser, method, response.response_code,
 		      response.response_text, response.headers, response_body,
-		      0, 0);
+		      response.fd != -1 ? response.fd : 0, 0);
 	/* ast_http_send takes ownership, so we don't have to free them */
 	response_body = NULL;
 
 	ast_json_unref(response.message);
+	if (response.fd >= 0) {
+		close(response.fd);
+	}
 	return 0;
 }
 
@@ -1099,7 +1101,6 @@ static struct ast_http_uri http_uri = {
 	.callback = ast_ari_callback,
 	.description = "Asterisk RESTful API",
 	.uri = "ari",
-
 	.has_subtree = 1,
 	.data = NULL,
 	.key = __FILE__,
@@ -1194,6 +1195,7 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_
 	.load = load_module,
 	.unload = unload_module,
 	.reload = reload_module,
-	.nonoptreq = "res_http_websocket",
+	.optional_modules = "res_http_websocket",
+	.requires = "http,res_stasis",
 	.load_pri = AST_MODPRI_APP_DEPEND,
-	);
+);

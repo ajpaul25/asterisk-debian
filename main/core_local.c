@@ -33,8 +33,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 /* ------------------------------------------------------------------- */
 
 #include "asterisk/channel.h"
@@ -235,7 +233,7 @@ struct local_pvt {
 	char exten[AST_MAX_EXTENSION];
 };
 
-void ast_local_lock_all2(struct ast_channel *chan, void **tech_pvt,
+void ast_local_lock_all(struct ast_channel *chan, void **tech_pvt,
 	struct ast_channel **base_chan, struct ast_channel **base_owner)
 {
 	struct local_pvt *p = ast_channel_tech_pvt(chan);
@@ -250,14 +248,7 @@ void ast_local_lock_all2(struct ast_channel *chan, void **tech_pvt,
 	}
 }
 
-void ast_local_lock_all(struct ast_channel *chan, struct ast_channel **outchan,
-			struct ast_channel **outowner)
-{
-	void *tech_pvt;
-	ast_local_lock_all2(chan, &tech_pvt, outchan, outowner);
-}
-
-void ast_local_unlock_all2(void *tech_pvt, struct ast_channel *base_chan,
+void ast_local_unlock_all(void *tech_pvt, struct ast_channel *base_chan,
 	struct ast_channel *base_owner)
 {
 	if (base_chan) {
@@ -275,19 +266,6 @@ void ast_local_unlock_all2(void *tech_pvt, struct ast_channel *base_chan,
 		ao2_unlock(&p->base);
 		ao2_ref(tech_pvt, -1);
 	}
-}
-
-void ast_local_unlock_all(struct ast_channel *chan)
-{
-	struct local_pvt *p = ast_channel_tech_pvt(chan);
-	struct ast_unreal_pvt *base;
-
-	if (!p) {
-		return;
-	}
-
-	base = &p->base;
-	ast_local_unlock_all2(p, base->chan, base->owner);
 }
 
 struct ast_channel *ast_local_get_peer(struct ast_channel *ast)
@@ -940,7 +918,7 @@ static struct ast_channel *local_request(const char *type, struct ast_format_cap
 {
 	struct local_pvt *p;
 	struct ast_channel *chan;
-	struct ast_callid *callid;
+	ast_callid callid;
 
 	/* Allocate a new private structure and then Asterisk channels */
 	p = local_alloc(data, cap);
@@ -952,9 +930,6 @@ static struct ast_channel *local_request(const char *type, struct ast_format_cap
 		p->exten, p->context, assignedids, requestor, callid);
 	if (chan) {
 		ao2_link(locals, p);
-	}
-	if (callid) {
-		ast_callid_unref(callid);
 	}
 	ao2_ref(p, -1); /* kill the ref from the alloc */
 

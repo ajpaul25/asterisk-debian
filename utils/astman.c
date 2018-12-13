@@ -26,8 +26,7 @@
 	<support_level>extended</support_level>
  ***/
 
-#include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
+#define ASTMM_LIBC ASTMM_IGNORE
 #include "asterisk.h"
 
 #include <newt.h>
@@ -89,17 +88,6 @@ struct ast_chan {
 static AST_LIST_HEAD_NOLOCK_STATIC(chans, ast_chan);
 
 /* dummy functions to be compatible with the Asterisk core for md5.c */
-void ast_register_file_version(const char *file, const char *version);
-void ast_register_file_version(const char *file, const char *version)
-{
-}
-
-void ast_unregister_file_version(const char *file);
-void ast_unregister_file_version(const char *file)
-{
-}
-
-#if !defined(LOW_MEMORY)
 int ast_add_profile(const char *, uint64_t scale);
 int ast_add_profile(const char *s, uint64_t scale)
 {
@@ -116,7 +104,6 @@ int64_t ast_mark(int key, int start1_stop0)
 {
 	return 0;
 }
-#endif /* LOW_MEMORY */
 
 /* end of dummy functions */
 

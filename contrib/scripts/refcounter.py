@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Process a ref debug log
 
- This file will process a log file created by the REF_DEBUG
- build option in Asterisk.
+ This file will process a log file created by enabling
+ the refdebug config option in asterisk.conf.
 
  See http://www.asterisk.org for more information about
  the Asterisk project. Please do not directly contact
@@ -107,6 +107,12 @@ def process_file(options):
                         skewed_objects.append((obj, current_objects[obj]))
             else:
                 current_objects[obj]['curcount'] += int(parsed_line['delta'])
+
+            # Suppress object sizes and lock-state from output logs.
+            if 'constructor' in parsed_line['state']:
+                parsed_line['state'] = '**constructor**'
+            elif 'destructor' in parsed_line['state']:
+                parsed_line['state'] = '**destructor**'
 
             current_objects[obj]['log'].append(
                 "[%s] %s:%s %s: %s %s - [%s]" % (

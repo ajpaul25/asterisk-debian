@@ -42,8 +42,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>

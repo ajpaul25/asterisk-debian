@@ -40,14 +40,11 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <fcntl.h>
 #include <netdb.h>
-#include <sys/signal.h>
 #include <signal.h>
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
@@ -2018,7 +2015,6 @@ static int process_sdp(struct mgcp_subchannel *sub, struct mgcp_request *req)
 	ast_rtp_instance_set_remote_address(sub->rtp, &sin_tmp);
 	ast_debug(3, "Peer RTP is at port %s:%d\n", ast_inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
 	/* Scan through the RTP payload types specified in a "m=" line: */
-	ast_rtp_codecs_payloads_clear(ast_rtp_instance_get_codecs(sub->rtp), sub->rtp);
 	codecs = ast_strdupa(m + len);
 	while (!ast_strlen_zero(codecs)) {
 		if (sscanf(codecs, "%30d%n", &codec, &len) != 1) {
@@ -3799,7 +3795,7 @@ static int mgcp_prune_realtime_gateway(struct mgcp_gateway *g)
 			if (prune) {
 				ast_mutex_destroy(&s->lock);
 				ast_mutex_destroy(&s->cx_queue_lock);
-				free(s);
+				ast_free(s);
 			}
 		}
 		ast_mutex_unlock(&e->lock);
@@ -3809,7 +3805,7 @@ static int mgcp_prune_realtime_gateway(struct mgcp_gateway *g)
 			ast_mutex_destroy(&e->lock);
 			ast_mutex_destroy(&e->rqnt_queue_lock);
 			ast_mutex_destroy(&e->cmd_queue_lock);
-			free(e);
+			ast_free(e);
 		}
 	}
 	if (prune) {
@@ -3901,7 +3897,7 @@ static void *do_monitor(void *data)
 						}
 						ast_mutex_unlock(&g->msgs_lock);
 						ast_mutex_destroy(&g->msgs_lock);
-						free(g);
+						ast_free(g);
 					} else {
 						ast_mutex_unlock(&g->msgs_lock);
 						gprev = g;
@@ -4096,7 +4092,19 @@ static struct mgcp_gateway *build_gateway(char *cat, struct ast_variable *v)
 			ast_sockaddr_to_sin(&tmp, &gw->defaddr);
 		} else if (!strcasecmp(v->name, "permit") ||
 			!strcasecmp(v->name, "deny")) {
-			gw->ha = ast_append_ha(v->name, v->value, gw->ha, NULL);
+			int acl_error = 0;
+			gw->ha = ast_append_ha(v->name, v->value, gw->ha, &acl_error);
+			if (acl_error) {
+				ast_log(LOG_ERROR, "Invalid ACL '%s' specified for MGCP gateway '%s' on line %d. Not creating.\n",
+						v->value, cat, v->lineno);
+				if (!gw_reload) {
+					ast_mutex_destroy(&gw->msgs_lock);
+					ast_free(gw);
+				} else {
+					gw->delme = 1;
+				}
+				return NULL;
+			}
 		} else if (!strcasecmp(v->name, "port")) {
 			gw->addr.sin_port = htons(atoi(v->value));
 		} else if (!strcasecmp(v->name, "context")) {
@@ -4234,6 +4242,8 @@ static struct mgcp_gateway *build_gateway(char *cat, struct ast_variable *v)
 						 * knows that we care about it.  Then, chan_mgcp will get the MWI from the
 						 * event cache instead of checking the mailbox directly. */
 						e->mwi_event_sub = stasis_subscribe_pool(mailbox_specific_topic, stasis_subscription_cb_noop, NULL);
+						stasis_subscription_accept_message_type(e->mwi_event_sub, ast_mwi_state_type());
+						stasis_subscription_set_filter(e->mwi_event_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 					}
 				}
 				snprintf(e->rqnt_ident, sizeof(e->rqnt_ident), "%08lx", (unsigned long)ast_random());
@@ -4475,7 +4485,8 @@ static enum ast_rtp_glue_result mgcp_get_rtp_peer(struct ast_channel *chan, stru
 	if (!(sub = ast_channel_tech_pvt(chan)) || !(sub->rtp))
 		return AST_RTP_GLUE_RESULT_FORBID;
 
-	*instance = sub->rtp ? ao2_ref(sub->rtp, +1), sub->rtp : NULL;
+	ao2_ref(sub->rtp, +1);
+	*instance = sub->rtp;
 
 	if (sub->parent->directmedia)
 		return AST_RTP_GLUE_RESULT_REMOTE;
@@ -5011,10 +5022,10 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "Media Gateway Control Protocol (MGCP)",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-		.load_pri = AST_MODPRI_CHANNEL_DRIVER,
-		.nonoptreq = "res_pktccops",
-	       );
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.load_pri = AST_MODPRI_CHANNEL_DRIVER,
+	.optional_modules = "res_pktccops",
+);

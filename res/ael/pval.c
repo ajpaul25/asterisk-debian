@@ -27,9 +27,8 @@
 	<support_level>extended</support_level>
  ***/
 
+#define ASTMM_LIBC ASTMM_REDIRECT
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <sys/types.h>
 #include <stdlib.h>
@@ -4235,7 +4234,7 @@ void add_extensions(struct ael_extension *exten)
 		pbx_substitute_variables_helper(NULL, exten->name, realext, sizeof(realext) - 1);
 		if (exten->hints) {
 			if (ast_add_extension2(exten->context, 0 /*no replace*/, realext, PRIORITY_HINT, NULL, exten->cidmatch,
-								  exten->hints, NULL, ast_free_ptr, registrar)) {
+								  exten->hints, NULL, ast_free_ptr, registrar, NULL, 0)) {
 				ast_log(LOG_WARNING, "Unable to add step at priority 'hint' of extension '%s'\n",
 						exten->name);
 			}
@@ -4315,7 +4314,7 @@ void add_extensions(struct ael_extension *exten)
 				label = 0;
 
 			if (ast_add_extension2(exten->context, 0 /*no replace*/, realext, pr->priority_num, (label?label:NULL), exten->cidmatch,
-								  app, strdup(appargs), ast_free_ptr, registrar)) {
+								  app, strdup(appargs), ast_free_ptr, registrar, NULL, 0)) {
 				ast_log(LOG_WARNING, "Unable to add step at priority '%d' of extension '%s'\n", pr->priority_num,
 						exten->name);
 			}
@@ -4409,7 +4408,7 @@ static int context_used(struct ael_extension *exten_list, struct ast_context *co
 {
 	struct ael_extension *exten;
 	/* Check the simple elements first */
-	if (ast_walk_context_extensions(context, NULL) || ast_walk_context_includes(context, NULL) || ast_walk_context_ignorepats(context, NULL) || ast_walk_context_switches(context, NULL)) {
+	if (ast_walk_context_extensions(context, NULL) || ast_context_includes_count(context) || ast_context_ignorepats_count(context) || ast_context_switches_count(context)) {
 		return 1;
 	}
 	for (exten = exten_list; exten; exten = exten->next_exten) {

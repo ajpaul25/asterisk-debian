@@ -83,8 +83,8 @@ unsigned int option_dtmfminduration = AST_MIN_DTMF_DURATION;
 /*! Minimum amount of free system memory - stop accepting calls if free memory falls below this watermark */
 long option_minmemfree;
 #endif
-
-unsigned int ast_option_rtpptdynamic = AST_RTP_PT_FIRST_DYNAMIC;
+int ast_option_rtpusedynamic = 1;
+unsigned int ast_option_rtpptdynamic = 35;
 
 /*! @} */
 
@@ -206,7 +206,6 @@ void load_asterisk_conf(void)
 {
 	struct ast_config *cfg;
 	struct ast_variable *v;
-	char *config = DEFAULT_CONFIG_FILE;
 	char hostname[MAXHOSTNAMELEN] = "";
 	struct ast_flags config_flags = { CONFIG_FLAG_NOREALTIME };
 	struct {
@@ -215,20 +214,27 @@ void load_asterisk_conf(void)
 	} found = { 0, 0 };
 	/* Default to false for security */
 	int live_dangerously = 0;
+	int option_debug_new = 0;
+	int option_verbose_new = 0;
 
-	if (ast_opt_override_config) {
-		cfg = ast_config_load2(ast_config_AST_CONFIG_FILE, "" /* core, can't reload */, config_flags);
-		if (cfg == CONFIG_STATUS_FILEMISSING || cfg == CONFIG_STATUS_FILEUNCHANGED || cfg == CONFIG_STATUS_FILEINVALID) {
-			fprintf(stderr, "Unable to open specified master config file '%s', using built-in defaults\n", ast_config_AST_CONFIG_FILE);
-		}
-	} else {
-		cfg = ast_config_load2(config, "" /* core, can't reload */, config_flags);
-	}
+	/* init with buildtime config */
+#ifdef REF_DEBUG
+	/* The REF_DEBUG compiler flag is now only used to enable refdebug by default.
+	 * Support for debugging reference counts is always compiled in. */
+	ast_set2_flag(&ast_options, 1, AST_OPT_FLAG_REF_DEBUG);
+#endif
 
 	ast_set_default_eid(&ast_eid_default);
 
+	cfg = ast_config_load2(ast_config_AST_CONFIG_FILE, "" /* core, can't reload */, config_flags);
+
+	/* If AST_OPT_FLAG_EXEC_INCLUDES was previously enabled with -X turn it off now.
+	 * Using #exec from other configs requires that it be enabled from asterisk.conf. */
+	ast_clear_flag(&ast_options, AST_OPT_FLAG_EXEC_INCLUDES);
+
 	/* no asterisk.conf? no problem, use buildtime config! */
 	if (cfg == CONFIG_STATUS_FILEMISSING || cfg == CONFIG_STATUS_FILEUNCHANGED || cfg == CONFIG_STATUS_FILEINVALID) {
+		fprintf(stderr, "Unable to open specified master config file '%s', using built-in defaults\n", ast_config_AST_CONFIG_FILE);
 		return;
 	}
 
@@ -288,7 +294,7 @@ void load_asterisk_conf(void)
 	for (v = ast_variable_browse(cfg, "options"); v; v = v->next) {
 		/* verbose level (-v at startup) */
 		if (!strcasecmp(v->name, "verbose")) {
-			option_verbose = atoi(v->value);
+			option_verbose_new = atoi(v->value);
 		/* whether or not to force timestamping in CLI verbose output. (-T at startup) */
 		} else if (!strcasecmp(v->name, "timestamp")) {
 			ast_set2_flag(&ast_options, ast_true(v->value), AST_OPT_FLAG_TIMESTAMP);
@@ -297,10 +303,12 @@ void load_asterisk_conf(void)
 			ast_set2_flag(&ast_options, ast_true(v->value), AST_OPT_FLAG_EXEC_INCLUDES);
 		/* debug level (-d at startup) */
 		} else if (!strcasecmp(v->name, "debug")) {
-			option_debug = 0;
-			if (sscanf(v->value, "%30d", &option_debug) != 1) {
-				option_debug = ast_true(v->value) ? 1 : 0;
+			option_debug_new = 0;
+			if (sscanf(v->value, "%30d", &option_debug_new) != 1) {
+				option_debug_new = ast_true(v->value) ? 1 : 0;
 			}
+		} else if (!strcasecmp(v->name, "refdebug")) {
+			ast_set2_flag(&ast_options, ast_true(v->value), AST_OPT_FLAG_REF_DEBUG);
 #if HAVE_WORKING_FORK
 		/* Disable forking (-f at startup) */
 		} else if (!strcasecmp(v->name, "nofork")) {
@@ -314,7 +322,9 @@ void load_asterisk_conf(void)
 			ast_set2_flag(&ast_options, ast_true(v->value), AST_OPT_FLAG_QUIET);
 		/* Run as console (-c at startup, implies nofork) */
 		} else if (!strcasecmp(v->name, "console")) {
-			ast_set2_flag(&ast_options, ast_true(v->value), AST_OPT_FLAG_NO_FORK | AST_OPT_FLAG_CONSOLE);
+			if (!ast_opt_remote) {
+				ast_set2_flag(&ast_options, ast_true(v->value), AST_OPT_FLAG_NO_FORK | AST_OPT_FLAG_CONSOLE);
+			}
 		/* Run with high priority if the O/S permits (-p at startup) */
 		} else if (!strcasecmp(v->name, "highpriority")) {
 			ast_set2_flag(&ast_options, ast_true(v->value), AST_OPT_FLAG_HIGH_PRIORITY);
@@ -358,12 +368,13 @@ void load_asterisk_conf(void)
 			if (sscanf(v->value, "%30u", &option_dtmfminduration) != 1) {
 				option_dtmfminduration = AST_MIN_DTMF_DURATION;
 			}
+		} else if (!strcasecmp(v->name, "rtp_use_dynamic")) {
+			ast_option_rtpusedynamic = ast_true(v->value);
 		/* http://www.iana.org/assignments/rtp-parameters
 		 * RTP dynamic payload types start at 96 normally; extend down to 0 */
 		} else if (!strcasecmp(v->name, "rtp_pt_dynamic")) {
-			ast_parse_arg(v->value, PARSE_UINT32|PARSE_IN_RANGE|PARSE_DEFAULT,
-			              &ast_option_rtpptdynamic, AST_RTP_PT_FIRST_DYNAMIC,
-			              0, AST_RTP_PT_LAST_REASSIGN);
+			ast_parse_arg(v->value, PARSE_UINT32|PARSE_IN_RANGE,
+			              &ast_option_rtpptdynamic, 0, AST_RTP_PT_FIRST_DYNAMIC);
 		} else if (!strcasecmp(v->name, "maxcalls")) {
 			if ((sscanf(v->value, "%30d", &ast_option_maxcalls) != 1) || (ast_option_maxcalls < 0)) {
 				ast_option_maxcalls = 0;
@@ -458,6 +469,9 @@ void load_asterisk_conf(void)
 	if (!ast_opt_remote) {
 		pbx_live_dangerously(live_dangerously);
 	}
+
+	option_debug += option_debug_new;
+	option_verbose += option_verbose_new;
 
 	ast_config_destroy(cfg);
 }

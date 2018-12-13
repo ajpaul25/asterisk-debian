@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/logger.h"
 #include "asterisk/codec.h"
 #include "asterisk/format.h"
@@ -51,6 +49,8 @@ struct ast_format {
 	void *attribute_data;
 	/*! \brief Pointer to the optional format interface */
 	const struct ast_format_interface *interface;
+	/*! \brief The number if audio channels used, if more than one an interleaved format is required */
+	unsigned int channel_count;
 };
 
 /*! \brief Structure used when registering a format interface */
@@ -76,8 +76,8 @@ static void format_shutdown(void)
 
 int ast_format_init(void)
 {
-	interfaces = ao2_container_alloc_options(AO2_ALLOC_OPT_LOCK_RWLOCK, FORMAT_INTERFACE_BUCKETS,
-		format_interface_hash_fn, format_interface_cmp_fn);
+	interfaces = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_RWLOCK, 0,
+		FORMAT_INTERFACE_BUCKETS, format_interface_hash_fn, NULL, format_interface_cmp_fn);
 	if (!interfaces) {
 		return -1;
 	}
@@ -132,6 +132,16 @@ void ast_format_set_attribute_data(struct ast_format *format, void *attribute_da
 	format->attribute_data = attribute_data;
 }
 
+unsigned int ast_format_get_channel_count(const struct ast_format *format)
+{
+	return format->channel_count;
+}
+
+void ast_format_set_channel_count(struct ast_format *format, unsigned int channel_count)
+{
+	format->channel_count = channel_count;
+}
+
 /*! \brief Destructor for media formats */
 static void format_destroy(void *obj)
 {
@@ -156,6 +166,7 @@ struct ast_format *ast_format_create_named(const char *format_name, struct ast_c
 	}
 	format->name = format_name;
 	format->codec = ao2_bump(codec);
+	format->channel_count = 1;
 
 	format_interface = ao2_find(interfaces, codec->name, OBJ_SEARCH_KEY);
 	if (format_interface) {
@@ -332,13 +343,12 @@ const char *ast_format_get_codec_name(const struct ast_format *format)
 
 int ast_format_can_be_smoothed(const struct ast_format *format)
 {
-	/* Coalesce to 1 if non-zero */
-	return format->codec->smooth ? 1 : 0;
+	return format->codec->smooth;
 }
 
 int ast_format_get_smoother_flags(const struct ast_format *format)
 {
-	return AST_SMOOTHER_FLAGS_UNPACK(format->codec->smooth);
+	return format->codec->smoother_flags;
 }
 
 enum ast_media_type ast_format_get_type(const struct ast_format *format)

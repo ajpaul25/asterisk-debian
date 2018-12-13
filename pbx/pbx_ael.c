@@ -29,19 +29,10 @@
 
 #include "asterisk.h"
 
-#if !defined(STANDALONE)
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-#endif
-
 #include <ctype.h>
 #include <regex.h>
 #include <sys/stat.h>
 
-#ifdef STANDALONE
-#ifdef HAVE_MTX_PROFILE
-static int mtx_prof = -1; /* helps the standalone compile with the mtx_prof flag on */
-#endif
-#endif
 #include "asterisk/pbx.h"
 #include "asterisk/config.h"
 #include "asterisk/module.h"
@@ -297,11 +288,12 @@ int ael_external_load_module(void)
 #endif
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Asterisk Extension Language Compiler",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-	       );
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.requires = "res_ael_share",
+);
 
 #ifdef AAL_ARGCHECK
 static const char * const ael_funclist[] =

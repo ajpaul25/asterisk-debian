@@ -3,7 +3,12 @@
 CIDIR=$(dirname $(readlink -fn $0))
 COVERAGE=0
 REF_DEBUG=0
+DISABLE_BINARY_MODULES=0
 source $CIDIR/ci.functions
+
+if [ -z $BRANCH_NAME ]; then
+	BRANCH_NAME=$(git config -f .gitreview --get gerrit.defaultbranch)
+fi
 
 gen_cats() {
 	set +x
@@ -68,14 +73,20 @@ runner ccache -s
 runner ulimit -a
 
 MAKE=`which make`
+PKGCONFIG=`which pkg-config`
 [ -d /usr/lib64 ] && _libdir=/usr/lib64
 
 common_config_args="--prefix=/usr ${_libdir:+--libdir=${_libdir}} --sysconfdir=/etc --with-pjproject-bundled"
+$PKGCONFIG 'jansson >= 2.11' || common_config_args+=" --with-jansson-bundled"
 common_config_args+=" ${CACHE_DIR:+--with-sounds-cache=${CACHE_DIR}/sounds --with-externals-cache=${CACHE_DIR}/externals}"
 common_config_args+=" --enable-dev-mode"
 if [ $COVERAGE -eq 1 ] ; then
 	common_config_args+=" --enable-coverage"
 fi
+if [ "$BRANCH_NAME" == "master" -o $DISABLE_BINARY_MODULES -eq 1 ] ; then
+	common_config_args+=" --disable-binary-modules"
+fi
+
 export WGET_EXTRA_ARGS="--quiet"
 
 runner ./configure ${common_config_args} > ${OUTPUT_DIR:+${OUTPUT_DIR}/}configure.txt
@@ -113,14 +124,7 @@ if [ $TESTED_ONLY -eq 1 ] ; then
 	mod_disables+=" res_ael_share res_calendar res_config_ldap res_config_pgsql res_corosync"
 	mod_disables+=" res_http_post res_pktccops res_rtp_multicast res_snmp res_xmpp"
 fi
-if [ $REF_DEBUG -eq 1 ] ; then
-	# res_odbc does not unload at shutdown, including it with REF_DEBUG testing would cause
-	# every test to fail due to that leak.
-	# Note: --ref-debug and --realtime cannot be used together in this version of Asterisk.
-	# To test for reference leaks with realtime usage you must test against Asterisk 16+.
-	mod_disables+=" res_odbc"
-fi
-[ "$BRANCH_NAME" == "master" ] && mod_disables+=" codec_opus codec_silk codec_g729a codec_siren7 codec_siren14"
+
 runner menuselect/menuselect `gen_mods disable $mod_disables` menuselect.makeopts
 
 mod_enables="app_voicemail app_directory FILE_STORAGE"

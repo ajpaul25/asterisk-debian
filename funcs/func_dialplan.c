@@ -30,8 +30,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/module.h"
 #include "asterisk/channel.h"
 #include "asterisk/pbx.h"
@@ -198,4 +196,4 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "Dialplan Context/Exte
 	.load = load_module,
 	.unload = unload_module,
 	.load_pri = AST_MODPRI_APP_DEPEND,
-	);
+);

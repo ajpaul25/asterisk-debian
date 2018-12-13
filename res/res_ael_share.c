@@ -31,8 +31,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/file.h"
 #include "asterisk/channel.h"
 #include "asterisk/pbx.h"
@@ -53,7 +51,7 @@ static int load_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS, "share-able code for AEL",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-				.load = load_module,
-				.unload = unload_module
-	);
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module
+);

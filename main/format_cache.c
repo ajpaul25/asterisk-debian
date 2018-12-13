@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/logger.h"
 #include "asterisk/format.h"
 #include "asterisk/format_cache.h"
@@ -223,6 +221,11 @@ struct ast_format *ast_format_siren7;
 struct ast_format *ast_format_opus;
 
 /*!
+ * \brief Built-in cached codec2 format.
+ */
+struct ast_format *ast_format_codec2;
+
+/*!
  * \brief Built-in cached t140 format.
  */
 struct ast_format *ast_format_t140;
@@ -231,6 +234,11 @@ struct ast_format *ast_format_t140;
  * \brief Built-in cached t140 red format.
  */
 struct ast_format *ast_format_t140_red;
+
+/*!
+ * \brief Built-in cached T.38 format.
+ */
+struct ast_format *ast_format_t38;
 
 /*!
  * \brief Built-in "null" format.
@@ -333,6 +341,7 @@ static void format_cache_shutdown(void)
 	ao2_replace(ast_format_testlaw, NULL);
 	ao2_replace(ast_format_g719, NULL);
 	ao2_replace(ast_format_opus, NULL);
+	ao2_replace(ast_format_codec2, NULL);
 	ao2_replace(ast_format_jpeg, NULL);
 	ao2_replace(ast_format_png, NULL);
 	ao2_replace(ast_format_h261, NULL);
@@ -344,6 +353,7 @@ static void format_cache_shutdown(void)
 	ao2_replace(ast_format_vp9, NULL);
 	ao2_replace(ast_format_t140_red, NULL);
 	ao2_replace(ast_format_t140, NULL);
+	ao2_replace(ast_format_t38, NULL);
 	ao2_replace(ast_format_none, NULL);
 	ao2_replace(ast_format_silk8, NULL);
 	ao2_replace(ast_format_silk12, NULL);
@@ -353,8 +363,8 @@ static void format_cache_shutdown(void)
 
 int ast_format_cache_init(void)
 {
-	formats = ao2_container_alloc_options(AO2_ALLOC_OPT_LOCK_RWLOCK, CACHE_BUCKETS,
-		format_hash_cb, format_cmp_cb);
+	formats = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_RWLOCK, 0, CACHE_BUCKETS,
+		format_hash_cb, NULL, format_cmp_cb);
 	if (!formats) {
 		return -1;
 	}
@@ -366,7 +376,9 @@ int ast_format_cache_init(void)
 
 static void set_cached_format(const char *name, struct ast_format *format)
 {
-	if (!strcmp(name, "g723")) {
+	if (!strcmp(name, "codec2")) {
+		ao2_replace(ast_format_codec2, format);
+	} else if (!strcmp(name, "g723")) {
 		ao2_replace(ast_format_g723, format);
 	} else if (!strcmp(name, "ulaw")) {
 		ao2_replace(ast_format_ulaw, format);
@@ -444,6 +456,8 @@ static void set_cached_format(const char *name, struct ast_format *format)
 		ao2_replace(ast_format_t140_red, format);
 	} else if (!strcmp(name, "t140")) {
 		ao2_replace(ast_format_t140, format);
+	} else if (!strcmp(name, "t38")) {
+		ao2_replace(ast_format_t38, format);
 	} else if (!strcmp(name, "none")) {
 		ao2_replace(ast_format_none, format);
 	} else if (!strcmp(name, "silk8")) {
@@ -485,22 +499,14 @@ int ast_format_cache_set(struct ast_format *format)
 	return 0;
 }
 
-struct ast_format *__ast_format_cache_get(const char *name)
+struct ast_format *__ast_format_cache_get(const char *name,
+	const char *tag, const char *file, int line, const char *func)
 {
 	if (ast_strlen_zero(name)) {
 		return NULL;
 	}
 
-	return ao2_find(formats, name, OBJ_SEARCH_KEY);
-}
-
-struct ast_format *__ast_format_cache_get_debug(const char *name, const char *tag, const char *file, int line, const char *func)
-{
-	if (ast_strlen_zero(name)) {
-		return NULL;
-	}
-
-	return __ao2_find_debug(formats, name, OBJ_SEARCH_KEY, S_OR(tag, "ast_format_cache_get"), file, line, func);
+	return __ao2_find(formats, name, OBJ_SEARCH_KEY, tag, file, line, func);
 }
 
 struct ast_format *ast_format_cache_get_slin_by_rate(unsigned int rate)

@@ -33,8 +33,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <dirent.h>                 /* for closedir, opendir, readdir, DIR */
 
 #include <openssl/aes.h>            /* for AES_decrypt, AES_encrypt, AES_set... */
@@ -660,8 +658,6 @@ static int load_module(void)
 		crypto_load(-1, -1);
 	}
 
-	/* This prevents dlclose from ever running, but allows CLI cleanup at shutdown. */
-	ast_module_shutdown_ref(ast_module_info->self);
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
@@ -672,11 +668,10 @@ static int unload_module(void)
 	return 0;
 }
 
-/* needs usecount semantics defined */
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Cryptographic Digital Signatures",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-		.load_pri = AST_MODPRI_CHANNEL_DEPEND, /*!< Since we don't have a config file, we could move up to REALTIME_DEPEND, if necessary */
-	);
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.load_pri = AST_MODPRI_CHANNEL_DEPEND, /*!< Since we don't have a config file, we could move up to REALTIME_DEPEND, if necessary */
+);

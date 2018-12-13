@@ -25,8 +25,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "app.h"
 #include "control.h"
 #include "messaging.h"
@@ -210,7 +208,6 @@ static void endpoint_state_cb(void *data, struct stasis_subscription *sub,
 static struct app_forwards *forwards_create_endpoint(struct stasis_app *app,
 	struct ast_endpoint *endpoint)
 {
-
 	struct app_forwards *forwards;
 	int ret = 0;
 
@@ -1601,13 +1598,6 @@ void stasis_app_register_event_sources(void)
 	stasis_app_register_event_source(&channel_event_source);
 	stasis_app_register_event_source(&bridge_event_source);
 	stasis_app_register_event_source(&endpoint_event_source);
-}
-
-int stasis_app_is_core_event_source(struct stasis_app_event_source *obj)
-{
-	return obj == &endpoint_event_source ||
-		obj == &bridge_event_source ||
-		obj == &channel_event_source;
 }
 
 void stasis_app_unregister_event_sources(void)

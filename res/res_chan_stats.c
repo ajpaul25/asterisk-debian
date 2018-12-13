@@ -34,8 +34,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/module.h"
 #include "asterisk/stasis_channels.h"
 #include "asterisk/stasis_message_router.h"
@@ -184,5 +182,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Example of how to use St
 	.support_level = AST_MODULE_SUPPORT_EXTENDED,
 	.load = load_module,
 	.unload = unload_module,
-	.nonoptreq = "res_statsd"
-	);
+	.requires = "res_statsd"
+);

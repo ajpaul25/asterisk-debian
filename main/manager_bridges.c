@@ -25,8 +25,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/stasis_bridges.h"
 #include "asterisk/stasis_channels.h"
 #include "asterisk/manager.h"
@@ -664,7 +662,7 @@ static int manager_bridge_kick(struct mansession *s, const struct message *m)
 		}
 	} else {
 		bridge = ast_bridge_find_by_id(bridge_uniqueid);
-		if (!bridge) {
+		if (!bridge || ast_test_flag(&bridge->feature_flags, AST_BRIDGE_FLAG_INVISIBLE)) {
 			astman_send_error(s, m, "Bridge not found");
 			return 0;
 		}

@@ -354,8 +354,8 @@ int ast_sip_initialize_transport_management(void)
 {
 	struct ao2_container *transports;
 
-	transports = ao2_container_alloc(TRANSPORTS_BUCKETS, monitored_transport_hash_fn,
-		monitored_transport_cmp_fn);
+	transports = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, TRANSPORTS_BUCKETS,
+		monitored_transport_hash_fn, NULL, monitored_transport_cmp_fn);
 	if (!transports) {
 		ast_log(LOG_ERROR, "Could not create container for transports to perform keepalive on.\n");
 		return AST_MODULE_LOAD_DECLINE;
@@ -378,7 +378,7 @@ int ast_sip_initialize_transport_management(void)
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
-	internal_sip_register_service(&idle_monitor_module);
+	ast_sip_register_service(&idle_monitor_module);
 
 	ast_sip_transport_state_register(&monitored_transport_reg);
 
@@ -403,7 +403,7 @@ void ast_sip_destroy_transport_management(void)
 
 	ast_sip_transport_state_unregister(&monitored_transport_reg);
 
-	internal_sip_unregister_service(&idle_monitor_module);
+	ast_sip_unregister_service(&idle_monitor_module);
 
 	ast_sched_clean_by_callback(sched, idle_sched_cb, idle_sched_cleanup);
 	ast_sched_context_destroy(sched);

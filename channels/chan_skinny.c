@@ -39,8 +39,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -49,7 +47,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include <fcntl.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-#include <sys/signal.h>
 #include <signal.h>
 #include <ctype.h>
 
@@ -1671,7 +1668,7 @@ static struct ast_channel_tech skinny_tech = {
 	.send_digit_end = skinny_senddigit_end,
 };
 
-static int skinny_extensionstate_cb(char *context, char *id, struct ast_state_cb_info *info, void *data);
+static int skinny_extensionstate_cb(const char *context, const char *exten, struct ast_state_cb_info *info, void *data);
 
 static struct skinny_line *skinny_line_alloc(void)
 {
@@ -3413,7 +3410,7 @@ static void transmit_serviceurlstat(struct skinny_device *d, int instance)
 	transmit_response(d, req);
 }
 
-static int skinny_extensionstate_cb(char *context, char *exten, struct ast_state_cb_info *info, void *data)
+static int skinny_extensionstate_cb(const char *context, const char *exten, struct ast_state_cb_info *info, void *data)
 {
 	struct skinny_container *container = data;
 	struct skinny_device *d = NULL;
@@ -8086,7 +8083,14 @@ static void config_parse_variables(int type, void *item, struct ast_variable *vp
 			}
 		} else if (!strcasecmp(v->name, "permit") || !strcasecmp(v->name, "deny")) {
 			if (type & (TYPE_DEVICE)) {
-				CDEV->ha = ast_append_ha(v->name, v->value, CDEV->ha, NULL);
+				int acl_error = 0;
+
+				CDEV->ha = ast_append_ha(v->name, v->value, CDEV->ha, &acl_error);
+				if (acl_error) {
+					ast_log(LOG_ERROR, "Invalid ACL '%s' on line '%d'. Deleting device\n",
+							v->value, v->lineno);
+					CDEV->prune = 1;
+				}
 				continue;
 			}
 		} else if (!strcasecmp(v->name, "allow")) {
@@ -8330,6 +8334,8 @@ static struct skinny_line *config_line(const char *lname, struct ast_variable *v
 		mailbox_specific_topic = ast_mwi_topic(l->mailbox);
 		if (mailbox_specific_topic) {
 			l->mwi_event_sub = stasis_subscribe_pool(mailbox_specific_topic, mwi_event_cb, l);
+			stasis_subscription_accept_message_type(l->mwi_event_sub, ast_mwi_state_type());
+			stasis_subscription_set_filter(l->mwi_event_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 		}
 	}
 
@@ -8575,16 +8581,16 @@ static void delete_devices(void)
 		}
 		/* Delete all speeddials for this device */
 		while ((sd = AST_LIST_REMOVE_HEAD(&d->speeddials, list))) {
-			free(sd->container);
-			free(sd);
+			ast_free(sd->container);
+			ast_free(sd);
 		}
 		/* Delete all serviceurls for this device */
 		while ((surl = AST_LIST_REMOVE_HEAD(&d->serviceurls, list))) {
-			free(surl);
+			ast_free(surl);
 		}
 		/* Delete all addons for this device */
 		while ((a = AST_LIST_REMOVE_HEAD(&d->addons, list))) {
-			free(a);
+			ast_free(a);
 		}
 		d = skinny_device_destroy(d);
 	}
@@ -8638,11 +8644,11 @@ int skinny_reload(void)
 		}
 		/* Delete all speeddials for this device */
 		while ((sd = AST_LIST_REMOVE_HEAD(&d->speeddials, list))) {
-			free(sd);
+			ast_free(sd);
 		}
 		/* Delete all addons for this device */
 		while ((a = AST_LIST_REMOVE_HEAD(&d->addons, list))) {
-			free(a);
+			ast_free(a);
 		}
 		AST_LIST_REMOVE_CURRENT(list);
 		d = skinny_device_destroy(d);
@@ -8825,9 +8831,9 @@ static int reload(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "Skinny Client Control Protocol (Skinny)",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-		.load_pri = AST_MODPRI_CHANNEL_DRIVER,
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.load_pri = AST_MODPRI_CHANNEL_DRIVER,
 );

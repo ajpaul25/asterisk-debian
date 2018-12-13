@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/_private.h"
 #include "asterisk/paths.h"
 #include "asterisk/linkedlists.h"
@@ -2292,7 +2290,9 @@ static struct ast_xml_doc_item *ast_xml_doc_item_alloc(const char *name, const c
 {
 	struct ast_xml_doc_item *item;
 
-	if (!(item = ao2_alloc(sizeof(*item), ast_xml_doc_item_destructor))) {
+	item = ao2_alloc_options(sizeof(*item), ast_xml_doc_item_destructor,
+		AO2_ALLOC_OPT_LOCK_NOLOCK);
+	if (!item) {
 		ast_log(AST_LOG_ERROR, "Failed to allocate memory for ast_xml_doc_item instance\n");
 		return NULL;
 	}
@@ -2657,7 +2657,9 @@ struct ao2_container *ast_xmldoc_build_documentation(const char *type)
 	struct documentation_tree *doctree;
 	const char *name;
 
-	if (!(docs = ao2_container_alloc(127, ast_xml_doc_item_hash, ast_xml_doc_item_cmp))) {
+	docs = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, 127,
+		ast_xml_doc_item_hash, NULL, ast_xml_doc_item_cmp);
+	if (!docs) {
 		ast_log(AST_LOG_ERROR, "Failed to create container for xml document item instances\n");
 		return NULL;
 	}

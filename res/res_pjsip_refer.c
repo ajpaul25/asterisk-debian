@@ -393,7 +393,7 @@ static int refer_progress_alloc(struct ast_sip_session *session, pjsip_rx_data *
 	ast_taskprocessor_build_name(tps_name, sizeof(tps_name), "pjsip/refer/%s",
 		ast_sorcery_object_get_id(session->endpoint));
 
-	if (!((*progress)->serializer = ast_sip_create_serializer_named(tps_name))) {
+	if (!((*progress)->serializer = ast_sip_create_serializer(tps_name))) {
 		goto error;
 	}
 
@@ -686,6 +686,10 @@ static void refer_blind_callback(struct ast_channel *chan, struct transfer_chann
 			ast_channel_unlock(chan);
 
 			ao2_cleanup(refer->progress);
+		} else {
+			stasis_subscription_accept_message_type(refer->progress->bridge_sub, ast_channel_entered_bridge_type());
+			stasis_subscription_accept_message_type(refer->progress->bridge_sub, stasis_subscription_change_type());
+			stasis_subscription_set_filter(refer->progress->bridge_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 		}
 	}
 
@@ -1224,8 +1228,6 @@ static int load_module(void)
 {
 	const pj_str_t str_norefersub = { "norefersub", 10 };
 
-	CHECK_PJSIP_SESSION_MODULE_LOADED();
-
 	pjsip_replaces_init_module(ast_sip_get_pjsip_endpoint());
 	pjsip_xfer_init_module(ast_sip_get_pjsip_endpoint());
 	pjsip_endpt_add_capability(ast_sip_get_pjsip_endpoint(), NULL, PJSIP_H_SUPPORTED, NULL, 1, &str_norefersub);
@@ -1247,8 +1249,9 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP Blind and Attended Transfer Support",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_APP_DEPEND,
-		   );
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_APP_DEPEND,
+	.requires = "res_pjsip,res_pjsip_session,res_pjsip_pubsub",
+);

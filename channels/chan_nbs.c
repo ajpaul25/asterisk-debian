@@ -27,12 +27,10 @@
 
 /*** MODULEINFO
 	<depend>nbs</depend>
-	<support_level>extended</support_level>
+	<support_level>deprecated</support_level>
  ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -272,4 +270,4 @@ static int load_module(void)
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
-AST_MODULE_INFO_STANDARD_EXTENDED(ASTERISK_GPL_KEY, "Network Broadcast Sound Support");
+AST_MODULE_INFO_STANDARD_DEPRECATED(ASTERISK_GPL_KEY, "Network Broadcast Sound Support");

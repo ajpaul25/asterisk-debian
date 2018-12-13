@@ -50,7 +50,7 @@
 /*** MODULEINFO
 	<depend>vpb</depend>
 	<defaultenabled>no</defaultenabled>
-	<support_level>extended</support_level>
+	<support_level>deprecated</support_level>
  ***/
 
 #include <vpbapi.h>
@@ -58,8 +58,6 @@
 extern "C" {
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "asterisk/lock.h"
 #include "asterisk/utils.h"
@@ -366,14 +364,18 @@ static struct ast_channel_tech vpb_tech = {
 	.capabilities = NULL,
 	.properties = 0,
 	.requester = vpb_request,
+	.requester_with_stream_topology = NULL,
 	.devicestate = NULL,
+	.presencestate = NULL,
 	.send_digit_begin = vpb_digit_begin,
 	.send_digit_end = vpb_digit_end,
 	.call = vpb_call,
 	.hangup = vpb_hangup,
 	.answer = vpb_answer,
 	.read = vpb_read,
+	.read_stream = NULL,
 	.write = vpb_write,
+	.write_stream = NULL,
 	.send_text = NULL,
 	.send_image = NULL,
 	.send_html = NULL,
@@ -396,14 +398,18 @@ static struct ast_channel_tech vpb_tech_indicate = {
 	.capabilities = NULL,
 	.properties = 0,
 	.requester = vpb_request,
+	.requester_with_stream_topology = NULL,
 	.devicestate = NULL,
+	.presencestate = NULL,
 	.send_digit_begin = vpb_digit_begin,
 	.send_digit_end = vpb_digit_end,
 	.call = vpb_call,
 	.hangup = vpb_hangup,
 	.answer = vpb_answer,
 	.read = vpb_read,
+	.read_stream = NULL,
 	.write = vpb_write,
+	.write_stream = NULL,
 	.send_text = NULL,
 	.send_image = NULL,
 	.send_html = NULL,
@@ -2869,4 +2875,4 @@ static enum ast_module_load_result load_module()
 #endif
 /**/
 
-AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Voicetronix API driver");
+AST_MODULE_INFO_STANDARD_DEPRECATED(ASTERISK_GPL_KEY, "Voicetronix API driver");

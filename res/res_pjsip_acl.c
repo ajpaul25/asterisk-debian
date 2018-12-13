@@ -238,8 +238,21 @@ static int acl_handler(const struct aco_option *opt, struct ast_variable *var, v
 
 	if (!strncmp(var->name, "contact_", 8)) {
 		ast_append_acl(var->name + 8, var->value, &sip_acl->contact_acl, &error, &ignore);
+		if (error) {
+			ast_log(LOG_ERROR, "Bad contact ACL '%s' at line '%d' of pjsip.conf\n",
+					var->value, var->lineno);
+		}
 	} else {
 		ast_append_acl(var->name, var->value, &sip_acl->acl, &error, &ignore);
+		if (error) {
+			ast_log(LOG_ERROR, "Bad ACL '%s' at line '%d' of pjsip.conf\n",
+					var->value, var->lineno);
+		}
+	}
+
+	if (error) {
+		ast_log(LOG_ERROR, "There is an error in ACL configuration. Blocking ALL SIP traffic.\n");
+		ast_append_acl("deny", "0.0.0.0/0.0.0.0", &sip_acl->acl, NULL, &ignore);
 	}
 
 	return error;
@@ -269,8 +282,6 @@ static void *acl_alloc(const char *name)
 
 static int load_module(void)
 {
-	CHECK_PJSIP_MODULE_LOADED();
-
 	ast_sorcery_apply_config(ast_sip_get_sorcery(), SIP_SORCERY_ACL_TYPE);
 	ast_sorcery_apply_default(ast_sip_get_sorcery(), SIP_SORCERY_ACL_TYPE,
 				  "config", "pjsip.conf,criteria=type=acl");
@@ -304,8 +315,9 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP ACL Resource",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_APP_DEPEND,
-	       );
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_APP_DEPEND,
+	.requires = "res_pjsip",
+);

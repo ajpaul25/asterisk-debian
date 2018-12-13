@@ -35,8 +35,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$");
-
 #include "asterisk/utils.h"
 #include "asterisk/test.h"
 #include "asterisk/crypto.h"
@@ -394,7 +392,7 @@ AST_TEST_DEFINE(agi_loaded_test)
 	}
 #endif
 
-	ast_agi_unregister(ast_module_info->self, &noop_command);
+	ast_agi_unregister(&noop_command);
 	return res;
 }
 
@@ -649,4 +647,9 @@ static int load_module(void)
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
-AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Utils test module");
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Utils test module",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.requires = "res_agi,res_crypto",
+);

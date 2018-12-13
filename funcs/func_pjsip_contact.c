@@ -34,8 +34,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <pjsip.h>
 #include <pjlib.h>
 
@@ -149,7 +147,7 @@ static int pjsip_contact_function_read(struct ast_channel *chan,
 	if (!strcmp(args.field_name, "status")) {
 		ast_str_set(buf, len, "%s", ast_sip_get_contact_status_label(contact_status ? contact_status->status : UNKNOWN));
 	} else if (!strcmp(args.field_name, "rtt")) {
-		if (!contact_status || contact_status->status == UNKNOWN) {
+		if (!contact_status || contact_status->status != AVAILABLE) {
 			ast_str_set(buf, len, "%s", "N/A");
 		} else {
 			ast_str_set(buf, len, "%" PRId64, contact_status->rtt);
@@ -200,4 +198,9 @@ static int load_module(void)
 	return ast_custom_function_register(&pjsip_contact_function);
 }
 
-AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Get information about a PJSIP contact");
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Get information about a PJSIP contact",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.requires = "res_pjsip",
+);

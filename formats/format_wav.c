@@ -30,8 +30,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/mod_format.h"
 #include "asterisk/module.h"
 #include "asterisk/endian.h"
@@ -534,6 +532,7 @@ static struct ast_format_def wav16_f = {
 static struct ast_format_def wav_f = {
 	.name = "wav",
 	.exts = "wav",
+	.mime_types = "audio/wav|audio/x-wav",
 	.open =	wav_open,
 	.rewrite = wav_rewrite,
 	.write = wav_write,

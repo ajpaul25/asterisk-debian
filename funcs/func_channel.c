@@ -30,8 +30,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <regex.h>
 #include <ctype.h>
 
@@ -159,6 +157,9 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 						the channel is hung up.  Any optionally omitted context
 						and exten are supplied by the channel pushing the handler
 						before it is pushed.</para>
+					</enum>
+					<enum name="onhold">
+						<para>R/O Whether or not the channel is onhold. (1/0)</para>
 					</enum>
 					<enum name="language">
 						<para>R/W language for sounds played.</para>
@@ -339,7 +340,10 @@ static int func_channel_read(struct ast_channel *chan, const char *function,
 		locked_copy_string(chan, buf, ast_channel_parkinglot(chan), len);
 	else if (!strcasecmp(data, "state"))
 		locked_copy_string(chan, buf, ast_state2str(ast_channel_state(chan)), len);
-	else if (!strcasecmp(data, "channeltype"))
+	else if (!strcasecmp(data, "onhold")) {
+		locked_copy_string(chan, buf,
+			ast_channel_hold_state(chan) == AST_CONTROL_HOLD ? "1" : "0", len);
+	} else if (!strcasecmp(data, "channeltype"))
 		locked_copy_string(chan, buf, ast_channel_tech(chan)->type, len);
 	else if (!strcasecmp(data, "accountcode"))
 		locked_copy_string(chan, buf, ast_channel_accountcode(chan), len);
@@ -446,14 +450,13 @@ static int func_channel_read(struct ast_channel *chan, const char *function,
 		snprintf(buf, len, "%d", ast_max_forwards_get(chan));
 		ast_channel_unlock(chan);
 	} else if (!strcasecmp(data, "callid")) {
-		struct ast_callid *callid;
+		ast_callid callid;
 
 		buf[0] = '\0';
 		ast_channel_lock(chan);
 		callid = ast_channel_callid(chan);
 		if (callid) {
 			ast_callid_strnprint(buf, len, callid);
-			ast_callid_unref(callid);
 		}
 		ast_channel_unlock(chan);
 	} else if (!ast_channel_tech(chan) || !ast_channel_tech(chan)->func_channel_read || ast_channel_tech(chan)->func_channel_read(chan, function, data, buf, len)) {

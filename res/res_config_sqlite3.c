@@ -45,8 +45,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <sqlite3.h>
 
 #include "asterisk/module.h"
@@ -105,6 +103,7 @@ struct realtime_sqlite3_db {
 	unsigned int exiting:1;
 	unsigned int wakeup:1;
 	unsigned int batch;
+	int busy_timeout;
 };
 
 struct ao2_container *databases;
@@ -344,7 +343,7 @@ static int db_open(struct realtime_sqlite3_db *db)
 		ao2_unlock(db);
 		return -1;
 	}
-	sqlite3_busy_timeout(db->handle, 1000);
+	sqlite3_busy_timeout(db->handle, db->busy_timeout);
 
 	if (db->debug) {
 		sqlite3_trace(db->handle, trace_cb, db);
@@ -402,6 +401,7 @@ static struct realtime_sqlite3_db *new_realtime_sqlite3_db(struct ast_config *co
 	db->requirements = REALTIME_SQLITE3_REQ_WARN;
 	db->batch = 100;
 	ast_string_field_set(db, name, cat);
+	db->busy_timeout = 1000;
 
 	for (var = ast_variable_browse(config, cat); var; var = var->next) {
 		if (!strcasecmp(var->name, "dbfile")) {
@@ -412,6 +412,10 @@ static struct realtime_sqlite3_db *new_realtime_sqlite3_db(struct ast_config *co
 			ast_app_parse_timelen(var->value, (int *) &db->batch, TIMELEN_MILLISECONDS);
 		} else if (!strcasecmp(var->name, "debug")) {
 			db->debug = ast_true(var->value);
+		} else if (!strcasecmp(var->name, "busy_timeout")) {
+			if (ast_parse_arg(var->value, PARSE_INT32|PARSE_DEFAULT, &(db->busy_timeout), 1000) != 0) {
+				ast_log(LOG_WARNING, "Invalid busy_timeout value '%s' at res_config_sqlite3.conf:%d. Using 1000 instead.\n", var->value, var->lineno);
+			}
 		}
 	}
 
@@ -454,6 +458,11 @@ static int update_realtime_sqlite3_db(struct realtime_sqlite3_db *db, struct ast
 		sqlite3_close(db->handle);
 		ast_string_field_set(db, filename, new->filename);
 		db_open(db); /* Also handles setting appropriate debug on new handle */
+	}
+
+	if (db->busy_timeout != new->busy_timeout) {
+		db->busy_timeout = new->busy_timeout;
+		sqlite3_busy_timeout(db->handle, db->busy_timeout);
 	}
 
 	if (db->batch != new->batch) {
@@ -1185,7 +1194,9 @@ static int realtime_sqlite3_require(const char *database, const char *table, va_
 		return -1;
 	}
 
-	if (!(columns = ao2_container_alloc(31, str_hash_fn, str_cmp_fn))) {
+	columns = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, 31,
+		str_hash_fn, NULL, str_cmp_fn);
+	if (!columns) {
 		unref_db(&db);
 	   return -1;
 	}
@@ -1360,7 +1371,9 @@ static int load_module(void)
 {
 	discover_sqlite3_caps();
 
-	if (!((databases = ao2_container_alloc(DB_BUCKETS, db_hash_fn, db_cmp_fn)))) {
+	databases = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, DB_BUCKETS,
+		db_hash_fn, NULL, db_cmp_fn);
+	if (!databases) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
@@ -1384,4 +1397,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "SQLite 3 realtime con
 	.unload = unload_module,
 	.reload = reload,
 	.load_pri = AST_MODPRI_REALTIME_DRIVER,
+	.requires = "extconfig",
 );

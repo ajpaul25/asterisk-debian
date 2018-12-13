@@ -17,7 +17,8 @@
  */
 
 /*!
- * \file \brief Test Stasis Application API.
+ * \file
+ * \brief Test Stasis Application API.
  * \author\verbatim David M. Lee, II <dlee@digium.com> \endverbatim
  *
  * \ingroup tests
@@ -30,8 +31,6 @@
  ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "asterisk/module.h"
 #include "asterisk/test.h"
@@ -180,13 +179,11 @@ static int unload_module(void)
 	AST_TEST_UNREGISTER(app_invoke_dne);
 	AST_TEST_UNREGISTER(app_invoke_one);
 	AST_TEST_UNREGISTER(app_replaced);
-	stasis_app_unref();
 	return 0;
 }
 
 static int load_module(void)
 {
-	stasis_app_ref();
 	AST_TEST_REGISTER(app_replaced);
 	AST_TEST_REGISTER(app_invoke_one);
 	AST_TEST_REGISTER(app_invoke_dne);
@@ -194,7 +191,8 @@ static int load_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Stasis Core testing",
+	.support_level = AST_MODULE_SUPPORT_CORE,
 	.load = load_module,
 	.unload = unload_module,
-	.nonoptreq = "res_stasis",
-	);
+	.requires = "res_stasis",
+);
