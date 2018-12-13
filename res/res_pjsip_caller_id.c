@@ -19,7 +19,6 @@
 /*** MODULEINFO
 	<depend>pjproject</depend>
 	<depend>res_pjsip</depend>
-	<depend>res_pjsip_session</depend>
 	<support_level>core</support_level>
  ***/
 
@@ -342,7 +341,8 @@ static void update_incoming_connected_line(struct ast_sip_session *session, pjsi
 {
 	struct ast_party_id id;
 
-	if (!session->endpoint->id.trust_inbound) {
+	if (!session->endpoint->trust_connected_line
+		|| !session->endpoint->id.trust_inbound) {
 		return;
 	}
 
@@ -430,8 +430,7 @@ static pjsip_fromto_hdr *create_new_id_hdr(const pj_str_t *hdr_name, pjsip_fromt
 
 	id_hdr = pjsip_from_hdr_create(tdata->pool);
 	id_hdr->type = PJSIP_H_OTHER;
-	pj_strdup(tdata->pool, &id_hdr->name, hdr_name);
-	id_hdr->sname = id_hdr->name;
+	id_hdr->sname = id_hdr->name = *hdr_name;
 
 	id_name_addr = pjsip_uri_clone(tdata->pool, base->uri);
 	id_uri = pjsip_uri_get_uri(id_name_addr->uri);
@@ -750,7 +749,10 @@ static void caller_id_outgoing_response(struct ast_sip_session *session, pjsip_t
 	struct ast_party_id effective_id;
 	struct ast_party_id connected_id;
 
-	if (!session->channel) {
+	if (!session->channel
+		|| (!session->endpoint->send_connected_line
+			&& session->inv_session
+			&& session->inv_session->state >= PJSIP_INV_STATE_EARLY)) {
 		return;
 	}
 
@@ -776,8 +778,7 @@ static struct ast_sip_session_supplement caller_id_supplement = {
 
 static int load_module(void)
 {
-	CHECK_PJSIP_SESSION_MODULE_LOADED();
-
+	ast_module_shutdown_ref(AST_MODULE_SELF);
 	ast_sip_session_register_supplement(&caller_id_supplement);
 	return AST_MODULE_LOAD_SUCCESS;
 }
@@ -789,8 +790,9 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP Caller ID Support",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_APP_DEPEND,
-	       );
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_APP_DEPEND,
+	.requires = "res_pjsip",
+);

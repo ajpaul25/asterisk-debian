@@ -110,8 +110,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <math.h>
 
 #include "asterisk/channel.h"
@@ -426,9 +424,9 @@ AST_TEST_DEFINE(test_sip_rtpqos_1)
 		break;
 	}
 
-	ast_rtp_engine_register2(&test_engine, NULL);
+	ast_rtp_engine_register(&test_engine);
 	/* Have to associate this with a SIP pvt and an ast_channel */
-	if (!(p = sip_alloc(NULL, NULL, 0, SIP_NOTIFY, NULL, NULL))) {
+	if (!(p = sip_alloc(0, NULL, 0, SIP_NOTIFY, NULL, 0))) {
 		res = AST_TEST_NOT_RUN;
 		goto done;
 	}

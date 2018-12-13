@@ -39,8 +39,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <regex.h>
 #include <pjsip.h>
 
@@ -476,7 +474,7 @@ static int add_extension(struct ast_context *context, const char *exten,
 	}
 
 	if (ast_add_extension2_nolock(context, 0, exten, priority, NULL, NULL,
-			app, data, free_ptr, BASE_REGISTRAR)) {
+			app, data, free_ptr, BASE_REGISTRAR, NULL, 0)) {
 		ast_free(data);
 		return -1;
 	}
@@ -1344,8 +1342,8 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "PJSIP Config Wizard",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_REALTIME_DRIVER,
-		);
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_REALTIME_DRIVER,
+);

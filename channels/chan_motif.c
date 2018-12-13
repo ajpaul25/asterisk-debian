@@ -44,14 +44,12 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <sys/signal.h>
+#include <signal.h>
 #include <iksemel.h>
 #include <pthread.h>
 
@@ -317,7 +315,7 @@ struct jingle_session {
 	struct ast_format_cap *peercap;       /*!< Peer codec capabilities */
 	unsigned int outgoing:1;              /*!< Whether this is an outgoing leg or not */
 	unsigned int gone:1;                  /*!< In the eyes of Jingle this session is already gone */
-	struct ast_callid *callid;            /*!< Bound session call-id */
+	ast_callid callid;                    /*!< Bound session call-id */
 };
 
 static const char channel_type[] = "Motif";
@@ -473,7 +471,9 @@ static struct jingle_endpoint_state *jingle_endpoint_state_create(void)
 		return NULL;
 	}
 
-	if (!(state->sessions = ao2_container_alloc(SESSION_BUCKETS, jingle_session_hash, jingle_session_cmp))) {
+	state->sessions = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		SESSION_BUCKETS, jingle_session_hash, NULL, jingle_session_cmp);
+	if (!state->sessions) {
 		ao2_ref(state, -1);
 		return NULL;
 	}
@@ -584,10 +584,6 @@ static void jingle_session_destructor(void *obj)
 	ao2_cleanup(session->jointcap);
 	ao2_cleanup(session->peercap);
 
-	if (session->callid) {
-		ast_callid_unref(session->callid);
-	}
-
 	ast_string_field_free_memory(session);
 }
 
@@ -607,7 +603,9 @@ static void *jingle_config_alloc(void)
 		return NULL;
 	}
 
-	if (!(cfg->endpoints = ao2_container_alloc(ENDPOINT_BUCKETS, jingle_endpoint_hash, jingle_endpoint_cmp))) {
+	cfg->endpoints = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		ENDPOINT_BUCKETS, jingle_endpoint_hash, NULL, jingle_endpoint_cmp);
+	if (!cfg->endpoints) {
 		ao2_ref(cfg, -1);
 		return NULL;
 	}
@@ -703,7 +701,7 @@ static void jingle_enable_video(struct jingle_session *session)
 static struct jingle_session *jingle_alloc(struct jingle_endpoint *endpoint, const char *from, const char *sid)
 {
 	struct jingle_session *session;
-	struct ast_callid *callid;
+	ast_callid callid;
 	struct ast_sockaddr tmp;
 
 	if (!(session = ao2_alloc(sizeof(*session), jingle_session_destructor))) {
@@ -2822,9 +2820,10 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "Motif Jingle Channel Driver",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-		.load_pri = AST_MODPRI_CHANNEL_DRIVER,
-	       );
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.load_pri = AST_MODPRI_CHANNEL_DRIVER,
+	.requires = "res_xmpp",
+);

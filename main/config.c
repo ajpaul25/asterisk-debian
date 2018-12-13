@@ -30,9 +30,12 @@
 	<support_level>core</support_level>
  ***/
 
-#include "asterisk.h"
+/* This maintains the original "module reload extconfig" CLI command instead
+ * of replacing it with "module reload config". */
+#undef AST_MODULE
+#define AST_MODULE "extconfig"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
+#include "asterisk.h"
 
 #include "asterisk/paths.h"	/* use ast_config_AST_CONFIG_DIR */
 #include "asterisk/network.h"	/* we do some sockaddr manipulation here */
@@ -45,8 +48,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include <math.h>	/* HUGE_VAL */
 #include <regex.h>
 
-#define AST_INCLUDE_GLOB 1
-
 #include "asterisk/config.h"
 #include "asterisk/cli.h"
 #include "asterisk/lock.h"
@@ -56,6 +57,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include "asterisk/astobj2.h"
 #include "asterisk/strings.h"	/* for the ast_str_*() API */
 #include "asterisk/netsock2.h"
+#include "asterisk/module.h"
 
 #define MAX_NESTED_COMMENTS 128
 #define COMMENT_START ";--"
@@ -283,11 +285,7 @@ struct ast_config_include {
 static void ast_variable_destroy(struct ast_variable *doomed);
 static void ast_includes_destroy(struct ast_config_include *incls);
 
-#ifdef __AST_DEBUG_MALLOC
 struct ast_variable *_ast_variable_new(const char *name, const char *value, const char *filename, const char *file, const char *func, int lineno)
-#else
-struct ast_variable *ast_variable_new(const char *name, const char *value, const char *filename)
-#endif
 {
 	struct ast_variable *variable;
 	int name_len = strlen(name) + 1;
@@ -299,13 +297,9 @@ struct ast_variable *ast_variable_new(const char *name, const char *value, const
 		fn_len = MIN_VARIABLE_FNAME_SPACE;
 	}
 
-	if (
-#ifdef __AST_DEBUG_MALLOC
-		(variable = __ast_calloc(1, fn_len + name_len + val_len + sizeof(*variable), file, lineno, func))
-#else
-		(variable = ast_calloc(1, fn_len + name_len + val_len + sizeof(*variable)))
-#endif
-		) {
+	variable = __ast_calloc(1, fn_len + name_len + val_len + sizeof(*variable),
+		file, lineno, func);
+	if (variable) {
 		char *dst = variable->stuff;	/* writable space starts here */
 
 		/* Put file first so ast_include_rename() can calculate space available. */
@@ -2051,10 +2045,8 @@ static struct ast_config *config_text_file_load(const char *database, const char
 	/*! Growable string buffer */
 	struct ast_str *comment_buffer = NULL;	/*!< this will be a comment collector.*/
 	struct ast_str *lline_buffer = NULL;	/*!< A buffer for stuff behind the ; */
-#ifdef AST_INCLUDE_GLOB
 	int glob_ret;
 	glob_t globbuf;
-#endif
 
 	if (cfg) {
 		cat = ast_config_get_current_category(cfg);
@@ -2077,7 +2069,7 @@ static struct ast_config *config_text_file_load(const char *database, const char
 			return NULL;
 		}
 	}
-#ifdef AST_INCLUDE_GLOB
+
 	globbuf.gl_offs = 0;	/* initialize it to silence gcc */
 	glob_ret = glob(fn, MY_GLOB_FLAGS, NULL, &globbuf);
 	if (glob_ret == GLOB_NOSPACE) {
@@ -2105,7 +2097,7 @@ static struct ast_config *config_text_file_load(const char *database, const char
 		}
 		for (i=0; i<globbuf.gl_pathc; i++) {
 			ast_copy_string(fn, globbuf.gl_pathv[i], sizeof(fn));
-#endif
+
 			/*
 			 * The following is not a loop, but just a convenient way to define a block
 			 * (using do { } while(0) ), and be able to exit from it with 'continue'
@@ -2164,9 +2156,7 @@ static struct ast_config *config_text_file_load(const char *database, const char
 
 					if (unchanged) {
 						AST_LIST_UNLOCK(&cfmtime_head);
-#ifdef AST_INCLUDE_GLOB
 						globfree(&globbuf);
-#endif
 						ast_free(comment_buffer);
 						ast_free(lline_buffer);
 						return CONFIG_STATUS_FILEUNCHANGED;
@@ -2340,14 +2330,12 @@ static struct ast_config *config_text_file_load(const char *database, const char
 			if (comment) {
 				ast_log(LOG_WARNING,"Unterminated comment detected beginning on line %d\n", nest[comment - 1]);
 			}
-#ifdef AST_INCLUDE_GLOB
 			if (cfg == NULL || cfg == CONFIG_STATUS_FILEUNCHANGED || cfg == CONFIG_STATUS_FILEINVALID) {
 				break;
 			}
 		}
 		globfree(&globbuf);
 	}
-#endif
 
 	ast_free(comment_buffer);
 	ast_free(lline_buffer);
@@ -2512,11 +2500,6 @@ static void insert_leading_blank_lines(FILE *fp, struct inclfile *fi, struct ast
 	fi->lineno = lineno + 1; /* Advance the file lineno */
 }
 
-int config_text_file_save(const char *configfile, const struct ast_config *cfg, const char *generator)
-{
-	return ast_config_text_file_save2(configfile, cfg, generator, CONFIG_SAVE_FLAG_PRESERVE_EFFECTIVE_CONTEXT);
-}
-
 int ast_config_text_file_save(const char *configfile, const struct ast_config *cfg, const char *generator)
 {
 	return ast_config_text_file_save2(configfile, cfg, generator, CONFIG_SAVE_FLAG_PRESERVE_EFFECTIVE_CONTEXT);
@@ -2553,7 +2536,8 @@ int ast_config_text_file_save2(const char *configfile, const struct ast_config *
 	struct ao2_container *fileset;
 	struct inclfile *fi;
 
-	fileset = ao2_container_alloc(1023, hash_string, hashtab_compare_strings);
+	fileset = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, 1023,
+		hash_string, NULL, hashtab_compare_strings);
 	if (!fileset) {
 		/* Container creation failed. */
 		return -1;
@@ -2891,7 +2875,7 @@ static int ast_realtime_append_mapping(const char *name, const char *driver, con
 	return 0;
 }
 
-int read_config_maps(void)
+static int reload_module(void)
 {
 	struct ast_config *config, *configtmp;
 	struct ast_variable *v;
@@ -4051,6 +4035,7 @@ static void config_shutdown(void)
 int register_config_cli(void)
 {
 	ast_cli_register_multiple(cli_config, ARRAY_LEN(cli_config));
+	/* This is separate from the module load so cleanup can happen very late. */
 	ast_register_cleanup(config_shutdown);
 	return 0;
 }
@@ -4120,8 +4105,12 @@ int ast_config_hook_register(const char *name,
 		config_hook_cb hook_cb)
 {
 	struct cfg_hook *hook;
-	if (!cfg_hooks && !(cfg_hooks = ao2_container_alloc(17, hook_hash, hook_cmp))) {
-		return -1;
+	if (!cfg_hooks) {
+		cfg_hooks = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, 17,
+			hook_hash, NULL, hook_cmp);
+		if (!cfg_hooks) {
+			return -1;
+		}
 	}
 
 	if (!(hook = ao2_alloc(sizeof(*hook), hook_destroy))) {
@@ -4137,3 +4126,26 @@ int ast_config_hook_register(const char *name,
 	ao2_ref(hook, -1);
 	return 0;
 }
+
+static int unload_module(void)
+{
+	return 0;
+}
+
+static int load_module(void)
+{
+	if (ast_opt_console) {
+		ast_verb(0, "[ Initializing Custom Configuration Options ]\n");
+	}
+
+	return reload_module() ? AST_MODULE_LOAD_FAILURE : AST_MODULE_LOAD_SUCCESS;
+}
+
+/* This module explicitly loads before realtime drivers. */
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Configuration",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload_module,
+	.load_pri = 0,
+);

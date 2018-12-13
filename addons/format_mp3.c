@@ -34,8 +34,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "mp3/mpg123.h"
 #include "mp3/mpglib.h"
 

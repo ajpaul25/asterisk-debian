@@ -32,8 +32,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/_private.h"
 #include "asterisk/stun.h"
 #include "asterisk/cli.h"

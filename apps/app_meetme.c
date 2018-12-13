@@ -47,8 +47,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <dahdi/user.h>
 
 #include "asterisk/lock.h"
@@ -71,7 +69,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include "asterisk/dial.h"
 #include "asterisk/causes.h"
 #include "asterisk/paths.h"
-#include "asterisk/data.h"
 #include "asterisk/test.h"
 #include "asterisk/stasis.h"
 #include "asterisk/stasis_channels.h"
@@ -1627,8 +1624,14 @@ static struct ast_conference *build_conf(const char *confno, const char *pin,
 
 	ast_format_cap_append(cap_slin, ast_format_slin, 0);
 	/* Make a new one */
-	if (!(cnf = ast_calloc(1, sizeof(*cnf))) ||
-		!(cnf->usercontainer = ao2_container_alloc(1, NULL, user_no_cmp))) {
+	cnf = ast_calloc(1, sizeof(*cnf));
+	if (!cnf) {
+		goto cnfout;
+	}
+
+	cnf->usercontainer = ao2_container_alloc_list(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		NULL, user_no_cmp);
+	if (!cnf->usercontainer) {
 		goto cnfout;
 	}
 
@@ -3591,7 +3594,7 @@ static int conf_run(struct ast_channel *chan, struct ast_conference *conf, struc
 	}
 
 	/* Reduce background noise from each participant */
-	if (!ast_test_flag64(confflags, CONFFLAG_DONT_DENOISE) && ast_module_check("func_speex.so")) {
+	if (!ast_test_flag64(confflags, CONFFLAG_DONT_DENOISE)) {
 		ast_func_write(chan, "DENOISE(rx)", "on");
 	}
 
@@ -7398,25 +7401,11 @@ static void sla_station_destructor(void *obj)
 	ast_string_field_free_memory(station);
 }
 
-static int sla_trunk_hash(const void *obj, const int flags)
-{
-	const struct sla_trunk *trunk = obj;
-
-	return ast_str_case_hash(trunk->name);
-}
-
 static int sla_trunk_cmp(void *obj, void *arg, int flags)
 {
 	struct sla_trunk *trunk = obj, *trunk2 = arg;
 
 	return !strcasecmp(trunk->name, trunk2->name) ? CMP_MATCH | CMP_STOP : 0;
-}
-
-static int sla_station_hash(const void *obj, const int flags)
-{
-	const struct sla_station *station = obj;
-
-	return ast_str_case_hash(station->name);
 }
 
 static int sla_station_cmp(void *obj, void *arg, int flags)
@@ -7872,8 +7861,10 @@ static int sla_load_config(int reload)
 	if (!reload) {
 		ast_mutex_init(&sla.lock);
 		ast_cond_init(&sla.cond, NULL);
-		sla_trunks = ao2_container_alloc(1, sla_trunk_hash, sla_trunk_cmp);
-		sla_stations = ao2_container_alloc(1, sla_station_hash, sla_station_cmp);
+		sla_trunks = ao2_container_alloc_list(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+			NULL, sla_trunk_cmp);
+		sla_stations = ao2_container_alloc_list(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+			NULL, sla_station_cmp);
 	}
 
 	if (!(cfg = ast_config_load(SLA_CONFIG_FILE, config_flags))) {
@@ -8008,186 +7999,6 @@ static int load_config(int reload)
 	return sla_load_config(reload);
 }
 
-#define MEETME_DATA_EXPORT(MEMBER)					\
-	MEMBER(ast_conference, confno, AST_DATA_STRING)			\
-	MEMBER(ast_conference, dahdiconf, AST_DATA_INTEGER)		\
-	MEMBER(ast_conference, users, AST_DATA_INTEGER)			\
-	MEMBER(ast_conference, markedusers, AST_DATA_INTEGER)		\
-	MEMBER(ast_conference, maxusers, AST_DATA_INTEGER)		\
-	MEMBER(ast_conference, isdynamic, AST_DATA_BOOLEAN)		\
-	MEMBER(ast_conference, locked, AST_DATA_BOOLEAN)		\
-	MEMBER(ast_conference, recordingfilename, AST_DATA_STRING)	\
-	MEMBER(ast_conference, recordingformat, AST_DATA_STRING)	\
-	MEMBER(ast_conference, pin, AST_DATA_PASSWORD)			\
-	MEMBER(ast_conference, pinadmin, AST_DATA_PASSWORD)		\
-	MEMBER(ast_conference, start, AST_DATA_TIMESTAMP)		\
-	MEMBER(ast_conference, endtime, AST_DATA_TIMESTAMP)
-
-AST_DATA_STRUCTURE(ast_conference, MEETME_DATA_EXPORT);
-
-#define MEETME_USER_DATA_EXPORT(MEMBER)					\
-	MEMBER(ast_conf_user, user_no, AST_DATA_INTEGER)		\
-	MEMBER(ast_conf_user, talking, AST_DATA_BOOLEAN)		\
-	MEMBER(ast_conf_user, dahdichannel, AST_DATA_BOOLEAN)		\
-	MEMBER(ast_conf_user, jointime, AST_DATA_TIMESTAMP)		\
-	MEMBER(ast_conf_user, kicktime, AST_DATA_TIMESTAMP)		\
-	MEMBER(ast_conf_user, timelimit, AST_DATA_MILLISECONDS)		\
-	MEMBER(ast_conf_user, play_warning, AST_DATA_MILLISECONDS)	\
-	MEMBER(ast_conf_user, warning_freq, AST_DATA_MILLISECONDS)
-
-AST_DATA_STRUCTURE(ast_conf_user, MEETME_USER_DATA_EXPORT);
-
-static int user_add_provider_cb(void *obj, void *arg, int flags)
-{
-	struct ast_data *data_meetme_user;
-	struct ast_data *data_meetme_user_channel;
-	struct ast_data *data_meetme_user_volume;
-
-	struct ast_conf_user *user = obj;
-	struct ast_data *data_meetme_users = arg;
-
-	data_meetme_user = ast_data_add_node(data_meetme_users, "user");
-	if (!data_meetme_user) {
-		return 0;
-	}
-	/* user structure */
-	ast_data_add_structure(ast_conf_user, data_meetme_user, user);
-
-	/* user's channel */
-	data_meetme_user_channel = ast_data_add_node(data_meetme_user, "channel");
-	if (!data_meetme_user_channel) {
-		return 0;
-	}
-
-	ast_channel_data_add_structure(data_meetme_user_channel, user->chan, 1);
-
-	/* volume structure */
-	data_meetme_user_volume = ast_data_add_node(data_meetme_user, "listen-volume");
-	if (!data_meetme_user_volume) {
-		return 0;
-	}
-	ast_data_add_int(data_meetme_user_volume, "desired", user->listen.desired);
-	ast_data_add_int(data_meetme_user_volume, "actual", user->listen.actual);
-
-	data_meetme_user_volume = ast_data_add_node(data_meetme_user, "talk-volume");
-	if (!data_meetme_user_volume) {
-		return 0;
-	}
-	ast_data_add_int(data_meetme_user_volume, "desired", user->talk.desired);
-	ast_data_add_int(data_meetme_user_volume, "actual", user->talk.actual);
-
-	return 0;
-}
-
-/*!
- * \internal
- * \brief Implements the meetme data provider.
- */
-static int meetme_data_provider_get(const struct ast_data_search *search,
-	struct ast_data *data_root)
-{
-	struct ast_conference *cnf;
-	struct ast_data *data_meetme, *data_meetme_users;
-
-	AST_LIST_LOCK(&confs);
-	AST_LIST_TRAVERSE(&confs, cnf, list) {
-		data_meetme = ast_data_add_node(data_root, "meetme");
-		if (!data_meetme) {
-			continue;
-		}
-
-		ast_data_add_structure(ast_conference, data_meetme, cnf);
-
-		if (ao2_container_count(cnf->usercontainer)) {
-			data_meetme_users = ast_data_add_node(data_meetme, "users");
-			if (!data_meetme_users) {
-				ast_data_remove_node(data_root, data_meetme);
-				continue;
-			}
-
-			ao2_callback(cnf->usercontainer, OBJ_NODATA, user_add_provider_cb, data_meetme_users);
-		}
-
-		if (!ast_data_search_match(search, data_meetme)) {
-			ast_data_remove_node(data_root, data_meetme);
-		}
-	}
-	AST_LIST_UNLOCK(&confs);
-
-	return 0;
-}
-
-static const struct ast_data_handler meetme_data_provider = {
-	.version = AST_DATA_HANDLER_VERSION,
-	.get = meetme_data_provider_get
-};
-
-static const struct ast_data_entry meetme_data_providers[] = {
-	AST_DATA_ENTRY("asterisk/application/meetme/list", &meetme_data_provider),
-};
-
-#ifdef TEST_FRAMEWORK
-AST_TEST_DEFINE(test_meetme_data_provider)
-{
-	struct ast_channel *chan;
-	struct ast_conference *cnf;
-	struct ast_data *node;
-	struct ast_data_query query = {
-		.path = "/asterisk/application/meetme/list",
-		.search = "list/meetme/confno=9898"
-	};
-
-	switch (cmd) {
-	case TEST_INIT:
-		info->name = "meetme_get_data_test";
-		info->category = "/main/data/app_meetme/list/";
-		info->summary = "Meetme data provider unit test";
-		info->description =
-			"Tests whether the Meetme data provider implementation works as expected.";
-		return AST_TEST_NOT_RUN;
-	case TEST_EXECUTE:
-		break;
-	}
-
-	chan = ast_channel_alloc(0, AST_STATE_DOWN, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, "MeetMeTest");
-	if (!chan) {
-		ast_test_status_update(test, "Channel allocation failed\n");
-		return AST_TEST_FAIL;
-	}
-
-	ast_channel_unlock(chan);
-
-	cnf = build_conf("9898", "", "1234", 1, 1, 1, chan, test);
-	if (!cnf) {
-		ast_test_status_update(test, "Build of test conference 9898 failed\n");
-		ast_hangup(chan);
-		return AST_TEST_FAIL;
-	}
-
-	node = ast_data_get(&query);
-	if (!node) {
-		ast_test_status_update(test, "Data query for test conference 9898 failed\n");
-		dispose_conf(cnf);
-		ast_hangup(chan);
-		return AST_TEST_FAIL;
-	}
-
-	if (strcmp(ast_data_retrieve_string(node, "meetme/confno"), "9898")) {
-		ast_test_status_update(test, "Query returned the wrong conference\n");
-		dispose_conf(cnf);
-		ast_hangup(chan);
-		ast_data_free(node);
-		return AST_TEST_FAIL;
-	}
-
-	ast_data_free(node);
-	dispose_conf(cnf);
-	ast_hangup(chan);
-
-	return AST_TEST_PASS;
-}
-#endif
-
 static int unload_module(void)
 {
 	int res = 0;
@@ -8203,11 +8014,6 @@ static int unload_module(void)
 	res |= ast_unregister_application(app);
 	res |= ast_unregister_application(slastation_app);
 	res |= ast_unregister_application(slatrunk_app);
-
-#ifdef TEST_FRAMEWORK
-	AST_TEST_UNREGISTER(test_meetme_data_provider);
-#endif
-	ast_data_unregister(NULL);
 
 	ast_devstate_prov_del("Meetme");
 	ast_devstate_prov_del("SLA");
@@ -8252,11 +8058,6 @@ static int load_module(void)
 	res |= ast_register_application_xml(slastation_app, sla_station_exec);
 	res |= ast_register_application_xml(slatrunk_app, sla_trunk_exec);
 
-#ifdef TEST_FRAMEWORK
-	AST_TEST_REGISTER(test_meetme_data_provider);
-#endif
-	ast_data_register_multiple(meetme_data_providers, ARRAY_LEN(meetme_data_providers));
-
 	res |= ast_devstate_prov_add("Meetme", meetmestate);
 	res |= ast_devstate_prov_add("SLA", sla_state);
 
@@ -8273,9 +8074,10 @@ static int reload(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "MeetMe conference bridge",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-		.load_pri = AST_MODPRI_DEVSTATE_PROVIDER,
-	       );
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.load_pri = AST_MODPRI_DEVSTATE_PROVIDER,
+	.optional_modules = "func_speex",
+);

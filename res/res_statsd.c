@@ -52,8 +52,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/config_options.h"
 #include "asterisk/module.h"
 #include "asterisk/netsock2.h"
@@ -318,6 +316,14 @@ static void statsd_shutdown(void)
 	}
 }
 
+static int unload_module(void)
+{
+	statsd_shutdown();
+	aco_info_destroy(&cfg_info);
+	ao2_global_obj_release(confs);
+	return 0;
+}
+
 static int load_module(void)
 {
 	if (aco_info_init(&cfg_info)) {
@@ -341,55 +347,68 @@ static int load_module(void)
 		"", OPT_CHAR_ARRAY_T, 0,
 		CHARFLDSET(struct conf_global_options, prefix));
 
-	if (aco_process_config(&cfg_info, 0)) {
-		aco_info_destroy(&cfg_info);
-		return AST_MODULE_LOAD_DECLINE;
+	if (aco_process_config(&cfg_info, 0) == ACO_PROCESS_ERROR) {
+		struct conf *cfg;
+
+		ast_log(LOG_NOTICE, "Could not load statsd config; using defaults\n");
+		cfg = conf_alloc();
+		if (!cfg) {
+			aco_info_destroy(&cfg_info);
+			return AST_MODULE_LOAD_DECLINE;
+		}
+
+		if (aco_set_defaults(&global_option, "general", cfg->global)) {
+			ast_log(LOG_ERROR, "Failed to initialize statsd defaults.\n");
+			ao2_ref(cfg, -1);
+			aco_info_destroy(&cfg_info);
+			return AST_MODULE_LOAD_DECLINE;
+		}
+
+		ao2_global_obj_replace_unref(confs, cfg);
+		ao2_ref(cfg, -1);
 	}
 
 	if (!is_enabled()) {
 		return AST_MODULE_LOAD_SUCCESS;
 	}
 
-	if (statsd_init() != 0) {
-		aco_info_destroy(&cfg_info);
+	if (statsd_init()) {
+		unload_module();
 		return AST_MODULE_LOAD_DECLINE;
 	}
-
-	/* For Optional API. */
-	ast_module_shutdown_ref(ast_module_info->self);
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
-static int unload_module(void)
-{
-	statsd_shutdown();
-	aco_info_destroy(&cfg_info);
-	ao2_global_obj_release(confs);
-	return 0;
-}
-
 static int reload_module(void)
 {
-	if (aco_process_config(&cfg_info, 1)) {
+	switch (aco_process_config(&cfg_info, 1)) {
+	case ACO_PROCESS_OK:
+		break;
+	case ACO_PROCESS_UNCHANGED:
+		return AST_MODULE_LOAD_SUCCESS;
+	case ACO_PROCESS_ERROR:
+	default:
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
 	if (is_enabled()) {
-		return statsd_init();
+		if (statsd_init()) {
+			return AST_MODULE_LOAD_DECLINE;
+		}
 	} else {
 		statsd_shutdown();
-		return AST_MODULE_LOAD_SUCCESS;
 	}
+	return AST_MODULE_LOAD_SUCCESS;
 }
 
-/* The priority of this module is set to be as low as possible, since it could
- * be used by any other sort of module.
+/* The priority of this module is set just after realtime, since it loads
+ * configuration and could be used by any other sort of module.
  */
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Statsd client support",
 	.support_level = AST_MODULE_SUPPORT_EXTENDED,
 	.load = load_module,
 	.unload = unload_module,
 	.reload = reload_module,
-	.load_pri = 0,
-	);
+	.load_pri = AST_MODPRI_REALTIME_DRIVER + 5,
+);

@@ -608,6 +608,10 @@
 ;direct_media_glare_mitigation=none     ; Mitigation of direct media re INVITE
                                         ; glare (default: "none")
 ;direct_media_method=invite     ; Direct Media method type (default: "invite")
+;trust_connected_line=yes       ; Accept Connected Line updates from this endpoint
+                                ; (default: "yes")
+;send_connected_line=yes        ; Send Connected Line updates to this endpoint
+                                ; (default: "yes")
 ;connected_line_method=invite   ; Connected line method type.
                                 ; When set to "invite", check the remote's
                                 ; Allow header and if UPDATE is allowed, send
@@ -651,6 +655,8 @@
                       ; An MWI subscribe will replace unsoliticed NOTIFYs
                       ; (default: "no")
 ;moh_suggest=default    ; Default Music On Hold class (default: "default")
+;moh_passthrough=yes    ; Pass Music On Hold through using SIP re-invites with sendonly
+                        ; when placing on hold and sendrecv when taking off hold
 ;outbound_auth= ; Authentication object used for outbound requests (default:
                 ; "")
 ;outbound_proxy=        ; Proxy through which to send requests, a full SIP URI
@@ -750,10 +756,12 @@
                 ; "no")
 ;dtls_rekey=0   ; Interval at which to renegotiate the TLS session and rekey
                 ; the SRTP session (default: "0")
-;dtls_cert_file=        ; Path to certificate file to present to peer (default:
-                        ; "")
-;dtls_private_key=      ; Path to private key for certificate file (default:
-                        ; "")
+;dtls_auto_generate_cert= ; Enable ephemeral DTLS certificate generation (default:
+                          ; "no")
+;dtls_cert_file=          ; Path to certificate file to present to peer (default:
+                          ; "")
+;dtls_private_key=        ; Path to private key for certificate file (default:
+                          ; "")
 ;dtls_cipher=   ; Cipher to use for DTLS negotiation (default: "")
 ;dtls_ca_file=  ; Path to certificate authority certificate (default: "")
 ;dtls_ca_path=  ; Path to a directory containing certificate authority
@@ -777,6 +785,10 @@
                    ; "0" or not enabled)
 ;contact_user= ; On outgoing requests, force the user portion of the Contact
                ; header to this value (default: "")
+;preferred_codec_only=yes       ; Respond to a SIP invite with the single most preferred codec
+                                ; rather than advertising all joint codec capabilities. This
+                                ; limits the other side's codec choice to exactly what we prefer.
+                                ; default is no.
 ;asymmetric_rtp_codec= ; Allow the sending and receiving codec to differ and
                        ; not be automatically matched (default: "no")
 ;refer_blind_progress= ; Whether to notifies all the progress details on blind
@@ -788,6 +800,18 @@
                               ; The value "yes" is useful for some SIP phones
                               ; (Cisco SPA) to be able to indicate and pick up
                               ; ringing devices.
+;max_audio_streams= ; The maximum number of allowed negotiated audio streams
+                    ; (default: 1)
+;max_video_streams= ; The maximum number of allowed negotiated video streams
+                    ; (default: 1)
+;webrtc= ; When set to "yes" this also enables the following values that are needed
+         ; for webrtc: rtcp_mux, use_avpf, ice_support, and use_received_transport.
+         ; The following configuration settings also get defaulted as follows:
+         ;     media_encryption=dtls
+         ;     dtls_verify=fingerprint
+         ;     dtls_setup=actpass
+         ; A dtls_cert_file and a dtls_ca_file still need to be specified.
+         ; Default for this option is "no"
 ;incoming_mwi_mailbox = ; Mailbox name to use when incoming MWI NOTIFYs are
                         ; received.
                         ; If an MWI NOTIFY is received FROM this endpoint,
@@ -869,7 +893,13 @@
                 ; (default: "")
 ;cert_file=     ; Certificate file for endpoint TLS ONLY
                 ; Will read .crt or .pem file but only uses cert,
-                ; a .key file must be specified via priv_key_file
+                ; a .key file must be specified via priv_key_file.
+                ; Since PJProject version 2.5: If the file name ends in _rsa,
+                ; for example "asterisk_rsa.pem", the files "asterisk_dsa.pem"
+                ; and/or "asterisk_ecc.pem" are loaded (certificate, inter-
+                ; mediates, private key), to support multiple algorithms for
+                ; server authentication (RSA, DSA, ECDSA). If the chains are
+                ; different, at least OpenSSL 1.0.2 is required.
                 ; (default: "")
 ;cipher=        ; Preferred cryptography cipher names TLS ONLY (default: "")
 ;method=        ; Method of SSL transport TLS ONLY (default: "")

@@ -708,10 +708,8 @@ JANSSON_LIBS
 JANSSON_CFLAGS
 UUID_LIB
 UUID_INCLUDE
-EDITLINE_LIB
 LIBEDIT_LIBS
 LIBEDIT_CFLAGS
-LIBEDIT_INTERNAL
 PKG_CONFIG_LIBDIR
 PKG_CONFIG_PATH
 PKG_CONFIG
@@ -736,22 +734,18 @@ PBX_UNIXODBC
 UNIXODBC_DIR
 UNIXODBC_INCLUDE
 UNIXODBC_LIB
+PBX_UNBOUND
+UNBOUND_DIR
+UNBOUND_INCLUDE
+UNBOUND_LIB
 PBX_TONEZONE
 TONEZONE_DIR
 TONEZONE_INCLUDE
 TONEZONE_LIB
-PBX_TINFO
-TINFO_DIR
-TINFO_INCLUDE
-TINFO_LIB
 PBX_TIMERFD
 TIMERFD_DIR
 TIMERFD_INCLUDE
 TIMERFD_LIB
-PBX_TERMCAP
-TERMCAP_DIR
-TERMCAP_INCLUDE
-TERMCAP_LIB
 PBX_FREETDS
 FREETDS_DIR
 FREETDS_INCLUDE
@@ -768,10 +762,26 @@ PBX_OPENSSL
 OPENSSL_DIR
 OPENSSL_INCLUDE
 OPENSSL_LIB
+PBX_SRTP_GET_VERSION
+SRTP_GET_VERSION_DIR
+SRTP_GET_VERSION_INCLUDE
+SRTP_GET_VERSION_LIB
 PBX_SRTP_SHUTDOWN
 SRTP_SHUTDOWN_DIR
 SRTP_SHUTDOWN_INCLUDE
 SRTP_SHUTDOWN_LIB
+PBX_SRTP_GCM
+SRTP_GCM_DIR
+SRTP_GCM_INCLUDE
+SRTP_GCM_LIB
+PBX_SRTP_192
+SRTP_192_DIR
+SRTP_192_INCLUDE
+SRTP_192_LIB
+PBX_SRTP_256
+SRTP_256_DIR
+SRTP_256_INCLUDE
+SRTP_256_LIB
 PBX_SRTP
 SRTP_DIR
 SRTP_INCLUDE
@@ -812,10 +822,18 @@ PBX_SDL
 SDL_DIR
 SDL_INCLUDE
 SDL_LIB
+PBX_SNDFILE
+SNDFILE_DIR
+SNDFILE_INCLUDE
+SNDFILE_LIB
 PBX_RESAMPLE
 RESAMPLE_DIR
 RESAMPLE_INCLUDE
 RESAMPLE_LIB
+PBX_FFTW3
+FFTW3_DIR
+FFTW3_INCLUDE
+FFTW3_LIB
 PBX_RADIUS
 RADIUS_DIR
 RADIUS_INCLUDE
@@ -912,6 +930,10 @@ PBX_POPT
 POPT_DIR
 POPT_INCLUDE
 POPT_LIB
+PBX_PJSIP_ENDPOINT_COMPACT_FORM
+PJSIP_ENDPOINT_COMPACT_FORM_DIR
+PJSIP_ENDPOINT_COMPACT_FORM_INCLUDE
+PJSIP_ENDPOINT_COMPACT_FORM_LIB
 PBX_PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS
 PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS_DIR
 PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS_INCLUDE
@@ -960,6 +982,10 @@ PBX_PJSIP_DLG_CREATE_UAS_AND_INC_LOCK
 PJSIP_DLG_CREATE_UAS_AND_INC_LOCK_DIR
 PJSIP_DLG_CREATE_UAS_AND_INC_LOCK_INCLUDE
 PJSIP_DLG_CREATE_UAS_AND_INC_LOCK_LIB
+PBX_BEANSTALK
+BEANSTALK_DIR
+BEANSTALK_INCLUDE
+BEANSTALK_LIB
 PBX_PGSQL
 PGSQL_DIR
 PGSQL_INCLUDE
@@ -1004,10 +1030,6 @@ PBX_NEON
 NEON_DIR
 NEON_INCLUDE
 NEON_LIB
-PBX_NCURSES
-NCURSES_DIR
-NCURSES_INCLUDE
-NCURSES_LIB
 PBX_NBS
 NBS_DIR
 NBS_INCLUDE
@@ -1133,10 +1155,6 @@ PBX_CRYPT
 CRYPT_DIR
 CRYPT_INCLUDE
 CRYPT_LIB
-PBX_CURSES
-CURSES_DIR
-CURSES_INCLUDE
-CURSES_LIB
 PBX_COROSYNC_CFG_STATE_TRACK
 COROSYNC_CFG_STATE_TRACK_DIR
 COROSYNC_CFG_STATE_TRACK_INCLUDE
@@ -1145,6 +1163,10 @@ PBX_COROSYNC
 COROSYNC_DIR
 COROSYNC_INCLUDE
 COROSYNC_LIB
+PBX_CODEC2
+CODEC2_DIR
+CODEC2_INCLUDE
+CODEC2_LIB
 PBX_CAP
 CAP_DIR
 CAP_INCLUDE
@@ -1187,6 +1209,7 @@ AST_DOWNLOAD_CACHE
 AST_DEVMODE_STRICT
 AST_DEVMODE
 NOISY_BUILD
+PBX_NO_BINARY_MODULES
 PTHREAD_CFLAGS
 PTHREAD_LIBS
 PTHREAD_CC
@@ -1337,6 +1360,7 @@ ac_subst_files=''
 ac_user_opts='
 enable_option_checking
 with_gnu_ld
+enable_binary_modules
 enable_dev_mode
 with_download_cache
 with_sounds_cache
@@ -1349,8 +1373,8 @@ with_bfd
 with_execinfo
 with_bluetooth
 with_cap
+with_codec2
 with_cpg
-with_curses
 with_crypt
 with_crypto
 with_dahdi
@@ -1380,7 +1404,6 @@ with_lua
 with_misdn
 with_mysqlclient
 with_nbs
-with_ncurses
 with_neon
 with_neon29
 with_netsnmp
@@ -1392,12 +1415,15 @@ with_opusfile
 with_osptk
 with_oss
 with_postgres
+with_beanstalk
 with_pjproject
 with_popt
 with_portaudio
 with_pri
 with_radius
+with_fftw3
 with_resample
+with_sndfile
 with_sdl
 with_SDL_image
 with_spandsp
@@ -1410,10 +1436,9 @@ with_srtp
 with_ssl
 with_suppserv
 with_tds
-with_termcap
 with_timerfd
-with_tinfo
 with_tonezone
+with_unbound
 with_unixodbc
 with_vorbis
 with_vpb
@@ -2074,6 +2099,8 @@ Optional Features:
   --disable-option-checking  ignore unrecognized --enable/--with options
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
+  --disable-binary-modules
+                          Block installation of binary modules.
   --enable-dev-mode       Turn on developer mode
   --enable-coverage       Turn on code coverage tracking (for gcov)
   --disable-xmldoc        Explicitly disable XML documentation
@@ -2095,14 +2122,14 @@ Optional Packages:
                           use cached external module tarfiles in PATH
   --with-jansson-bundled  Use bundled jansson library
   --with-pjproject-bundled
-                          Use bundled pjproject libraries
+                          Use bundled pjproject libraries (default)
   --with-asound=PATH      use Advanced Linux Sound Architecture files in PATH
   --with-bfd=PATH         use Debug symbol decoding files in PATH
   --with-execinfo=PATH    use Stack Backtrace files in PATH
   --with-bluetooth=PATH   use Bluetooth files in PATH
   --with-cap=PATH         use POSIX 1.e capabilities files in PATH
+  --with-codec2=PATH      use Codec 2 Audio Decoder/Encoder files in PATH
   --with-cpg=PATH         use Corosync files in PATH
-  --with-curses=PATH      use curses files in PATH
   --with-crypt=PATH       use password and data encryption files in PATH
   --with-crypto=PATH      use OpenSSL Cryptography files in PATH
   --with-dahdi=PATH       use DAHDI files in PATH
@@ -2128,15 +2155,13 @@ Optional Packages:
   --with-ldap=PATH        use OpenLDAP files in PATH
   --with-libcurl=PREFIX   look for the curl library in PREFIX/lib and headers
                           in PREFIX/include
-  --with-libedit=PATH     use NetBSD Editline library files in PATH, use
-                          'internal' Editline otherwise
+  --with-libedit=PATH     use NetBSD Editline library files in PATH
   --with-libxml2=PATH     use LibXML2 files in PATH
   --with-libxslt=PATH     use LibXSLT files in PATH
   --with-lua=PATH         use Lua files in PATH
   --with-misdn=PATH       use mISDN user files in PATH
   --with-mysqlclient=PATH use MySQL client files in PATH
   --with-nbs=PATH         use Network Broadcast Sound files in PATH
-  --with-ncurses=PATH     use ncurses files in PATH
   --with-neon=PATH        use neon files in PATH
   --with-neon29=PATH      use neon29 files in PATH
   --with-netsnmp=PATH     use Net-SNMP files in PATH
@@ -2148,12 +2173,15 @@ Optional Packages:
   --with-osptk=PATH       use OSP Toolkit files in PATH
   --with-oss=PATH         use Open Sound System files in PATH
   --with-postgres=PATH    use PostgreSQL files in PATH
+  --with-beanstalk=PATH   use Beanstalk Job Queue files in PATH
   --with-pjproject=PATH   use PJPROJECT files in PATH
   --with-popt=PATH        use popt files in PATH
   --with-portaudio=PATH   use PortAudio files in PATH
   --with-pri=PATH         use ISDN PRI files in PATH
   --with-radius=PATH      use Radius Client files in PATH
+  --with-fftw3=PATH       use LIBFFTW3 files in PATH
   --with-resample=PATH    use LIBRESAMPLE files in PATH
+  --with-sndfile=PATH     use libsndfile files in PATH
   --with-sdl=PATH         use Sdl files in PATH
   --with-SDL_image=PATH   use Sdl Image files in PATH
   --with-spandsp=PATH     use SPANDSP files in PATH
@@ -2167,10 +2195,9 @@ Optional Packages:
   --with-ssl=PATH         use OpenSSL Secure Sockets Layer files in PATH
   --with-suppserv=PATH    use mISDN Supplemental Services files in PATH
   --with-tds=PATH         use FreeTDS files in PATH
-  --with-termcap=PATH     use Termcap files in PATH
   --with-timerfd=PATH     use timerfd files in PATH
-  --with-tinfo=PATH       use Term Info files in PATH
   --with-tonezone=PATH    use tonezone files in PATH
+  --with-unbound=PATH     use unbound files in PATH
   --with-unixodbc=PATH    use unixODBC files in PATH
   --with-vorbis=PATH      use Vorbis files in PATH
   --with-vpb=PATH         use Voicetronix API files in PATH
@@ -4763,6 +4790,9 @@ case "${host_os}" in
      ;;
      linux-gnu*)
      OSARCH=linux-gnu
+     ;;
+     linux-musl*)
+     OSARCH=linux-musl
      ;;
      kfreebsd*-gnu)
      OSARCH=kfreebsd-gnu
@@ -8896,6 +8926,18 @@ ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $
 ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
+PBX_NO_BINARY_MODULES=0
+# Check whether --enable-binary-modules was given.
+if test "${enable_binary_modules+set}" = set; then :
+  enableval=$enable_binary_modules; case "${enableval}" in
+	      y|ye|yes) PBX_NO_BINARY_MODULES=0 ;;
+	      n|no)  PBX_NO_BINARY_MODULES=1 ;;
+	      *) as_fn_error $? "bad value ${enableval} for --disable-binary-modules" "$LINENO" 5  ;;
+	esac
+fi
+
+
+
 # Check whether --enable-dev-mode was given.
 if test "${enable_dev_mode+set}" = set; then :
   enableval=$enable_dev_mode; case "${enableval}" in
@@ -9153,7 +9195,7 @@ if test "${with_jansson_bundled+set}" = set; then :
 fi
 
 
-PJPROJECT_BUNDLED=no
+PJPROJECT_BUNDLED=yes
 
 
 
@@ -9244,12 +9286,47 @@ $as_echo_n "checking for bundled jansson... " >&6; }
 	JANSSON_LIB="-L${JANSSON_DIR}/dest/lib -ljansson"
 	PBX_JANSSON=1
 
+	# We haven't run install yet
+
+	# Define the ast_json_int_t (large integer type) to match jansson's
+	saved_cppflags="${CPPFLAGS}"
+	CPPFLAGS="${CPPFLAGS} ${JANSSON_INCLUDE}"
+	cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <$JANSSON_DIR/source/src/jansson.h>
+int
+main ()
+{
+#if !JSON_INTEGER_IS_LONG_LONG
+		#error "not long long"
+		#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+
+$as_echo "#define AST_JSON_INT_T long long" >>confdefs.h
+
+else
+
+$as_echo "#define AST_JSON_INT_T long" >>confdefs.h
+
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+	CPPFLAGS="${saved_cppflags}"
+
+
 
 
 
 
 	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
+
+$as_echo "#define HAVE_JANSSON_BUNDLED 1" >>confdefs.h
+
 
 	fi
 
@@ -9326,7 +9403,7 @@ $as_echo "configuring" >&6; }
 	fi
 
 	export TAR PATCH SED NM EXTERNALS_CACHE_DIR AST_DOWNLOAD_CACHE DOWNLOAD_TO_STDOUT DOWNLOAD_TIMEOUT DOWNLOAD MD5 CAT CUT GREP
-	export NOISY_BUILD
+	export NOISY_BUILD AST_DEVMODE
 	${GNU_MAKE} --quiet --no-print-directory -C ${PJPROJECT_DIR} \
 		PJPROJECT_CONFIGURE_OPTS="$PJPROJECT_CONFIGURE_OPTS" \
 		EXTERNALS_CACHE_DIR="${EXTERNALS_CACHE_DIR:-${AST_DOWNLOAD_CACHE}}" \
@@ -9388,6 +9465,9 @@ $as_echo "#define HAVE_PJSIP_TSX_LAYER_FIND_TSX2 1" >>confdefs.h
 
 
 $as_echo "#define HAVE_PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS 1" >>confdefs.h
+
+
+$as_echo "#define HAVE_PJSIP_ENDPOINT_COMPACT_FORM 1" >>confdefs.h
 
 
 
@@ -9576,6 +9656,38 @@ fi
 
 
 
+    CODEC2_DESCRIP="Codec 2 Audio Decoder/Encoder"
+    CODEC2_OPTION="codec2"
+    PBX_CODEC2=0
+
+# Check whether --with-codec2 was given.
+if test "${with_codec2+set}" = set; then :
+  withval=$with_codec2;
+	case ${withval} in
+	n|no)
+	USE_CODEC2=no
+	# -1 is a magic value used by menuselect to know that the package
+	# was disabled, other than 'not found'
+	PBX_CODEC2=-1
+	;;
+	y|ye|yes)
+	ac_mandatory_list="${ac_mandatory_list} CODEC2"
+	;;
+	*)
+	CODEC2_DIR="${withval}"
+	ac_mandatory_list="${ac_mandatory_list} CODEC2"
+	;;
+	esac
+
+fi
+
+
+
+
+
+
+
+
     COROSYNC_DESCRIP="Corosync"
     COROSYNC_OPTION="cpg"
     PBX_COROSYNC=0
@@ -9613,38 +9725,6 @@ COROSYNC_CFG_STATE_TRACK_OPTION=cfg
 COROSYNC_CFG_STATE_TRACK_DIR=${COROSYNC_DIR}
 
 PBX_COROSYNC_CFG_STATE_TRACK=0
-
-
-
-
-
-
-
-    CURSES_DESCRIP="curses"
-    CURSES_OPTION="curses"
-    PBX_CURSES=0
-
-# Check whether --with-curses was given.
-if test "${with_curses+set}" = set; then :
-  withval=$with_curses;
-	case ${withval} in
-	n|no)
-	USE_CURSES=no
-	# -1 is a magic value used by menuselect to know that the package
-	# was disabled, other than 'not found'
-	PBX_CURSES=-1
-	;;
-	y|ye|yes)
-	ac_mandatory_list="${ac_mandatory_list} CURSES"
-	;;
-	*)
-	CURSES_DIR="${withval}"
-	ac_mandatory_list="${ac_mandatory_list} CURSES"
-	;;
-	esac
-
-fi
-
 
 
 
@@ -10971,38 +11051,6 @@ fi
 
 
 
-    NCURSES_DESCRIP="ncurses"
-    NCURSES_OPTION="ncurses"
-    PBX_NCURSES=0
-
-# Check whether --with-ncurses was given.
-if test "${with_ncurses+set}" = set; then :
-  withval=$with_ncurses;
-	case ${withval} in
-	n|no)
-	USE_NCURSES=no
-	# -1 is a magic value used by menuselect to know that the package
-	# was disabled, other than 'not found'
-	PBX_NCURSES=-1
-	;;
-	y|ye|yes)
-	ac_mandatory_list="${ac_mandatory_list} NCURSES"
-	;;
-	*)
-	NCURSES_DIR="${withval}"
-	ac_mandatory_list="${ac_mandatory_list} NCURSES"
-	;;
-	esac
-
-fi
-
-
-
-
-
-
-
-
     NEON_DESCRIP="neon"
     NEON_OPTION="neon"
     PBX_NEON=0
@@ -11355,6 +11403,38 @@ fi
 
 
 
+    BEANSTALK_DESCRIP="Beanstalk Job Queue"
+    BEANSTALK_OPTION="beanstalk"
+    PBX_BEANSTALK=0
+
+# Check whether --with-beanstalk was given.
+if test "${with_beanstalk+set}" = set; then :
+  withval=$with_beanstalk;
+	case ${withval} in
+	n|no)
+	USE_BEANSTALK=no
+	# -1 is a magic value used by menuselect to know that the package
+	# was disabled, other than 'not found'
+	PBX_BEANSTALK=-1
+	;;
+	y|ye|yes)
+	ac_mandatory_list="${ac_mandatory_list} BEANSTALK"
+	;;
+	*)
+	BEANSTALK_DIR="${withval}"
+	ac_mandatory_list="${ac_mandatory_list} BEANSTALK"
+	;;
+	esac
+
+fi
+
+
+
+
+
+
+
+
 if test "x${PBX_PJPROJECT}" != "x1" ; then
 
     PJPROJECT_DESCRIP="PJPROJECT"
@@ -11526,6 +11606,18 @@ PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS_OPTION=pjsip
 PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS_DIR=${PJPROJECT_DIR}
 
 PBX_PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS=0
+
+
+
+
+
+
+
+PJSIP_ENDPOINT_COMPACT_FORM_DESCRIP="PJSIP Compact Form Support on Endpoint"
+PJSIP_ENDPOINT_COMPACT_FORM_OPTION=pjsip
+PJSIP_ENDPOINT_COMPACT_FORM_DIR=${PJPROJECT_DIR}
+
+PBX_PJSIP_ENDPOINT_COMPACT_FORM=0
 
 
 
@@ -11907,6 +11999,38 @@ fi
 
 
 
+    FFTW3_DESCRIP="LIBFFTW3"
+    FFTW3_OPTION="fftw3"
+    PBX_FFTW3=0
+
+# Check whether --with-fftw3 was given.
+if test "${with_fftw3+set}" = set; then :
+  withval=$with_fftw3;
+	case ${withval} in
+	n|no)
+	USE_FFTW3=no
+	# -1 is a magic value used by menuselect to know that the package
+	# was disabled, other than 'not found'
+	PBX_FFTW3=-1
+	;;
+	y|ye|yes)
+	ac_mandatory_list="${ac_mandatory_list} FFTW3"
+	;;
+	*)
+	FFTW3_DIR="${withval}"
+	ac_mandatory_list="${ac_mandatory_list} FFTW3"
+	;;
+	esac
+
+fi
+
+
+
+
+
+
+
+
     RESAMPLE_DESCRIP="LIBRESAMPLE"
     RESAMPLE_OPTION="resample"
     PBX_RESAMPLE=0
@@ -11927,6 +12051,38 @@ if test "${with_resample+set}" = set; then :
 	*)
 	RESAMPLE_DIR="${withval}"
 	ac_mandatory_list="${ac_mandatory_list} RESAMPLE"
+	;;
+	esac
+
+fi
+
+
+
+
+
+
+
+
+    SNDFILE_DESCRIP="libsndfile"
+    SNDFILE_OPTION="sndfile"
+    PBX_SNDFILE=0
+
+# Check whether --with-sndfile was given.
+if test "${with_sndfile+set}" = set; then :
+  withval=$with_sndfile;
+	case ${withval} in
+	n|no)
+	USE_SNDFILE=no
+	# -1 is a magic value used by menuselect to know that the package
+	# was disabled, other than 'not found'
+	PBX_SNDFILE=-1
+	;;
+	y|ye|yes)
+	ac_mandatory_list="${ac_mandatory_list} SNDFILE"
+	;;
+	*)
+	SNDFILE_DIR="${withval}"
+	ac_mandatory_list="${ac_mandatory_list} SNDFILE"
 	;;
 	esac
 
@@ -12270,11 +12426,59 @@ fi
 
 
 
+SRTP_256_DESCRIP="SRTP Library AES-256 (ICM)"
+SRTP_256_OPTION=srtp
+SRTP_256_DIR=${SRTP_DIR}
+
+PBX_SRTP_256=0
+
+
+
+
+
+
+
+SRTP_192_DESCRIP="SRTP Library AES-192 (ICM)"
+SRTP_192_OPTION=srtp
+SRTP_192_DIR=${SRTP_DIR}
+
+PBX_SRTP_192=0
+
+
+
+
+
+
+
+SRTP_GCM_DESCRIP="SRTP Library AES-128 (GCM) and AES-256 (GCM)"
+SRTP_GCM_OPTION=srtp
+SRTP_GCM_DIR=${SRTP_DIR}
+
+PBX_SRTP_GCM=0
+
+
+
+
+
+
+
 SRTP_SHUTDOWN_DESCRIP="SRTP Library Shutdown Function"
 SRTP_SHUTDOWN_OPTION=srtp
 SRTP_SHUTDOWN_DIR=${SRTP_DIR}
 
 PBX_SRTP_SHUTDOWN=0
+
+
+
+
+
+
+
+SRTP_GET_VERSION_DESCRIP="SRTP Library Version Function"
+SRTP_GET_VERSION_OPTION=srtp
+SRTP_GET_VERSION_DIR=${SRTP_DIR}
+
+PBX_SRTP_GET_VERSION=0
 
 
 
@@ -12390,38 +12594,6 @@ fi
 
 
 
-    TERMCAP_DESCRIP="Termcap"
-    TERMCAP_OPTION="termcap"
-    PBX_TERMCAP=0
-
-# Check whether --with-termcap was given.
-if test "${with_termcap+set}" = set; then :
-  withval=$with_termcap;
-	case ${withval} in
-	n|no)
-	USE_TERMCAP=no
-	# -1 is a magic value used by menuselect to know that the package
-	# was disabled, other than 'not found'
-	PBX_TERMCAP=-1
-	;;
-	y|ye|yes)
-	ac_mandatory_list="${ac_mandatory_list} TERMCAP"
-	;;
-	*)
-	TERMCAP_DIR="${withval}"
-	ac_mandatory_list="${ac_mandatory_list} TERMCAP"
-	;;
-	esac
-
-fi
-
-
-
-
-
-
-
-
     TIMERFD_DESCRIP="timerfd"
     TIMERFD_OPTION="timerfd"
     PBX_TIMERFD=0
@@ -12454,38 +12626,6 @@ fi
 
 
 
-    TINFO_DESCRIP="Term Info"
-    TINFO_OPTION="tinfo"
-    PBX_TINFO=0
-
-# Check whether --with-tinfo was given.
-if test "${with_tinfo+set}" = set; then :
-  withval=$with_tinfo;
-	case ${withval} in
-	n|no)
-	USE_TINFO=no
-	# -1 is a magic value used by menuselect to know that the package
-	# was disabled, other than 'not found'
-	PBX_TINFO=-1
-	;;
-	y|ye|yes)
-	ac_mandatory_list="${ac_mandatory_list} TINFO"
-	;;
-	*)
-	TINFO_DIR="${withval}"
-	ac_mandatory_list="${ac_mandatory_list} TINFO"
-	;;
-	esac
-
-fi
-
-
-
-
-
-
-
-
     TONEZONE_DESCRIP="tonezone"
     TONEZONE_OPTION="tonezone"
     PBX_TONEZONE=0
@@ -12506,6 +12646,38 @@ if test "${with_tonezone+set}" = set; then :
 	*)
 	TONEZONE_DIR="${withval}"
 	ac_mandatory_list="${ac_mandatory_list} TONEZONE"
+	;;
+	esac
+
+fi
+
+
+
+
+
+
+
+
+    UNBOUND_DESCRIP="unbound"
+    UNBOUND_OPTION="unbound"
+    PBX_UNBOUND=0
+
+# Check whether --with-unbound was given.
+if test "${with_unbound+set}" = set; then :
+  withval=$with_unbound;
+	case ${withval} in
+	n|no)
+	USE_UNBOUND=no
+	# -1 is a magic value used by menuselect to know that the package
+	# was disabled, other than 'not found'
+	PBX_UNBOUND=-1
+	;;
+	y|ye|yes)
+	ac_mandatory_list="${ac_mandatory_list} UNBOUND"
+	;;
+	*)
+	UNBOUND_DIR="${withval}"
+	ac_mandatory_list="${ac_mandatory_list} UNBOUND"
 	;;
 	esac
 
@@ -13036,6 +13208,10 @@ fi
 
 fi
 
+if test -z $ac_header_dirent -o "$ac_header_dirent" = "no"; then
+  as_fn_error $? "*** Could not find dirent header that defines 'DIR'." "$LINENO" 5
+fi
+
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ANSI C header files" >&5
 $as_echo_n "checking for ANSI C header files... " >&6; }
 if ${ac_cv_header_stdc+:} false; then :
@@ -13148,6 +13324,10 @@ $as_echo "#define STDC_HEADERS 1" >>confdefs.h
 
 fi
 
+if test "$ac_cv_header_stdc" != "yes"; then
+  as_fn_error $? "*** ANSI C header files not found." "$LINENO" 5
+fi
+
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for sys/wait.h that is POSIX.1 compatible" >&5
 $as_echo_n "checking for sys/wait.h that is POSIX.1 compatible... " >&6; }
 if ${ac_cv_header_sys_wait_h+:} false; then :
@@ -13189,7 +13369,68 @@ $as_echo "#define HAVE_SYS_WAIT_H 1" >>confdefs.h
 
 fi
 
-for ac_header in arpa/inet.h fcntl.h inttypes.h libintl.h limits.h locale.h malloc.h netdb.h netinet/in.h stddef.h stdint.h stdlib.h string.h strings.h sys/event.h sys/file.h sys/ioctl.h sys/param.h sys/socket.h sys/time.h syslog.h termios.h unistd.h utime.h arpa/nameser.h sys/io.h
+if test "$ac_cv_header_sys_wait_h" != "yes"; then
+  as_fn_error $? "*** POSIX.1 compatible sys/wait.h is required." "$LINENO" 5
+fi
+
+for ac_header in sys/types.h netinet/in.h arpa/nameser.h netdb.h resolv.h
+do :
+  as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
+ac_fn_c_check_header_compile "$LINENO" "$ac_header" "$as_ac_Header" "#ifdef HAVE_SYS_TYPES_H
+#  include <sys/types.h>
+#endif
+#ifdef HAVE_NETINET_IN_H
+#  include <netinet/in.h>   /* inet_ functions / structs */
+#endif
+#ifdef HAVE_ARPA_NAMESER_H
+#  include <arpa/nameser.h> /* DNS HEADER struct */
+#endif
+#ifdef HAVE_NETDB_H
+#  include <netdb.h>
+#endif
+"
+if eval test \"x\$"$as_ac_Header"\" = x"yes"; then :
+  cat >>confdefs.h <<_ACEOF
+#define `$as_echo "HAVE_$ac_header" | $as_tr_cpp` 1
+_ACEOF
+
+fi
+
+done
+
+
+if test "$ac_cv_header_resolv_h" != "yes"; then
+  as_fn_error $? "*** resolv.h is required." "$LINENO" 5
+fi
+
+# Check for headers that are unconditionally required on all platforms.  Do not use
+# this to check for headers that are only needed by modules.
+for ac_header in  \
+  arpa/nameser.h assert.h ctype.h dlfcn.h errno.h fcntl.h float.h grp.h \
+  inttypes.h limits.h locale.h math.h pwd.h netinet/in.h regex.h \
+  sched.h stdarg.h stdint.h stdio.h stdlib.h string.h syslog.h \
+  sys/file.h sys/ioctl.h sys/param.h sys/resource.h sys/socket.h sys/stat.h \
+  sys/time.h sys/types.h sys/un.h \
+  termios.h time.h unistd.h \
+
+do :
+  as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
+ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
+if eval test \"x\$"$as_ac_Header"\" = x"yes"; then :
+  cat >>confdefs.h <<_ACEOF
+#define `$as_echo "HAVE_$ac_header" | $as_tr_cpp` 1
+_ACEOF
+
+else
+
+  as_fn_error $? "*** A required header was not found." "$LINENO" 5
+
+fi
+
+done
+
+
+for ac_header in arpa/inet.h libintl.h malloc.h netdb.h stddef.h strings.h sys/event.h utime.h
 do :
   as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
 ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
@@ -13325,17 +13566,6 @@ $as_echo "no" >&6; }
 fi
 
 # Find required NetBSD Editline library (libedit).
-EDITLINE_LIB=""
-LIBEDIT_INTERNAL="yes"
-
-LIBEDIT_SYSTEM="yes"
-if test "${USE_LIBEDIT}" != "no"; then
-   if test "${LIBEDIT_DIR}" = "internal"; then
-      LIBEDIT_SYSTEM="no"
-   elif test "${LIBEDIT_DIR}" != ""; then
-      LIBEDIT_INTERNAL="no"
-   fi
-   if test "${LIBEDIT_SYSTEM}" = "yes"; then
 
    if test "x${PBX_LIBEDIT}" != "x1" -a "${USE_LIBEDIT}" != "no"; then
 
@@ -13424,7 +13654,7 @@ $as_echo "#define HAVE_LIBEDIT 1" >>confdefs.h
 fi
    fi
 
-      # some platforms do not list libedit via pkg-config, for example OpenBSD 6.2
+# some platforms do not list libedit via pkg-config, for example OpenBSD 6.2
 
 if test "x${PBX_LIBEDIT}" != "x1" -a "${USE_LIBEDIT}" != "no"; then
    pbxlibdir=""
@@ -13521,14 +13751,10 @@ _ACEOF
 fi
 
 
-      if test "$PBX_LIBEDIT" = "1"; then
-         LIBEDIT_INTERNAL="no"
-      fi
-   fi
-   if test "${LIBEDIT_INTERNAL}" = "yes"; then
-      PBX_LIBEDIT=1
-      LIBEDIT_IS_UNICODE=no
-   else
+if test "${PBX_LIBEDIT}" != 1; then
+	as_fn_error $? "*** Please install the 'libedit' development package." "$LINENO" 5
+	exit 1
+fi
 
     if test "x${PBX_LIBEDIT_IS_UNICODE}" != "x1" -a "${USE_LIBEDIT_IS_UNICODE}" != "no"; then
 	{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for Testing for libedit unicode support" >&5
@@ -13568,395 +13794,6 @@ fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 	CPPFLAGS="${saved_cppflags}"
     fi
-
-   fi
-fi
-# If the Asterisk internal copy should be build (user said so) or
-# must be build (system does not have it), either -ltermcap,
-# -ltinfo, or -l{n}curses must be available.
-if test "${LIBEDIT_INTERNAL}" = "yes"; then
-
-if test "x${PBX_TERMCAP}" != "x1" -a "${USE_TERMCAP}" != "no"; then
-   pbxlibdir=""
-   # if --with-TERMCAP=DIR has been specified, use it.
-   if test "x${TERMCAP_DIR}" != "x"; then
-      if test -d ${TERMCAP_DIR}/lib; then
-         pbxlibdir="-L${TERMCAP_DIR}/lib"
-      else
-         pbxlibdir="-L${TERMCAP_DIR}"
-      fi
-   fi
-
-      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
-      CFLAGS="${CFLAGS} "
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -ltermcap" >&5
-$as_echo_n "checking for tgetent in -ltermcap... " >&6; }
-if ${ac_cv_lib_termcap_tgetent+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-ltermcap ${pbxlibdir}  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char tgetent ();
-int
-main ()
-{
-return tgetent ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_termcap_tgetent=yes
-else
-  ac_cv_lib_termcap_tgetent=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_termcap_tgetent" >&5
-$as_echo "$ac_cv_lib_termcap_tgetent" >&6; }
-if test "x$ac_cv_lib_termcap_tgetent" = xyes; then :
-  AST_TERMCAP_FOUND=yes
-else
-  AST_TERMCAP_FOUND=no
-fi
-
-      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
-
-
-   # now check for the header.
-   if test "${AST_TERMCAP_FOUND}" = "yes"; then
-      TERMCAP_LIB="${pbxlibdir} -ltermcap "
-      # if --with-TERMCAP=DIR has been specified, use it.
-      if test "x${TERMCAP_DIR}" != "x"; then
-         TERMCAP_INCLUDE="-I${TERMCAP_DIR}/include"
-      fi
-      TERMCAP_INCLUDE="${TERMCAP_INCLUDE} "
-
-         # no header, assume found
-         TERMCAP_HEADER_FOUND="1"
-
-      if test "x${TERMCAP_HEADER_FOUND}" = "x0" ; then
-         TERMCAP_LIB=""
-         TERMCAP_INCLUDE=""
-      else
-
-         PBX_TERMCAP=1
-         cat >>confdefs.h <<_ACEOF
-#define HAVE_TERMCAP 1
-_ACEOF
-
-      fi
-   fi
-fi
-
-
-   if test "x$TERMCAP_LIB" != "x" ; then
-      EDITLINE_LIB="$TERMCAP_LIB"
-   else
-
-if test "x${PBX_TINFO}" != "x1" -a "${USE_TINFO}" != "no"; then
-   pbxlibdir=""
-   # if --with-TINFO=DIR has been specified, use it.
-   if test "x${TINFO_DIR}" != "x"; then
-      if test -d ${TINFO_DIR}/lib; then
-         pbxlibdir="-L${TINFO_DIR}/lib"
-      else
-         pbxlibdir="-L${TINFO_DIR}"
-      fi
-   fi
-
-      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
-      CFLAGS="${CFLAGS} "
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -ltinfo" >&5
-$as_echo_n "checking for tgetent in -ltinfo... " >&6; }
-if ${ac_cv_lib_tinfo_tgetent+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-ltinfo ${pbxlibdir}  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char tgetent ();
-int
-main ()
-{
-return tgetent ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_tinfo_tgetent=yes
-else
-  ac_cv_lib_tinfo_tgetent=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_tinfo_tgetent" >&5
-$as_echo "$ac_cv_lib_tinfo_tgetent" >&6; }
-if test "x$ac_cv_lib_tinfo_tgetent" = xyes; then :
-  AST_TINFO_FOUND=yes
-else
-  AST_TINFO_FOUND=no
-fi
-
-      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
-
-
-   # now check for the header.
-   if test "${AST_TINFO_FOUND}" = "yes"; then
-      TINFO_LIB="${pbxlibdir} -ltinfo "
-      # if --with-TINFO=DIR has been specified, use it.
-      if test "x${TINFO_DIR}" != "x"; then
-         TINFO_INCLUDE="-I${TINFO_DIR}/include"
-      fi
-      TINFO_INCLUDE="${TINFO_INCLUDE} "
-
-         # no header, assume found
-         TINFO_HEADER_FOUND="1"
-
-      if test "x${TINFO_HEADER_FOUND}" = "x0" ; then
-         TINFO_LIB=""
-         TINFO_INCLUDE=""
-      else
-
-         PBX_TINFO=1
-         cat >>confdefs.h <<_ACEOF
-#define HAVE_TINFO 1
-_ACEOF
-
-      fi
-   fi
-fi
-
-
-      if test "x$TINFO_LIB" != "x" ; then
-         EDITLINE_LIB="$TINFO_LIB"
-      else
-
-if test "x${PBX_CURSES}" != "x1" -a "${USE_CURSES}" != "no"; then
-   pbxlibdir=""
-   # if --with-CURSES=DIR has been specified, use it.
-   if test "x${CURSES_DIR}" != "x"; then
-      if test -d ${CURSES_DIR}/lib; then
-         pbxlibdir="-L${CURSES_DIR}/lib"
-      else
-         pbxlibdir="-L${CURSES_DIR}"
-      fi
-   fi
-
-      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
-      CFLAGS="${CFLAGS} "
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for initscr in -lcurses" >&5
-$as_echo_n "checking for initscr in -lcurses... " >&6; }
-if ${ac_cv_lib_curses_initscr+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lcurses ${pbxlibdir}  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char initscr ();
-int
-main ()
-{
-return initscr ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_curses_initscr=yes
-else
-  ac_cv_lib_curses_initscr=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_curses_initscr" >&5
-$as_echo "$ac_cv_lib_curses_initscr" >&6; }
-if test "x$ac_cv_lib_curses_initscr" = xyes; then :
-  AST_CURSES_FOUND=yes
-else
-  AST_CURSES_FOUND=no
-fi
-
-      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
-
-
-   # now check for the header.
-   if test "${AST_CURSES_FOUND}" = "yes"; then
-      CURSES_LIB="${pbxlibdir} -lcurses "
-      # if --with-CURSES=DIR has been specified, use it.
-      if test "x${CURSES_DIR}" != "x"; then
-         CURSES_INCLUDE="-I${CURSES_DIR}/include"
-      fi
-      CURSES_INCLUDE="${CURSES_INCLUDE} "
-
-         # check for the header
-         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
-         CPPFLAGS="${CPPFLAGS} ${CURSES_INCLUDE}"
-         ac_fn_c_check_header_mongrel "$LINENO" "curses.h" "ac_cv_header_curses_h" "$ac_includes_default"
-if test "x$ac_cv_header_curses_h" = xyes; then :
-  CURSES_HEADER_FOUND=1
-else
-  CURSES_HEADER_FOUND=0
-fi
-
-
-         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
-
-      if test "x${CURSES_HEADER_FOUND}" = "x0" ; then
-         CURSES_LIB=""
-         CURSES_INCLUDE=""
-      else
-
-         PBX_CURSES=1
-         cat >>confdefs.h <<_ACEOF
-#define HAVE_CURSES 1
-_ACEOF
-
-      fi
-   fi
-fi
-
-
-         if test "x$CURSES_LIB" != "x" ; then
-            EDITLINE_LIB="$CURSES_LIB"
-         else
-
-if test "x${PBX_NCURSES}" != "x1" -a "${USE_NCURSES}" != "no"; then
-   pbxlibdir=""
-   # if --with-NCURSES=DIR has been specified, use it.
-   if test "x${NCURSES_DIR}" != "x"; then
-      if test -d ${NCURSES_DIR}/lib; then
-         pbxlibdir="-L${NCURSES_DIR}/lib"
-      else
-         pbxlibdir="-L${NCURSES_DIR}"
-      fi
-   fi
-
-      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
-      CFLAGS="${CFLAGS} "
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for initscr in -lncurses" >&5
-$as_echo_n "checking for initscr in -lncurses... " >&6; }
-if ${ac_cv_lib_ncurses_initscr+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lncurses ${pbxlibdir}  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char initscr ();
-int
-main ()
-{
-return initscr ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_ncurses_initscr=yes
-else
-  ac_cv_lib_ncurses_initscr=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_ncurses_initscr" >&5
-$as_echo "$ac_cv_lib_ncurses_initscr" >&6; }
-if test "x$ac_cv_lib_ncurses_initscr" = xyes; then :
-  AST_NCURSES_FOUND=yes
-else
-  AST_NCURSES_FOUND=no
-fi
-
-      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
-
-
-   # now check for the header.
-   if test "${AST_NCURSES_FOUND}" = "yes"; then
-      NCURSES_LIB="${pbxlibdir} -lncurses "
-      # if --with-NCURSES=DIR has been specified, use it.
-      if test "x${NCURSES_DIR}" != "x"; then
-         NCURSES_INCLUDE="-I${NCURSES_DIR}/include"
-      fi
-      NCURSES_INCLUDE="${NCURSES_INCLUDE} "
-
-         # check for the header
-         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
-         CPPFLAGS="${CPPFLAGS} ${NCURSES_INCLUDE}"
-         ac_fn_c_check_header_mongrel "$LINENO" "ncurses.h" "ac_cv_header_ncurses_h" "$ac_includes_default"
-if test "x$ac_cv_header_ncurses_h" = xyes; then :
-  NCURSES_HEADER_FOUND=1
-else
-  NCURSES_HEADER_FOUND=0
-fi
-
-
-         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
-
-      if test "x${NCURSES_HEADER_FOUND}" = "x0" ; then
-         NCURSES_LIB=""
-         NCURSES_INCLUDE=""
-      else
-
-         PBX_NCURSES=1
-         cat >>confdefs.h <<_ACEOF
-#define HAVE_NCURSES 1
-_ACEOF
-
-      fi
-   fi
-fi
-
-
-            if test "x$NCURSES_LIB" != "x" ; then
-               EDITLINE_LIB="$NCURSES_LIB"
-            else
-               as_fn_error $? "*** termcap support not found (on modern systems, this typically means the ncurses development package is missing)" "$LINENO" 5
-            fi
-         fi
-      fi
-   fi
-fi
 
 
 # Find required UUID support.
@@ -14200,12 +14037,12 @@ if test -n "$JANSSON_CFLAGS"; then
     pkg_cv_JANSSON_CFLAGS="$JANSSON_CFLAGS"
  elif test -n "$PKG_CONFIG"; then
     if test -n "$PKG_CONFIG" && \
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"jansson\""; } >&5
-  ($PKG_CONFIG --exists --print-errors "jansson") 2>&5
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"jansson >= 2.11\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "jansson >= 2.11") 2>&5
   ac_status=$?
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
-  pkg_cv_JANSSON_CFLAGS=`$PKG_CONFIG --cflags "jansson" 2>/dev/null`
+  pkg_cv_JANSSON_CFLAGS=`$PKG_CONFIG --cflags "jansson >= 2.11" 2>/dev/null`
 		      test "x$?" != "x0" && pkg_failed=yes
 else
   pkg_failed=yes
@@ -14217,12 +14054,12 @@ if test -n "$JANSSON_LIBS"; then
     pkg_cv_JANSSON_LIBS="$JANSSON_LIBS"
  elif test -n "$PKG_CONFIG"; then
     if test -n "$PKG_CONFIG" && \
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"jansson\""; } >&5
-  ($PKG_CONFIG --exists --print-errors "jansson") 2>&5
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"jansson >= 2.11\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "jansson >= 2.11") 2>&5
   ac_status=$?
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
-  pkg_cv_JANSSON_LIBS=`$PKG_CONFIG --libs "jansson" 2>/dev/null`
+  pkg_cv_JANSSON_LIBS=`$PKG_CONFIG --libs "jansson >= 2.11" 2>/dev/null`
 		      test "x$?" != "x0" && pkg_failed=yes
 else
   pkg_failed=yes
@@ -14243,9 +14080,9 @@ else
         _pkg_short_errors_supported=no
 fi
         if test $_pkg_short_errors_supported = yes; then
-	        JANSSON_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "jansson" 2>&1`
+	        JANSSON_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "jansson >= 2.11" 2>&1`
         else
-	        JANSSON_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "jansson" 2>&1`
+	        JANSSON_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "jansson >= 2.11" 2>&1`
         fi
 	# Put the nasty error message in config.log where it belongs
 	echo "$JANSSON_PKG_ERRORS" >&5
@@ -14277,6 +14114,7 @@ $as_echo "#define HAVE_JANSSON 1" >>confdefs.h
 fi
    fi
 
+	# json_sprintf is available in 2.11+
 
 if test "x${PBX_JANSSON}" != "x1" -a "${USE_JANSSON}" != "no"; then
    pbxlibdir=""
@@ -14291,9 +14129,9 @@ if test "x${PBX_JANSSON}" != "x1" -a "${USE_JANSSON}" != "no"; then
 
       ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
       CFLAGS="${CFLAGS} "
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for json_dumps in -ljansson" >&5
-$as_echo_n "checking for json_dumps in -ljansson... " >&6; }
-if ${ac_cv_lib_jansson_json_dumps+:} false; then :
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for json_sprintf in -ljansson" >&5
+$as_echo_n "checking for json_sprintf in -ljansson... " >&6; }
+if ${ac_cv_lib_jansson_json_sprintf+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
@@ -14307,27 +14145,27 @@ cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 #ifdef __cplusplus
 extern "C"
 #endif
-char json_dumps ();
+char json_sprintf ();
 int
 main ()
 {
-return json_dumps ();
+return json_sprintf ();
   ;
   return 0;
 }
 _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_jansson_json_dumps=yes
+  ac_cv_lib_jansson_json_sprintf=yes
 else
-  ac_cv_lib_jansson_json_dumps=no
+  ac_cv_lib_jansson_json_sprintf=no
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
 LIBS=$ac_check_lib_save_LIBS
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_jansson_json_dumps" >&5
-$as_echo "$ac_cv_lib_jansson_json_dumps" >&6; }
-if test "x$ac_cv_lib_jansson_json_dumps" = xyes; then :
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_jansson_json_sprintf" >&5
+$as_echo "$ac_cv_lib_jansson_json_sprintf" >&6; }
+if test "x$ac_cv_lib_jansson_json_sprintf" = xyes; then :
   AST_JANSSON_FOUND=yes
 else
   AST_JANSSON_FOUND=no
@@ -14375,14 +14213,44 @@ fi
 
 
 	if test "${PBX_JANSSON}" != 1; then
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: *** Asterisk requires libjansson and no system copy was found." >&5
-$as_echo "$as_me: *** Asterisk requires libjansson and no system copy was found." >&6;}
+		{ $as_echo "$as_me:${as_lineno-$LINENO}: *** Asterisk requires libjansson >= 2.11 and no system copy was found." >&5
+$as_echo "$as_me: *** Asterisk requires libjansson >= 2.11 and no system copy was found." >&6;}
 		{ $as_echo "$as_me:${as_lineno-$LINENO}: *** Please install the 'libjansson' development package or" >&5
 $as_echo "$as_me: *** Please install the 'libjansson' development package or" >&6;}
 		{ $as_echo "$as_me:${as_lineno-$LINENO}: *** use './configure --with-jansson-bundled'" >&5
 $as_echo "$as_me: *** use './configure --with-jansson-bundled'" >&6;}
 		exit 1
 	fi
+
+	# Define the ast_json_int_t (large integer type) to match jansson's
+	saved_cppflags="${CPPFLAGS}"
+	CPPFLAGS="${CPPFLAGS} ${JANSSON_INCLUDE}"
+	cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <jansson.h>
+int
+main ()
+{
+#if !JSON_INTEGER_IS_LONG_LONG
+		#error "not long long"
+		#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+
+$as_echo "#define AST_JSON_INT_T long long" >>confdefs.h
+
+else
+
+$as_echo "#define AST_JSON_INT_T long" >>confdefs.h
+
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+	CPPFLAGS="${saved_cppflags}"
+
 else
 	PBX_JANSSON=1
 fi
@@ -16979,7 +16847,7 @@ fi
 done
 
 
-for ac_func in asprintf atexit closefrom dup2 eaccess endpwent euidaccess ffsll ftruncate getcwd gethostbyname gethostname getloadavg gettimeofday glob ioperm inet_ntoa isascii memchr memmove memset mkdir mkdtemp munmap newlocale ppoll putenv re_comp regcomp select setenv socket strcasecmp strcasestr strchr strcspn strdup strerror strlcat strlcpy strncasecmp strndup strnlen strrchr strsep strspn strstr strtod strtol strtold strtoq unsetenv uselocale utime vasprintf getpeereid sysctl swapctl
+for ac_func in asprintf atexit closefrom dup2 eaccess endpwent euidaccess ffsll ftruncate getcwd gethostbyname gethostname getloadavg gettimeofday glob ioperm inet_ntoa isascii memchr memmove memset mkdir mkdtemp munmap newlocale ppoll putenv re_comp regcomp select setenv socket strcasecmp strcasestr strchr strcspn strdup strerror strlcat strlcpy strncasecmp strndup strnlen strrchr strsep strspn strstr strtod strtol strtold strtoq unsetenv uselocale utime vasprintf getpeereid sysctl swapctl malloc_trim
 do :
   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
 ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
@@ -17246,21 +17114,6 @@ else
   AST_ASTERISKSSL=yes
 fi
 
-
-
-# https support (in main/http.c) uses funopen on BSD systems,
-# fopencookie on linux
-for ac_func in funopen fopencookie
-do :
-  as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
-ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
-if eval test \"x\$"$as_ac_var"\" = x"yes"; then :
-  cat >>confdefs.h <<_ACEOF
-#define `$as_echo "HAVE_$ac_func" | $as_tr_cpp` 1
-_ACEOF
-
-fi
-done
 
 
 for ac_func in inet_aton
@@ -17976,8 +17829,8 @@ fi
 done
 
 
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for compiler atomic operations" >&5
-$as_echo_n "checking for compiler atomic operations... " >&6; }
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for compiler sync operations" >&5
+$as_echo_n "checking for compiler sync operations... " >&6; }
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -17992,6 +17845,7 @@ _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
+ax_cv_have_gcc_atomics=1
 
 $as_echo "#define HAVE_GCC_ATOMICS 1" >>confdefs.h
 
@@ -18002,6 +17856,38 @@ $as_echo "no" >&6; }
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for compiler atomic operations" >&5
+$as_echo_n "checking for compiler atomic operations... " >&6; }
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+int
+main ()
+{
+int foo1; int foo2 = __atomic_fetch_add(&foo1, 1, __ATOMIC_RELAXED);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+ax_cv_have_c_atomics=1
+
+$as_echo "#define HAVE_C_ATOMICS 1" >>confdefs.h
+
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+
+if test -z $ax_cv_have_c_atomics$ax_cv_have_gcc_atomics; then
+	as_fn_error $? "*** Atomic operations are not supported by your compiler." "$LINENO" 5
+fi
 
 # glibc, AFAIK, is the only C library that makes printing a NULL to a string safe.
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking if your system printf is NULL-safe." >&5
@@ -19429,17 +19315,6 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 
 
-ac_fn_c_check_header_mongrel "$LINENO" "libkern/OSAtomic.h" "ac_cv_header_libkern_OSAtomic_h" "$ac_includes_default"
-if test "x$ac_cv_header_libkern_OSAtomic_h" = xyes; then :
-
-cat >>confdefs.h <<_ACEOF
-#define HAVE_OSX_ATOMICS 1
-_ACEOF
-
-fi
-
-
-
 # The cast to long int works around a bug in the HP C Compiler
 # version HP92453-01 B.11.11.23709.GP, which incorrectly rejects
 # declarations like `int a3[[(sizeof (unsigned char)) >= 0]];'.
@@ -20157,7 +20032,8 @@ fi
 
 
 
-if test "x${OSARCH}" = "xlinux-gnu" ; then
+case "${OSARCH}" in
+linux*)
 
 if test "x${PBX_CAP}" != "x1" -a "${USE_CAP}" != "no"; then
    pbxlibdir=""
@@ -20254,7 +20130,8 @@ _ACEOF
 fi
 
 
-fi
+  ;;
+esac
 
 
     if test "x${PBX_DAHDI}" != "x1"; then
@@ -23679,6 +23556,161 @@ fi
 
 
 
+# Check that unbound is installed and the version code fragment compiles
+
+if test "x${PBX_UNBOUND}" != "x1" -a "${USE_UNBOUND}" != "no"; then
+   pbxlibdir=""
+   # if --with-UNBOUND=DIR has been specified, use it.
+   if test "x${UNBOUND_DIR}" != "x"; then
+      if test -d ${UNBOUND_DIR}/lib; then
+         pbxlibdir="-L${UNBOUND_DIR}/lib"
+      else
+         pbxlibdir="-L${UNBOUND_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ub_ctx_delete in -lunbound" >&5
+$as_echo_n "checking for ub_ctx_delete in -lunbound... " >&6; }
+if ${ac_cv_lib_unbound_ub_ctx_delete+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lunbound ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char ub_ctx_delete ();
+int
+main ()
+{
+return ub_ctx_delete ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_unbound_ub_ctx_delete=yes
+else
+  ac_cv_lib_unbound_ub_ctx_delete=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_unbound_ub_ctx_delete" >&5
+$as_echo "$ac_cv_lib_unbound_ub_ctx_delete" >&6; }
+if test "x$ac_cv_lib_unbound_ub_ctx_delete" = xyes; then :
+  AST_UNBOUND_FOUND=yes
+else
+  AST_UNBOUND_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_UNBOUND_FOUND}" = "yes"; then
+      UNBOUND_LIB="${pbxlibdir} -lunbound "
+      # if --with-UNBOUND=DIR has been specified, use it.
+      if test "x${UNBOUND_DIR}" != "x"; then
+         UNBOUND_INCLUDE="-I${UNBOUND_DIR}/include"
+      fi
+      UNBOUND_INCLUDE="${UNBOUND_INCLUDE} "
+
+         # check for the header
+         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
+         CPPFLAGS="${CPPFLAGS} ${UNBOUND_INCLUDE}"
+         ac_fn_c_check_header_mongrel "$LINENO" "unbound.h" "ac_cv_header_unbound_h" "$ac_includes_default"
+if test "x$ac_cv_header_unbound_h" = xyes; then :
+  UNBOUND_HEADER_FOUND=1
+else
+  UNBOUND_HEADER_FOUND=0
+fi
+
+
+         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
+
+   fi
+   # Validate the package with the supplied code.
+   if test "x${UNBOUND_HEADER_FOUND}" = "x1" ; then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for unbound version >= 1.5" >&5
+$as_echo_n "checking for unbound version >= 1.5... " >&6; }
+      ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
+      CPPFLAGS="${CPPFLAGS} ${UNBOUND_INCLUDE}"
+      ast_ext_lib_check_saved_LIBS="${LIBS}"
+      LIBS="${UNBOUND_LIB}"
+      cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+      #include <unbound.h>
+int
+main ()
+{
+
+            #if (UNBOUND_VERSION_MAJOR < 1 || (UNBOUND_VERSION_MAJOR == 1 && UNBOUND_VERSION_MINOR < 5 ))
+            #error "Unbound version must be >= 1.5"
+            #endif
+
+
+  ;
+  return 0;
+}
+
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+
+            if test "x${cross_compiling}" = "xyes" ; then
+               UNBOUND_VALIDATED="1"
+               { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (guessed for cross-compile)" >&5
+$as_echo "yes (guessed for cross-compile)" >&6; }
+            else
+               ./conftest$EXEEXT
+               if test $? -eq 0 ; then
+                  UNBOUND_VALIDATED="1"
+                  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+               else
+                  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+               fi
+            fi
+
+else
+
+            { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+
+
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+      CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
+      LIBS="${ast_ext_lib_check_saved_LIBS}"
+   fi
+
+   if test "x${UNBOUND_VALIDATED}" = "x1" ; then
+
+      PBX_UNBOUND=1
+      cat >>confdefs.h <<_ACEOF
+#define HAVE_UNBOUND 1
+_ACEOF
+
+   else
+      UNBOUND_LIB=""
+      UNBOUND_INCLUDE=""
+   fi
+fi
+
+
+
 
 if test "x${PBX_UNIXODBC}" != "x1" -a "${USE_UNIXODBC}" != "no"; then
    pbxlibdir=""
@@ -24157,6 +24189,103 @@ fi
          PBX_BLUETOOTH=1
          cat >>confdefs.h <<_ACEOF
 #define HAVE_BLUETOOTH 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
+
+if test "x${PBX_BEANSTALK}" != "x1" -a "${USE_BEANSTALK}" != "no"; then
+   pbxlibdir=""
+   # if --with-BEANSTALK=DIR has been specified, use it.
+   if test "x${BEANSTALK_DIR}" != "x"; then
+      if test -d ${BEANSTALK_DIR}/lib; then
+         pbxlibdir="-L${BEANSTALK_DIR}/lib"
+      else
+         pbxlibdir="-L${BEANSTALK_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for bs_version in -lbeanstalk" >&5
+$as_echo_n "checking for bs_version in -lbeanstalk... " >&6; }
+if ${ac_cv_lib_beanstalk_bs_version+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lbeanstalk ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char bs_version ();
+int
+main ()
+{
+return bs_version ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_beanstalk_bs_version=yes
+else
+  ac_cv_lib_beanstalk_bs_version=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_beanstalk_bs_version" >&5
+$as_echo "$ac_cv_lib_beanstalk_bs_version" >&6; }
+if test "x$ac_cv_lib_beanstalk_bs_version" = xyes; then :
+  AST_BEANSTALK_FOUND=yes
+else
+  AST_BEANSTALK_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_BEANSTALK_FOUND}" = "yes"; then
+      BEANSTALK_LIB="${pbxlibdir} -lbeanstalk "
+      # if --with-BEANSTALK=DIR has been specified, use it.
+      if test "x${BEANSTALK_DIR}" != "x"; then
+         BEANSTALK_INCLUDE="-I${BEANSTALK_DIR}/include"
+      fi
+      BEANSTALK_INCLUDE="${BEANSTALK_INCLUDE} "
+
+         # check for the header
+         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
+         CPPFLAGS="${CPPFLAGS} ${BEANSTALK_INCLUDE}"
+         ac_fn_c_check_header_mongrel "$LINENO" "beanstalk.h" "ac_cv_header_beanstalk_h" "$ac_includes_default"
+if test "x$ac_cv_header_beanstalk_h" = xyes; then :
+  BEANSTALK_HEADER_FOUND=1
+else
+  BEANSTALK_HEADER_FOUND=0
+fi
+
+
+         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
+
+      if test "x${BEANSTALK_HEADER_FOUND}" = "x0" ; then
+         BEANSTALK_LIB=""
+         BEANSTALK_INCLUDE=""
+      else
+
+         PBX_BEANSTALK=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_BEANSTALK 1
 _ACEOF
 
       fi
@@ -25396,6 +25525,46 @@ $as_echo "yes" >&6; }
 		PBX_PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS=1
 
 $as_echo "#define HAVE_PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS 1" >>confdefs.h
+
+
+
+else
+         { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+	CPPFLAGS="${saved_cppflags}"
+    fi
+
+
+    if test "x${PBX_PJSIP_ENDPOINT_COMPACT_FORM}" != "x1" -a "${USE_PJSIP_ENDPOINT_COMPACT_FORM}" != "no"; then
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: checking if \"pjsip_cfg()->endpt.use_compact_form = PJ_TRUE;\" compiles using pjsip.h" >&5
+$as_echo_n "checking if \"pjsip_cfg()->endpt.use_compact_form = PJ_TRUE;\" compiles using pjsip.h... " >&6; }
+	saved_cppflags="${CPPFLAGS}"
+	if test "x${PJSIP_ENDPOINT_COMPACT_FORM_DIR}" != "x"; then
+	    PJSIP_ENDPOINT_COMPACT_FORM_INCLUDE="-I${PJSIP_ENDPOINT_COMPACT_FORM_DIR}/include"
+	fi
+	CPPFLAGS="${CPPFLAGS} ${PJSIP_ENDPOINT_COMPACT_FORM_INCLUDE}"
+
+	cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+ #include <pjsip.h>
+int
+main ()
+{
+ pjsip_cfg()->endpt.use_compact_form = PJ_TRUE;;
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+     { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+		PBX_PJSIP_ENDPOINT_COMPACT_FORM=1
+
+$as_echo "#define HAVE_PJSIP_ENDPOINT_COMPACT_FORM 1" >>confdefs.h
 
 
 
@@ -28290,6 +28459,198 @@ fi
 
 
 
+if test "x${PBX_FFTW3}" != "x1" -a "${USE_FFTW3}" != "no"; then
+   pbxlibdir=""
+   # if --with-FFTW3=DIR has been specified, use it.
+   if test "x${FFTW3_DIR}" != "x"; then
+      if test -d ${FFTW3_DIR}/lib; then
+         pbxlibdir="-L${FFTW3_DIR}/lib"
+      else
+         pbxlibdir="-L${FFTW3_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for fftw_malloc in -lfftw3" >&5
+$as_echo_n "checking for fftw_malloc in -lfftw3... " >&6; }
+if ${ac_cv_lib_fftw3_fftw_malloc+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lfftw3 ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char fftw_malloc ();
+int
+main ()
+{
+return fftw_malloc ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_fftw3_fftw_malloc=yes
+else
+  ac_cv_lib_fftw3_fftw_malloc=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_fftw3_fftw_malloc" >&5
+$as_echo "$ac_cv_lib_fftw3_fftw_malloc" >&6; }
+if test "x$ac_cv_lib_fftw3_fftw_malloc" = xyes; then :
+  AST_FFTW3_FOUND=yes
+else
+  AST_FFTW3_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_FFTW3_FOUND}" = "yes"; then
+      FFTW3_LIB="${pbxlibdir} -lfftw3 "
+      # if --with-FFTW3=DIR has been specified, use it.
+      if test "x${FFTW3_DIR}" != "x"; then
+         FFTW3_INCLUDE="-I${FFTW3_DIR}/include"
+      fi
+      FFTW3_INCLUDE="${FFTW3_INCLUDE} "
+
+         # check for the header
+         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
+         CPPFLAGS="${CPPFLAGS} ${FFTW3_INCLUDE}"
+         ac_fn_c_check_header_mongrel "$LINENO" "fftw3.h" "ac_cv_header_fftw3_h" "$ac_includes_default"
+if test "x$ac_cv_header_fftw3_h" = xyes; then :
+  FFTW3_HEADER_FOUND=1
+else
+  FFTW3_HEADER_FOUND=0
+fi
+
+
+         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
+
+      if test "x${FFTW3_HEADER_FOUND}" = "x0" ; then
+         FFTW3_LIB=""
+         FFTW3_INCLUDE=""
+      else
+
+         PBX_FFTW3=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_FFTW3 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
+if test "x${PBX_SNDFILE}" != "x1" -a "${USE_SNDFILE}" != "no"; then
+   pbxlibdir=""
+   # if --with-SNDFILE=DIR has been specified, use it.
+   if test "x${SNDFILE_DIR}" != "x"; then
+      if test -d ${SNDFILE_DIR}/lib; then
+         pbxlibdir="-L${SNDFILE_DIR}/lib"
+      else
+         pbxlibdir="-L${SNDFILE_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for sf_open in -lsndfile" >&5
+$as_echo_n "checking for sf_open in -lsndfile... " >&6; }
+if ${ac_cv_lib_sndfile_sf_open+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsndfile ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char sf_open ();
+int
+main ()
+{
+return sf_open ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_sndfile_sf_open=yes
+else
+  ac_cv_lib_sndfile_sf_open=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_sndfile_sf_open" >&5
+$as_echo "$ac_cv_lib_sndfile_sf_open" >&6; }
+if test "x$ac_cv_lib_sndfile_sf_open" = xyes; then :
+  AST_SNDFILE_FOUND=yes
+else
+  AST_SNDFILE_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SNDFILE_FOUND}" = "yes"; then
+      SNDFILE_LIB="${pbxlibdir} -lsndfile "
+      # if --with-SNDFILE=DIR has been specified, use it.
+      if test "x${SNDFILE_DIR}" != "x"; then
+         SNDFILE_INCLUDE="-I${SNDFILE_DIR}/include"
+      fi
+      SNDFILE_INCLUDE="${SNDFILE_INCLUDE} "
+
+         # check for the header
+         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
+         CPPFLAGS="${CPPFLAGS} ${SNDFILE_INCLUDE}"
+         ac_fn_c_check_header_mongrel "$LINENO" "sndfile.h" "ac_cv_header_sndfile_h" "$ac_includes_default"
+if test "x$ac_cv_header_sndfile_h" = xyes; then :
+  SNDFILE_HEADER_FOUND=1
+else
+  SNDFILE_HEADER_FOUND=0
+fi
+
+
+         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
+
+      if test "x${SNDFILE_HEADER_FOUND}" = "x0" ; then
+         SNDFILE_LIB=""
+         SNDFILE_INCLUDE=""
+      else
+
+         PBX_SNDFILE=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SNDFILE 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
 
     if test "x${PBX_SPANDSP}" != "x1" -a "${USE_SPANDSP}" != "no"; then
 	{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for minimum version of SpanDSP" >&5
@@ -29447,6 +29808,103 @@ $as_echo "#define RADIUS_HEADER_STR <radcli/radcli.h>" >>confdefs.h
 		fi
 	fi
 fi
+
+
+if test "x${PBX_CODEC2}" != "x1" -a "${USE_CODEC2}" != "no"; then
+   pbxlibdir=""
+   # if --with-CODEC2=DIR has been specified, use it.
+   if test "x${CODEC2_DIR}" != "x"; then
+      if test -d ${CODEC2_DIR}/lib; then
+         pbxlibdir="-L${CODEC2_DIR}/lib"
+      else
+         pbxlibdir="-L${CODEC2_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for codec2_create in -lcodec2" >&5
+$as_echo_n "checking for codec2_create in -lcodec2... " >&6; }
+if ${ac_cv_lib_codec2_codec2_create+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcodec2 ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char codec2_create ();
+int
+main ()
+{
+return codec2_create ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_codec2_codec2_create=yes
+else
+  ac_cv_lib_codec2_codec2_create=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_codec2_codec2_create" >&5
+$as_echo "$ac_cv_lib_codec2_codec2_create" >&6; }
+if test "x$ac_cv_lib_codec2_codec2_create" = xyes; then :
+  AST_CODEC2_FOUND=yes
+else
+  AST_CODEC2_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_CODEC2_FOUND}" = "yes"; then
+      CODEC2_LIB="${pbxlibdir} -lcodec2 "
+      # if --with-CODEC2=DIR has been specified, use it.
+      if test "x${CODEC2_DIR}" != "x"; then
+         CODEC2_INCLUDE="-I${CODEC2_DIR}/include"
+      fi
+      CODEC2_INCLUDE="${CODEC2_INCLUDE} "
+
+         # check for the header
+         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
+         CPPFLAGS="${CPPFLAGS} ${CODEC2_INCLUDE}"
+         ac_fn_c_check_header_mongrel "$LINENO" "codec2/codec2.h" "ac_cv_header_codec2_codec2_h" "$ac_includes_default"
+if test "x$ac_cv_header_codec2_codec2_h" = xyes; then :
+  CODEC2_HEADER_FOUND=1
+else
+  CODEC2_HEADER_FOUND=0
+fi
+
+
+         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
+
+      if test "x${CODEC2_HEADER_FOUND}" = "x0" ; then
+         CODEC2_LIB=""
+         CODEC2_INCLUDE=""
+      else
+
+         PBX_CODEC2=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_CODEC2 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
 
 
 if test "x${PBX_COROSYNC}" != "x1" -a "${USE_COROSYNC}" != "no"; then
@@ -30812,6 +31270,264 @@ fi
 if test "x$PBX_SRTP" = x1;
 then
 
+if test "x${PBX_SRTP_256}" != "x1" -a "${USE_SRTP_256}" != "no"; then
+   pbxlibdir=""
+   # if --with-SRTP_256=DIR has been specified, use it.
+   if test "x${SRTP_256_DIR}" != "x"; then
+      if test -d ${SRTP_256_DIR}/lib; then
+         pbxlibdir="-L${SRTP_256_DIR}/lib"
+      else
+         pbxlibdir="-L${SRTP_256_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80 in -lsrtp2" >&5
+$as_echo_n "checking for srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80 in -lsrtp2... " >&6; }
+if ${ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsrtp2 ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80 ();
+int
+main ()
+{
+return srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80=yes
+else
+  ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80" >&5
+$as_echo "$ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80" >&6; }
+if test "x$ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80" = xyes; then :
+  AST_SRTP_256_FOUND=yes
+else
+  AST_SRTP_256_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SRTP_256_FOUND}" = "yes"; then
+      SRTP_256_LIB="${pbxlibdir} -lsrtp2 "
+      # if --with-SRTP_256=DIR has been specified, use it.
+      if test "x${SRTP_256_DIR}" != "x"; then
+         SRTP_256_INCLUDE="-I${SRTP_256_DIR}/include"
+      fi
+      SRTP_256_INCLUDE="${SRTP_256_INCLUDE} "
+
+         # no header, assume found
+         SRTP_256_HEADER_FOUND="1"
+
+      if test "x${SRTP_256_HEADER_FOUND}" = "x0" ; then
+         SRTP_256_LIB=""
+         SRTP_256_INCLUDE=""
+      else
+
+         PBX_SRTP_256=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SRTP_256 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
+if test "x${PBX_SRTP_192}" != "x1" -a "${USE_SRTP_192}" != "no"; then
+   pbxlibdir=""
+   # if --with-SRTP_192=DIR has been specified, use it.
+   if test "x${SRTP_192_DIR}" != "x"; then
+      if test -d ${SRTP_192_DIR}/lib; then
+         pbxlibdir="-L${SRTP_192_DIR}/lib"
+      else
+         pbxlibdir="-L${SRTP_192_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80 in -lsrtp2" >&5
+$as_echo_n "checking for srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80 in -lsrtp2... " >&6; }
+if ${ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsrtp2 ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80 ();
+int
+main ()
+{
+return srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80=yes
+else
+  ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80" >&5
+$as_echo "$ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80" >&6; }
+if test "x$ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80" = xyes; then :
+  AST_SRTP_192_FOUND=yes
+else
+  AST_SRTP_192_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SRTP_192_FOUND}" = "yes"; then
+      SRTP_192_LIB="${pbxlibdir} -lsrtp2 "
+      # if --with-SRTP_192=DIR has been specified, use it.
+      if test "x${SRTP_192_DIR}" != "x"; then
+         SRTP_192_INCLUDE="-I${SRTP_192_DIR}/include"
+      fi
+      SRTP_192_INCLUDE="${SRTP_192_INCLUDE} "
+
+         # no header, assume found
+         SRTP_192_HEADER_FOUND="1"
+
+      if test "x${SRTP_192_HEADER_FOUND}" = "x0" ; then
+         SRTP_192_LIB=""
+         SRTP_192_INCLUDE=""
+      else
+
+         PBX_SRTP_192=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SRTP_192 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
+if test "x${PBX_SRTP_GCM}" != "x1" -a "${USE_SRTP_GCM}" != "no"; then
+   pbxlibdir=""
+   # if --with-SRTP_GCM=DIR has been specified, use it.
+   if test "x${SRTP_GCM_DIR}" != "x"; then
+      if test -d ${SRTP_GCM_DIR}/lib; then
+         pbxlibdir="-L${SRTP_GCM_DIR}/lib"
+      else
+         pbxlibdir="-L${SRTP_GCM_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for srtp_crypto_policy_set_aes_gcm_128_8_auth in -lsrtp2" >&5
+$as_echo_n "checking for srtp_crypto_policy_set_aes_gcm_128_8_auth in -lsrtp2... " >&6; }
+if ${ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_gcm_128_8_auth+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsrtp2 ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char srtp_crypto_policy_set_aes_gcm_128_8_auth ();
+int
+main ()
+{
+return srtp_crypto_policy_set_aes_gcm_128_8_auth ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_gcm_128_8_auth=yes
+else
+  ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_gcm_128_8_auth=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_gcm_128_8_auth" >&5
+$as_echo "$ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_gcm_128_8_auth" >&6; }
+if test "x$ac_cv_lib_srtp2_srtp_crypto_policy_set_aes_gcm_128_8_auth" = xyes; then :
+  AST_SRTP_GCM_FOUND=yes
+else
+  AST_SRTP_GCM_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SRTP_GCM_FOUND}" = "yes"; then
+      SRTP_GCM_LIB="${pbxlibdir} -lsrtp2 "
+      # if --with-SRTP_GCM=DIR has been specified, use it.
+      if test "x${SRTP_GCM_DIR}" != "x"; then
+         SRTP_GCM_INCLUDE="-I${SRTP_GCM_DIR}/include"
+      fi
+      SRTP_GCM_INCLUDE="${SRTP_GCM_INCLUDE} "
+
+         # no header, assume found
+         SRTP_GCM_HEADER_FOUND="1"
+
+      if test "x${SRTP_GCM_HEADER_FOUND}" = "x0" ; then
+         SRTP_GCM_LIB=""
+         SRTP_GCM_INCLUDE=""
+      else
+
+         PBX_SRTP_GCM=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SRTP_GCM 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
 if test "x${PBX_SRTP_SHUTDOWN}" != "x1" -a "${USE_SRTP_SHUTDOWN}" != "no"; then
    pbxlibdir=""
    # if --with-SRTP_SHUTDOWN=DIR has been specified, use it.
@@ -30908,6 +31624,102 @@ fi
 
 
 
+if test "x${PBX_SRTP_GET_VERSION}" != "x1" -a "${USE_SRTP_GET_VERSION}" != "no"; then
+   pbxlibdir=""
+   # if --with-SRTP_GET_VERSION=DIR has been specified, use it.
+   if test "x${SRTP_GET_VERSION_DIR}" != "x"; then
+      if test -d ${SRTP_GET_VERSION_DIR}/lib; then
+         pbxlibdir="-L${SRTP_GET_VERSION_DIR}/lib"
+      else
+         pbxlibdir="-L${SRTP_GET_VERSION_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for srtp_get_version_string in -lsrtp2" >&5
+$as_echo_n "checking for srtp_get_version_string in -lsrtp2... " >&6; }
+if ${ac_cv_lib_srtp2_srtp_get_version_string+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsrtp2 ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char srtp_get_version_string ();
+int
+main ()
+{
+return srtp_get_version_string ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_srtp2_srtp_get_version_string=yes
+else
+  ac_cv_lib_srtp2_srtp_get_version_string=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_srtp2_srtp_get_version_string" >&5
+$as_echo "$ac_cv_lib_srtp2_srtp_get_version_string" >&6; }
+if test "x$ac_cv_lib_srtp2_srtp_get_version_string" = xyes; then :
+  AST_SRTP_GET_VERSION_FOUND=yes
+else
+  AST_SRTP_GET_VERSION_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SRTP_GET_VERSION_FOUND}" = "yes"; then
+      SRTP_GET_VERSION_LIB="${pbxlibdir} -lsrtp2 "
+      # if --with-SRTP_GET_VERSION=DIR has been specified, use it.
+      if test "x${SRTP_GET_VERSION_DIR}" != "x"; then
+         SRTP_GET_VERSION_INCLUDE="-I${SRTP_GET_VERSION_DIR}/include"
+      fi
+      SRTP_GET_VERSION_INCLUDE="${SRTP_GET_VERSION_INCLUDE} "
+
+         # check for the header
+         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
+         CPPFLAGS="${CPPFLAGS} ${SRTP_GET_VERSION_INCLUDE}"
+         ac_fn_c_check_header_mongrel "$LINENO" "srtp2/srtp.h" "ac_cv_header_srtp2_srtp_h" "$ac_includes_default"
+if test "x$ac_cv_header_srtp2_srtp_h" = xyes; then :
+  SRTP_GET_VERSION_HEADER_FOUND=1
+else
+  SRTP_GET_VERSION_HEADER_FOUND=0
+fi
+
+
+         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
+
+      if test "x${SRTP_GET_VERSION_HEADER_FOUND}" = "x0" ; then
+         SRTP_GET_VERSION_LIB=""
+         SRTP_GET_VERSION_INCLUDE=""
+      else
+
+         PBX_SRTP_GET_VERSION=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SRTP_GET_VERSION 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
     # libsrtp2 removed support for PRNG, so we require OpenSSL
     if test "x$PBX_OPENSSL" != x1;
     then
@@ -30917,7 +31729,7 @@ $as_echo "$as_me: WARNING: ***" >&2;}
 $as_echo "$as_me: WARNING: *** OpenSSL required when using libsrtp2, checking for libsrtp instead." >&2;}
         { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: ***" >&5
 $as_echo "$as_me: WARNING: ***" >&2;}
-        PBX_SRTP=0
+	PBX_SRTP=0
     fi
 fi
 
@@ -31094,6 +31906,264 @@ fi
     if test "x$PBX_SRTP" = x1;
     then
 
+if test "x${PBX_SRTP_256}" != "x1" -a "${USE_SRTP_256}" != "no"; then
+   pbxlibdir=""
+   # if --with-SRTP_256=DIR has been specified, use it.
+   if test "x${SRTP_256_DIR}" != "x"; then
+      if test -d ${SRTP_256_DIR}/lib; then
+         pbxlibdir="-L${SRTP_256_DIR}/lib"
+      else
+         pbxlibdir="-L${SRTP_256_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for crypto_policy_set_aes_cm_256_hmac_sha1_80 in -lsrtp" >&5
+$as_echo_n "checking for crypto_policy_set_aes_cm_256_hmac_sha1_80 in -lsrtp... " >&6; }
+if ${ac_cv_lib_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsrtp ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char crypto_policy_set_aes_cm_256_hmac_sha1_80 ();
+int
+main ()
+{
+return crypto_policy_set_aes_cm_256_hmac_sha1_80 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80=yes
+else
+  ac_cv_lib_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80" >&5
+$as_echo "$ac_cv_lib_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80" >&6; }
+if test "x$ac_cv_lib_srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80" = xyes; then :
+  AST_SRTP_256_FOUND=yes
+else
+  AST_SRTP_256_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SRTP_256_FOUND}" = "yes"; then
+      SRTP_256_LIB="${pbxlibdir} -lsrtp "
+      # if --with-SRTP_256=DIR has been specified, use it.
+      if test "x${SRTP_256_DIR}" != "x"; then
+         SRTP_256_INCLUDE="-I${SRTP_256_DIR}/include"
+      fi
+      SRTP_256_INCLUDE="${SRTP_256_INCLUDE} "
+
+         # no header, assume found
+         SRTP_256_HEADER_FOUND="1"
+
+      if test "x${SRTP_256_HEADER_FOUND}" = "x0" ; then
+         SRTP_256_LIB=""
+         SRTP_256_INCLUDE=""
+      else
+
+         PBX_SRTP_256=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SRTP_256 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
+if test "x${PBX_SRTP_192}" != "x1" -a "${USE_SRTP_192}" != "no"; then
+   pbxlibdir=""
+   # if --with-SRTP_192=DIR has been specified, use it.
+   if test "x${SRTP_192_DIR}" != "x"; then
+      if test -d ${SRTP_192_DIR}/lib; then
+         pbxlibdir="-L${SRTP_192_DIR}/lib"
+      else
+         pbxlibdir="-L${SRTP_192_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for crypto_policy_set_aes_cm_192_hmac_sha1_80 in -lsrtp" >&5
+$as_echo_n "checking for crypto_policy_set_aes_cm_192_hmac_sha1_80 in -lsrtp... " >&6; }
+if ${ac_cv_lib_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsrtp ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char crypto_policy_set_aes_cm_192_hmac_sha1_80 ();
+int
+main ()
+{
+return crypto_policy_set_aes_cm_192_hmac_sha1_80 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80=yes
+else
+  ac_cv_lib_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80" >&5
+$as_echo "$ac_cv_lib_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80" >&6; }
+if test "x$ac_cv_lib_srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80" = xyes; then :
+  AST_SRTP_192_FOUND=yes
+else
+  AST_SRTP_192_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SRTP_192_FOUND}" = "yes"; then
+      SRTP_192_LIB="${pbxlibdir} -lsrtp "
+      # if --with-SRTP_192=DIR has been specified, use it.
+      if test "x${SRTP_192_DIR}" != "x"; then
+         SRTP_192_INCLUDE="-I${SRTP_192_DIR}/include"
+      fi
+      SRTP_192_INCLUDE="${SRTP_192_INCLUDE} "
+
+         # no header, assume found
+         SRTP_192_HEADER_FOUND="1"
+
+      if test "x${SRTP_192_HEADER_FOUND}" = "x0" ; then
+         SRTP_192_LIB=""
+         SRTP_192_INCLUDE=""
+      else
+
+         PBX_SRTP_192=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SRTP_192 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
+if test "x${PBX_SRTP_GCM}" != "x1" -a "${USE_SRTP_GCM}" != "no"; then
+   pbxlibdir=""
+   # if --with-SRTP_GCM=DIR has been specified, use it.
+   if test "x${SRTP_GCM_DIR}" != "x"; then
+      if test -d ${SRTP_GCM_DIR}/lib; then
+         pbxlibdir="-L${SRTP_GCM_DIR}/lib"
+      else
+         pbxlibdir="-L${SRTP_GCM_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for crypto_policy_set_aes_gcm_128_8_auth in -lsrtp" >&5
+$as_echo_n "checking for crypto_policy_set_aes_gcm_128_8_auth in -lsrtp... " >&6; }
+if ${ac_cv_lib_srtp_crypto_policy_set_aes_gcm_128_8_auth+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsrtp ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char crypto_policy_set_aes_gcm_128_8_auth ();
+int
+main ()
+{
+return crypto_policy_set_aes_gcm_128_8_auth ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_srtp_crypto_policy_set_aes_gcm_128_8_auth=yes
+else
+  ac_cv_lib_srtp_crypto_policy_set_aes_gcm_128_8_auth=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_srtp_crypto_policy_set_aes_gcm_128_8_auth" >&5
+$as_echo "$ac_cv_lib_srtp_crypto_policy_set_aes_gcm_128_8_auth" >&6; }
+if test "x$ac_cv_lib_srtp_crypto_policy_set_aes_gcm_128_8_auth" = xyes; then :
+  AST_SRTP_GCM_FOUND=yes
+else
+  AST_SRTP_GCM_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SRTP_GCM_FOUND}" = "yes"; then
+      SRTP_GCM_LIB="${pbxlibdir} -lsrtp "
+      # if --with-SRTP_GCM=DIR has been specified, use it.
+      if test "x${SRTP_GCM_DIR}" != "x"; then
+         SRTP_GCM_INCLUDE="-I${SRTP_GCM_DIR}/include"
+      fi
+      SRTP_GCM_INCLUDE="${SRTP_GCM_INCLUDE} "
+
+         # no header, assume found
+         SRTP_GCM_HEADER_FOUND="1"
+
+      if test "x${SRTP_GCM_HEADER_FOUND}" = "x0" ; then
+         SRTP_GCM_LIB=""
+         SRTP_GCM_INCLUDE=""
+      else
+
+         PBX_SRTP_GCM=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SRTP_GCM 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
 if test "x${PBX_SRTP_SHUTDOWN}" != "x1" -a "${USE_SRTP_SHUTDOWN}" != "no"; then
    pbxlibdir=""
    # if --with-SRTP_SHUTDOWN=DIR has been specified, use it.
@@ -31182,6 +32252,102 @@ fi
          PBX_SRTP_SHUTDOWN=1
          cat >>confdefs.h <<_ACEOF
 #define HAVE_SRTP_SHUTDOWN 1
+_ACEOF
+
+      fi
+   fi
+fi
+
+
+
+if test "x${PBX_SRTP_GET_VERSION}" != "x1" -a "${USE_SRTP_GET_VERSION}" != "no"; then
+   pbxlibdir=""
+   # if --with-SRTP_GET_VERSION=DIR has been specified, use it.
+   if test "x${SRTP_GET_VERSION_DIR}" != "x"; then
+      if test -d ${SRTP_GET_VERSION_DIR}/lib; then
+         pbxlibdir="-L${SRTP_GET_VERSION_DIR}/lib"
+      else
+         pbxlibdir="-L${SRTP_GET_VERSION_DIR}"
+      fi
+   fi
+
+      ast_ext_lib_check_save_CFLAGS="${CFLAGS}"
+      CFLAGS="${CFLAGS} "
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for srtp_get_version_string in -lsrtp" >&5
+$as_echo_n "checking for srtp_get_version_string in -lsrtp... " >&6; }
+if ${ac_cv_lib_srtp_srtp_get_version_string+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsrtp ${pbxlibdir}  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char srtp_get_version_string ();
+int
+main ()
+{
+return srtp_get_version_string ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_srtp_srtp_get_version_string=yes
+else
+  ac_cv_lib_srtp_srtp_get_version_string=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_srtp_srtp_get_version_string" >&5
+$as_echo "$ac_cv_lib_srtp_srtp_get_version_string" >&6; }
+if test "x$ac_cv_lib_srtp_srtp_get_version_string" = xyes; then :
+  AST_SRTP_GET_VERSION_FOUND=yes
+else
+  AST_SRTP_GET_VERSION_FOUND=no
+fi
+
+      CFLAGS="${ast_ext_lib_check_save_CFLAGS}"
+
+
+   # now check for the header.
+   if test "${AST_SRTP_GET_VERSION_FOUND}" = "yes"; then
+      SRTP_GET_VERSION_LIB="${pbxlibdir} -lsrtp "
+      # if --with-SRTP_GET_VERSION=DIR has been specified, use it.
+      if test "x${SRTP_GET_VERSION_DIR}" != "x"; then
+         SRTP_GET_VERSION_INCLUDE="-I${SRTP_GET_VERSION_DIR}/include"
+      fi
+      SRTP_GET_VERSION_INCLUDE="${SRTP_GET_VERSION_INCLUDE} "
+
+         # check for the header
+         ast_ext_lib_check_saved_CPPFLAGS="${CPPFLAGS}"
+         CPPFLAGS="${CPPFLAGS} ${SRTP_GET_VERSION_INCLUDE}"
+         ac_fn_c_check_header_mongrel "$LINENO" "srtp/srtp.h" "ac_cv_header_srtp_srtp_h" "$ac_includes_default"
+if test "x$ac_cv_header_srtp_srtp_h" = xyes; then :
+  SRTP_GET_VERSION_HEADER_FOUND=1
+else
+  SRTP_GET_VERSION_HEADER_FOUND=0
+fi
+
+
+         CPPFLAGS="${ast_ext_lib_check_saved_CPPFLAGS}"
+
+      if test "x${SRTP_GET_VERSION_HEADER_FOUND}" = "x0" ; then
+         SRTP_GET_VERSION_LIB=""
+         SRTP_GET_VERSION_INCLUDE=""
+      else
+
+         PBX_SRTP_GET_VERSION=1
+         cat >>confdefs.h <<_ACEOF
+#define HAVE_SRTP_GET_VERSION 1
 _ACEOF
 
       fi
@@ -33350,6 +34516,31 @@ if test -f makeopts; then
 else
 	touch makeopts.acbak
 fi
+
+# conf_bridge (binaural rendering): check if HRIRs are available
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for bridges/bridge_softmix/include/hrirs.h" >&5
+$as_echo_n "checking for bridges/bridge_softmix/include/hrirs.h... " >&6; }
+if ${ac_cv_file_bridges_bridge_softmix_include_hrirs_h+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  test "$cross_compiling" = yes &&
+  as_fn_error $? "cannot check for file existence when cross compiling" "$LINENO" 5
+if test -r "bridges/bridge_softmix/include/hrirs.h"; then
+  ac_cv_file_bridges_bridge_softmix_include_hrirs_h=yes
+else
+  ac_cv_file_bridges_bridge_softmix_include_hrirs_h=no
+fi
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_file_bridges_bridge_softmix_include_hrirs_h" >&5
+$as_echo "$ac_cv_file_bridges_bridge_softmix_include_hrirs_h" >&6; }
+if test "x$ac_cv_file_bridges_bridge_softmix_include_hrirs_h" = xyes; then :
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_BRIDGES_BRIDGE_SOFTMIX_INCLUDE_HRIRS_H 1
+_ACEOF
+
+fi
+
 
 ac_config_files="$ac_config_files build_tools/menuselect-deps makeopts"
 

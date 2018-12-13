@@ -255,6 +255,16 @@ struct ast_sip_contact {
 		AST_STRING_FIELD(path);
 		/*! Content of the User-Agent header in REGISTER request */
 		AST_STRING_FIELD(user_agent);
+		/*! The name of the aor this contact belongs to */
+		AST_STRING_FIELD(aor);
+		/*! Asterisk Server name */
+		AST_STRING_FIELD(reg_server);
+		/*! IP-address of the Via header in REGISTER request */
+		AST_STRING_FIELD(via_addr);
+		/*! Content of the Call-ID header in REGISTER request */
+		AST_STRING_FIELD(call_id);
+		/*! The name of the endpoint that added the contact */
+		AST_STRING_FIELD(endpoint_name);
 	);
 	/*! Absolute time that this contact is no longer valid after */
 	struct timeval expiration_time;
@@ -266,18 +276,8 @@ struct ast_sip_contact {
 	double qualify_timeout;
 	/*! Endpoint that added the contact, only available in observers */
 	struct ast_sip_endpoint *endpoint;
-	/*! The name of the aor this contact belongs to */
-	char *aor;
-	/*! Asterisk Server name */
-	AST_STRING_FIELD_EXTENDED(reg_server);
-	/*! IP-address of the Via header in REGISTER request */
-	AST_STRING_FIELD_EXTENDED(via_addr);
 	/*! Port of the Via header in REGISTER request */
 	int via_port;
-	/*! Content of the Call-ID header in REGISTER request */
-	AST_STRING_FIELD_EXTENDED(call_id);
-	/*! The name of the endpoint that added the contact */
-	AST_STRING_FIELD_EXTENDED(endpoint_name);
 	/*! If true delete the contact on Asterisk restart/boot */
 	int prune_on_boot;
 };
@@ -286,9 +286,13 @@ struct ast_sip_contact {
  * \brief Status type for a contact.
  */
 enum ast_sip_contact_status_type {
+	/*! Frequency > 0, but no response from remote uri */
 	UNAVAILABLE,
+	/*! Frequency > 0, and got response from remote uri */
 	AVAILABLE,
+	/*! Default last status, and when a contact status object is not found */
 	UNKNOWN,
+	/*! Frequency == 0, has a contact, but don't know status (non-qualified) */
 	CREATED,
 	REMOVED,
 };
@@ -558,6 +562,8 @@ struct ast_sip_endpoint_id_configuration {
 	unsigned int send_pai;
 	/*! Do we send Remote-Party-ID headers to this endpoint? */
 	unsigned int send_rpid;
+	/*! Do we send messages for connected line updates for unanswered incoming calls immediately to this endpoint? */
+	unsigned int rpid_immediate;
 	/*! Do we add Diversion headers to applicable outgoing requests/responses? */
 	unsigned int send_diversion;
 	/*! When performing connected line update, which method should be used */
@@ -636,6 +642,10 @@ struct ast_sip_media_rtp_configuration {
 	unsigned int timeout;
 	/*! Number of seconds before terminating channel due to lack of RTP (when on hold) */
 	unsigned int timeout_hold;
+	/*! Follow forked media with a different To tag */
+	unsigned int follow_early_media_fork;
+	/*! Accept updated SDPs on non-100rel 18X and 2XX responses with the same To tag */
+	unsigned int accept_multiple_sdp_answers;
 };
 
 /*!
@@ -685,6 +695,8 @@ struct ast_sip_endpoint_media_configuration {
 	struct ast_sip_t38_configuration t38;
 	/*! Configured codecs */
 	struct ast_format_cap *codecs;
+	/*! Capabilities in topology form */
+	struct ast_stream_topology *topology;
 	/*! DSCP TOS bits for audio streams */
 	unsigned int tos_audio;
 	/*! Priority for audio streams */
@@ -697,6 +709,16 @@ struct ast_sip_endpoint_media_configuration {
 	unsigned int g726_non_standard;
 	/*! Bind the RTP instance to the media_address */
 	unsigned int bind_rtp_to_media_address;
+	/*! Use RTCP-MUX */
+	unsigned int rtcp_mux;
+	/*! Maximum number of audio streams to offer/accept */
+	unsigned int max_audio_streams;
+	/*! Maximum number of video streams to offer/accept */
+	unsigned int max_video_streams;
+	/*! Use BUNDLE */
+	unsigned int bundle;
+	/*! Enable webrtc settings and defaults */
+	unsigned int webrtc;
 };
 
 /*!
@@ -727,6 +749,8 @@ struct ast_sip_endpoint {
 		AST_STRING_FIELD(message_context);
 		/*! Accountcode to auto-set on channels */
 		AST_STRING_FIELD(accountcode);
+		/*! If set, we'll push incoming MWI NOTIFYs to stasis using this mailbox */
+		AST_STRING_FIELD(incoming_mwi_mailbox);
 	);
 	/*! Configuration for extensions */
 	struct ast_sip_endpoint_extensions extensions;
@@ -768,8 +792,8 @@ struct ast_sip_endpoint {
 	struct ast_variable *channel_vars;
 	/*! Whether to place a 'user=phone' parameter into the request URI if user is a number */
 	unsigned int usereqphone;
-	/*! Do we send messages for connected line updates for unanswered incoming calls immediately to this endpoint? */
-	unsigned int rpid_immediate;
+	/*! Whether to pass through hold and unhold using re-invites with recvonly and sendrecv */
+	unsigned int moh_passthrough;
 	/*! Access control list */
 	struct ast_acl_list *acl;
 	/*! Restrict what IPs are allowed in the Contact header (for registration) */
@@ -778,24 +802,22 @@ struct ast_sip_endpoint {
 	unsigned int faxdetect_timeout;
 	/*! Override the user on the outgoing Contact header with this value. */
 	char *contact_user;
+	/*! Whether to response SDP offer with single most preferred codec. */
+	unsigned int preferred_codec_only;
 	/*! Do we allow an asymmetric RTP codec? */
 	unsigned int asymmetric_rtp_codec;
-	/*! Use RTCP-MUX */
-	unsigned int rtcp_mux;
 	/*! Do we allow overlap dialling? */
 	unsigned int allow_overlap;
 	/*! Whether to notifies all the progress details on blind transfer */
 	unsigned int refer_blind_progress;
 	/*! Whether to notifies dialog-info 'early' on INUSE && RINGING state */
 	unsigned int notify_early_inuse_ringing;
-	/*! If set, we'll push incoming MWI NOTIFYs to stasis using this mailbox */
-	AST_STRING_FIELD_EXTENDED(incoming_mwi_mailbox);
-	/*! Follow forked media with a different To tag */
-	unsigned int follow_early_media_fork;
-	/*! Accept updated SDPs on non-100rel 18X and 2XX responses with the same To tag */
-	unsigned int accept_multiple_sdp_answers;
 	/*! Suppress Q.850 Reason headers on this endpoint */
 	unsigned int suppress_q850_reason_headers;
+	/*! Do we accept connected line updates from this endpoint? */
+	unsigned int trust_connected_line;
+	/*! Do we send connected line updates to this endpoint? */
+	unsigned int send_connected_line;
 };
 
 /*! URI parameter for symmetric transport */
@@ -871,24 +893,12 @@ struct ast_sip_outbound_authenticator {
 	 *
 	 * \param auths A vector of IDs of auth sorcery objects
 	 * \param challenge The SIP response with authentication challenge(s)
-	 * \param tsx The transaction in which the challenge was received
+	 * \param old_request The request that received the auth challenge(s)
 	 * \param new_request The new SIP request with challenge response(s)
 	 * \retval 0 Successfully created new request
 	 * \retval -1 Failed to create a new request
 	 */
 	int (*create_request_with_auth)(const struct ast_sip_auth_vector *auths, struct pjsip_rx_data *challenge,
-			struct pjsip_transaction *tsx, struct pjsip_tx_data **new_request);
-	/*!
-	 * \brief Create a new request with authentication credentials based on old request
-	 *
-	 * \param auths A vector of IDs of auth sorcery objects
-	 * \param challenge The SIP response with authentication challenge(s)
-	 * \param old_request The request that resulted in challenge(s)
-	 * \param new_request The new SIP request with challenge response(s)
-	 * \retval 0 Successfully created new request
-	 * \retval -1 Failed to create a new request
-	 */
-	int (*create_request_with_auth_from_old)(const struct ast_sip_auth_vector *auths, struct pjsip_rx_data *challenge,
 			struct pjsip_tx_data *old_request, struct pjsip_tx_data **new_request);
 };
 
@@ -1468,18 +1478,6 @@ typedef int (*ast_sip_task)(void *user_data);
 
 /*!
  * \brief Create a new serializer for SIP tasks
- *
- * See \ref ast_threadpool_serializer for more information on serializers.
- * SIP creates serializers so that tasks operating on similar data will run
- * in sequence.
- *
- * \retval NULL Failure
- * \retval non-NULL Newly-created serializer
- */
-struct ast_taskprocessor *ast_sip_create_serializer(void);
-
-/*!
- * \brief Create a new serializer for SIP tasks
  * \since 13.8.0
  *
  * See \ref ast_threadpool_serializer for more information on serializers.
@@ -1491,27 +1489,12 @@ struct ast_taskprocessor *ast_sip_create_serializer(void);
  * \retval NULL Failure
  * \retval non-NULL Newly-created serializer
  */
-struct ast_taskprocessor *ast_sip_create_serializer_named(const char *name);
+struct ast_taskprocessor *ast_sip_create_serializer(const char *name);
 
 struct ast_serializer_shutdown_group;
 
 /*!
  * \brief Create a new serializer for SIP tasks
- * \since 13.5.0
- *
- * See \ref ast_threadpool_serializer for more information on serializers.
- * SIP creates serializers so that tasks operating on similar data will run
- * in sequence.
- *
- * \param shutdown_group Group shutdown controller. (NULL if no group association)
- *
- * \retval NULL Failure
- * \retval non-NULL Newly-created serializer
- */
-struct ast_taskprocessor *ast_sip_create_serializer_group(struct ast_serializer_shutdown_group *shutdown_group);
-
-/*!
- * \brief Create a new serializer for SIP tasks
  * \since 13.8.0
  *
  * See \ref ast_threadpool_serializer for more information on serializers.
@@ -1524,7 +1507,7 @@ struct ast_taskprocessor *ast_sip_create_serializer_group(struct ast_serializer_
  * \retval NULL Failure
  * \retval non-NULL Newly-created serializer
  */
-struct ast_taskprocessor *ast_sip_create_serializer_group_named(const char *name, struct ast_serializer_shutdown_group *shutdown_group);
+struct ast_taskprocessor *ast_sip_create_serializer_group(const char *name, struct ast_serializer_shutdown_group *shutdown_group);
 
 /*!
  * \brief Determine the distributor serializer for the SIP message.
@@ -1536,16 +1519,6 @@ struct ast_taskprocessor *ast_sip_create_serializer_group_named(const char *name
  * \retval NULL on error.
  */
 struct ast_taskprocessor *ast_sip_get_distributor_serializer(pjsip_rx_data *rdata);
-
-/*!
- * \brief Record the task's serializer name on the tdata structure.
- * \since 13.15.0
- *
- * \param tdata The outgoing message.
- *
- * \retval PJ_SUCCESS.
- */
-pj_status_t ast_sip_record_request_serializer(pjsip_tx_data *tdata);
 
 /*!
  * \brief Set a serializer on a SIP dialog so requests and responses are automatically serialized
@@ -2160,18 +2133,7 @@ enum ast_sip_check_auth_result ast_sip_check_authentication(struct ast_sip_endpo
  * the parameters and return values.
  */
 int ast_sip_create_request_with_auth(const struct ast_sip_auth_vector *auths, pjsip_rx_data *challenge,
-		pjsip_transaction *tsx, pjsip_tx_data **new_request);
-
-/*!
- * \brief Create a response to an authentication challenge
- *
- * This will call into an outbound authenticator's create_request_with_auth callback
- * to create a new request with authentication credentials. See the create_request_with_auth_from_old
- * callback in the \ref ast_sip_outbound_authenticator structure for details about
- * the parameters and return values.
- */
-int ast_sip_create_request_with_auth_from_old(const struct ast_sip_auth_vector *auths, pjsip_rx_data *challenge,
-		pjsip_tx_data *old_request, pjsip_tx_data **new_request);
+		pjsip_tx_data *tdata, pjsip_tx_data **new_request);
 
 /*!
  * \brief Determine the endpoint that has sent a SIP message
@@ -2262,6 +2224,24 @@ int ast_sip_append_body(pjsip_tx_data *tdata, const char *body_text);
  * \param size The size of the destination buffer.
  */
 void ast_copy_pj_str(char *dest, const pj_str_t *src, size_t size);
+
+/*!
+ * \brief Create and copy a pj_str_t into a standard character buffer.
+ *
+ * pj_str_t is not NULL-terminated. Any place that expects a NULL-
+ * terminated string needs to have the pj_str_t copied into a separate
+ * buffer.
+ *
+ * Copies the pj_str_t contents into a newly allocated buffer pointed to
+ * by dest. NULL-terminates the buffer.
+ *
+ * \note Caller is responsible for freeing the allocated memory.
+ *
+ * \param dest [out] The destination buffer
+ * \param src The pj_str_t to copy
+ * \retval Number of characters copied or negative value on error
+ */
+int ast_copy_pj_str2(char **dest, const pj_str_t *src);
 
 /*!
  * \brief Get the looked-up endpoint on an out-of dialog request or response
@@ -2559,10 +2539,8 @@ struct ast_sip_endpoint_formatter {
  * \brief Register an endpoint formatter.
  *
  * \param obj the formatter to register
- * \retval 0 Success
- * \retval -1 Failure
  */
-int ast_sip_register_endpoint_formatter(struct ast_sip_endpoint_formatter *obj);
+void ast_sip_register_endpoint_formatter(struct ast_sip_endpoint_formatter *obj);
 
 /*!
  * \brief Unregister an endpoint formatter.
@@ -2738,7 +2716,7 @@ struct ast_sip_supplement {
  * \retval 0 Success
  * \retval -1 Failure
  */
-int ast_sip_register_supplement(struct ast_sip_supplement *supplement);
+void ast_sip_register_supplement(struct ast_sip_supplement *supplement);
 
 /*!
  * \brief Unregister a an supplement to SIP out of dialog processing
@@ -2772,6 +2750,14 @@ int ast_sip_get_mwi_tps_queue_low(void);
  * \retval non zero if disable.
  */
 unsigned int ast_sip_get_mwi_disable_initial_unsolicited(void);
+
+/*!
+ * \brief Retrieve the global setting 'use_callerid_contact'.
+ * \since 13.24.0
+ *
+ * \retval non zero if CALLERID(num) is to be used as the default username in the contact
+ */
+unsigned int ast_sip_get_use_callerid_contact(void);
 
 /*!
  * \brief Retrieve the global setting 'ignore_uri_user_options'.
@@ -2869,15 +2855,6 @@ void ast_sip_get_default_realm(char *realm, size_t size);
  */
 void ast_sip_get_default_from_user(char *from_user, size_t size);
 
-/*! \brief Determines whether the res_pjsip module is loaded */
-#define CHECK_PJSIP_MODULE_LOADED()				\
-	do {							\
-		if (!ast_module_check("res_pjsip.so")		\
-			|| !ast_sip_get_pjsip_endpoint()) {	\
-			return AST_MODULE_LOAD_DECLINE;		\
-		}						\
-	} while(0)
-
 /*!
  * \brief Retrieve the system keep alive interval setting.
  *
@@ -2915,6 +2892,15 @@ unsigned int ast_sip_get_max_initial_qualify_time(void);
 
 const char *ast_sip_get_contact_status_label(const enum ast_sip_contact_status_type status);
 const char *ast_sip_get_contact_short_status_label(const enum ast_sip_contact_status_type status);
+
+/*!
+ * \brief Set a request to use the next value in the list of resolved addresses.
+ *
+ * \param tdata the tx data from the original request
+ * \retval 0 No more addresses to try
+ * \retval 1 The request was successfully re-intialized
+ */
+int ast_sip_failover_request(pjsip_tx_data *tdata);
 
 /*!
  * \brief Retrieve the local host address in IP form

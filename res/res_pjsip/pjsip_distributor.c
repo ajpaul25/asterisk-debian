@@ -29,11 +29,12 @@
 
 static int distribute(void *data);
 static pj_bool_t distributor(pjsip_rx_data *rdata);
+static pj_status_t record_serializer(pjsip_tx_data *tdata);
 
 static pjsip_module distributor_mod = {
 	.name = {"Request Distributor", 19},
 	.priority = PJSIP_MOD_PRIORITY_TSX_LAYER - 6,
-	.on_tx_request = ast_sip_record_request_serializer,
+	.on_tx_request = record_serializer,
 	.on_rx_request = distributor,
 	.on_rx_response = distributor,
 };
@@ -63,7 +64,16 @@ struct unidentified_request{
 /*! Pool of serializers to use if not supplied. */
 static struct ast_taskprocessor *distributor_pool[DISTRIBUTOR_POOL_SIZE];
 
-pj_status_t ast_sip_record_request_serializer(pjsip_tx_data *tdata)
+/*!
+ * \internal
+ * \brief Record the task's serializer name on the tdata structure.
+ * \since 14.0.0
+ *
+ * \param tdata The outgoing message.
+ *
+ * \retval PJ_SUCCESS.
+ */
+static pj_status_t record_serializer(pjsip_tx_data *tdata)
 {
 	struct ast_taskprocessor *serializer;
 
@@ -530,12 +540,22 @@ static pj_bool_t distributor(pjsip_rx_data *rdata)
 			 * we are being overloaded and need to defer adding new work to
 			 * the system.  To defer the work we will ignore the request and
 			 * rely on the peer's transport layer to retransmit the message.
-			 * We usually work off the overload within a few seconds.  The
-			 * alternative is to send back a 503 response to these requests
-			 * and be done with it.
+			 * We usually work off the overload within a few seconds.
+			 * If transport is non-UDP we send a 503 response instead.
 			 */
-			ast_debug(3, "Taskprocessor overload alert: Ignoring '%s'.\n",
-				pjsip_rx_data_get_info(rdata));
+			switch (rdata->tp_info.transport->key.type) {
+			case PJSIP_TRANSPORT_UDP6:
+			case PJSIP_TRANSPORT_UDP:
+				ast_debug(3, "Taskprocessor overload alert: Ignoring '%s'.\n",
+					pjsip_rx_data_get_info(rdata));
+				break;
+			default:
+				ast_debug(3, "Taskprocessor overload on non-udp transport. Received:'%s'. "
+					"Responding with a 503.\n", pjsip_rx_data_get_info(rdata));
+				pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(), rdata,
+					PJSIP_SC_SERVICE_UNAVAILABLE, NULL, NULL, NULL);
+				break;
+			}
 			ao2_cleanup(dist);
 			return PJ_TRUE;
 		}
@@ -638,16 +658,21 @@ static void log_failed_request(pjsip_rx_data *rdata, char *msg, unsigned int cou
 	char from_buf[PJSIP_MAX_URL_SIZE];
 	char callid_buf[PJSIP_MAX_URL_SIZE];
 	char method_buf[PJSIP_MAX_URL_SIZE];
+	char src_addr_buf[AST_SOCKADDR_BUFLEN];
 	pjsip_uri_print(PJSIP_URI_IN_FROMTO_HDR, rdata->msg_info.from->uri, from_buf, PJSIP_MAX_URL_SIZE);
 	ast_copy_pj_str(callid_buf, &rdata->msg_info.cid->id, PJSIP_MAX_URL_SIZE);
 	ast_copy_pj_str(method_buf, &rdata->msg_info.msg->line.req.method.name, PJSIP_MAX_URL_SIZE);
 	if (count) {
-		ast_log(LOG_NOTICE, "Request '%s' from '%s' failed for '%s:%d' (callid: %s) - %s"
+		ast_log(LOG_NOTICE, "Request '%s' from '%s' failed for '%s' (callid: %s) - %s"
 			" after %u tries in %.3f ms\n",
-			method_buf, from_buf, rdata->pkt_info.src_name, rdata->pkt_info.src_port, callid_buf, msg, count, period / 1000.0);
+			method_buf, from_buf,
+			pj_sockaddr_print(&rdata->pkt_info.src_addr, src_addr_buf, sizeof(src_addr_buf), 3),
+			callid_buf, msg, count, period / 1000.0);
 	} else {
-		ast_log(LOG_NOTICE, "Request '%s' from '%s' failed for '%s:%d' (callid: %s) - %s\n",
-			method_buf, from_buf, rdata->pkt_info.src_name, rdata->pkt_info.src_port, callid_buf, msg);
+		ast_log(LOG_NOTICE, "Request '%s' from '%s' failed for '%s' (callid: %s) - %s\n",
+			method_buf, from_buf,
+			pj_sockaddr_print(&rdata->pkt_info.src_addr, src_addr_buf, sizeof(src_addr_buf), 3),
+			callid_buf, msg);
 	}
 }
 
@@ -1218,7 +1243,7 @@ static int distributor_pool_setup(void)
 		/* Create name with seq number appended. */
 		ast_taskprocessor_build_name(tps_name, sizeof(tps_name), "pjsip/distributor");
 
-		distributor_pool[idx] = ast_sip_create_serializer_named(tps_name);
+		distributor_pool[idx] = ast_sip_create_serializer(tps_name);
 		if (!distributor_pool[idx]) {
 			return -1;
 		}
@@ -1266,15 +1291,15 @@ int ast_sip_initialize_distributor(void)
 		return -1;
 	}
 
-	if (internal_sip_register_service(&distributor_mod)) {
+	if (ast_sip_register_service(&distributor_mod)) {
 		ast_sip_destroy_distributor();
 		return -1;
 	}
-	if (internal_sip_register_service(&endpoint_mod)) {
+	if (ast_sip_register_service(&endpoint_mod)) {
 		ast_sip_destroy_distributor();
 		return -1;
 	}
-	if (internal_sip_register_service(&auth_mod)) {
+	if (ast_sip_register_service(&auth_mod)) {
 		ast_sip_destroy_distributor();
 		return -1;
 	}
@@ -1305,9 +1330,9 @@ void ast_sip_destroy_distributor(void)
 	ast_cli_unregister_multiple(cli_commands, ARRAY_LEN(cli_commands));
 	ast_sip_unregister_cli_formatter(unid_formatter);
 
-	internal_sip_unregister_service(&auth_mod);
-	internal_sip_unregister_service(&endpoint_mod);
-	internal_sip_unregister_service(&distributor_mod);
+	ast_sip_unregister_service(&auth_mod);
+	ast_sip_unregister_service(&endpoint_mod);
+	ast_sip_unregister_service(&distributor_mod);
 
 	ao2_global_obj_release(artificial_auth);
 	ao2_cleanup(artificial_endpoint);

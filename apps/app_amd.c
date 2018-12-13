@@ -43,8 +43,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/module.h"
 #include "asterisk/lock.h"
 #include "asterisk/channel.h"
@@ -85,7 +83,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 			</parameter>
 			<parameter name="maximumNumberOfWords" required="false">
 				<para>Is the maximum number of words in a greeting</para>
-				<para>If this is REACHED, then the result is detection as a MACHINE</para>
+				<para>If this is exceeded, then the result is detection as a MACHINE</para>
 			</parameter>
 			<parameter name="silenceThreshold" required="false">
 				<para>What is the average level of noise from 0 to 32767 which if not exceeded, should be considered silence?</para>
@@ -154,7 +152,7 @@ static int dfltAfterGreetingSilence = 800;
 static int dfltTotalAnalysisTime    = 5000;
 static int dfltMinimumWordLength    = 100;
 static int dfltBetweenWordsSilence  = 50;
-static int dfltMaximumNumberOfWords = 3;
+static int dfltMaximumNumberOfWords = 2;
 static int dfltSilenceThreshold     = 256;
 static int dfltMaximumWordLength    = 5000; /* Setting this to a large default so it is not used unless specify it in the configs or command line */
 
@@ -380,7 +378,7 @@ static void isAnsweringMachine(struct ast_channel *chan, const char *data)
 					sprintf(amdCause , "MAXWORDLENGTH-%d", consecutiveVoiceDuration);
 					break;
 				}
-				if (iWordsCount >= maximumNumberOfWords) {
+				if (iWordsCount > maximumNumberOfWords) {
 					ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
 					ast_frfree(f);
 					strcpy(amdStatus , "MACHINE");
@@ -541,8 +539,8 @@ static int reload(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Answering Machine Detection Application",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
 );

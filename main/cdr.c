@@ -45,8 +45,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <signal.h>
 #include <inttypes.h>
 
@@ -55,6 +53,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include "asterisk/cdr.h"
 #include "asterisk/callerid.h"
 #include "asterisk/manager.h"
+#include "asterisk/module.h"
 #include "asterisk/causes.h"
 #include "asterisk/linkedlists.h"
 #include "asterisk/utils.h"
@@ -62,7 +61,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include "asterisk/config.h"
 #include "asterisk/cli.h"
 #include "asterisk/stringfields.h"
-#include "asterisk/data.h"
 #include "asterisk/config_options.h"
 #include "asterisk/json.h"
 #include "asterisk/parking.h"
@@ -338,6 +336,9 @@ struct cdr_beitem {
 
 /*! \brief List of registered backends */
 static AST_RWLIST_HEAD_STATIC(be_list, cdr_beitem);
+
+/*! \brief List of registered modifiers */
+static AST_RWLIST_HEAD_STATIC(mo_list, cdr_beitem);
 
 /*! \brief Queued CDR waiting to be batched */
 struct cdr_batch_item {
@@ -1592,15 +1593,11 @@ static int base_process_party_a(struct cdr_object *cdr, struct ast_channel_snaps
 
 static int base_process_bridge_leave(struct cdr_object *cdr, struct ast_bridge_snapshot *bridge, struct ast_channel_snapshot *channel)
 {
-	/* In general, most things shouldn't get a bridge leave */
-	ast_assert(0);
-	return 1;
+	return 0;
 }
 
 static int base_process_dial_end(struct cdr_object *cdr, struct ast_channel_snapshot *caller, struct ast_channel_snapshot *peer, const char *dial_status)
 {
-	/* In general, most things shouldn't get a dial end. */
-	ast_assert(0);
 	return 0;
 }
 
@@ -2077,6 +2074,13 @@ static int filter_channel_cache_message(struct ast_channel_snapshot *old_snapsho
 	return ret;
 }
 
+static int dial_status_end(const char *dialstatus)
+{
+	return (strcmp(dialstatus, "RINGING") &&
+			strcmp(dialstatus, "PROCEEDING") &&
+			strcmp(dialstatus, "PROGRESS"));
+}
+
 /* TOPIC ROUTER CALLBACKS */
 
 /*!
@@ -2148,7 +2152,7 @@ static void handle_dial_message(void *data, struct stasis_subscription *sub, str
 			res &= it_cdr->fn_table->process_dial_begin(it_cdr,
 					caller,
 					peer);
-		} else {
+		} else if (dial_status_end(dial_status)) {
 			if (!it_cdr->fn_table->process_dial_end) {
 				continue;
 			}
@@ -2879,7 +2883,7 @@ int ast_cdr_backend_unsuspend(const char *name)
 	return success;
 }
 
-int ast_cdr_register(const char *name, const char *desc, ast_cdrbe be)
+static int cdr_generic_register(struct be_list *generic_list, const char *name, const char *desc, ast_cdrbe be)
 {
 	struct cdr_beitem *i;
 	struct cdr_beitem *cur;
@@ -2903,56 +2907,76 @@ int ast_cdr_register(const char *name, const char *desc, ast_cdrbe be)
 	ast_copy_string(i->name, name, sizeof(i->name));
 	ast_copy_string(i->desc, desc, sizeof(i->desc));
 
-	AST_RWLIST_WRLOCK(&be_list);
-	AST_RWLIST_TRAVERSE(&be_list, cur, list) {
+	AST_RWLIST_WRLOCK(generic_list);
+	AST_RWLIST_TRAVERSE(generic_list, cur, list) {
 		if (!strcasecmp(name, cur->name)) {
 			ast_log(LOG_WARNING, "Already have a CDR backend called '%s'\n", name);
-			AST_RWLIST_UNLOCK(&be_list);
+			AST_RWLIST_UNLOCK(generic_list);
 			ast_free(i);
 
 			return -1;
 		}
 	}
 
-	AST_RWLIST_INSERT_HEAD(&be_list, i, list);
-	AST_RWLIST_UNLOCK(&be_list);
+	AST_RWLIST_INSERT_HEAD(generic_list, i, list);
+	AST_RWLIST_UNLOCK(generic_list);
 
 	return 0;
 }
 
-int ast_cdr_unregister(const char *name)
+int ast_cdr_register(const char *name, const char *desc, ast_cdrbe be)
+{
+	return cdr_generic_register(&be_list, name, desc, be);
+}
+
+int ast_cdr_modifier_register(const char *name, const char *desc, ast_cdrbe be)
+{
+	return cdr_generic_register((struct be_list *)&mo_list, name, desc, be);
+}
+
+static int ast_cdr_generic_unregister(struct be_list *generic_list, const char *name)
 {
 	struct cdr_beitem *match = NULL;
 	int active_count;
 
-	AST_RWLIST_WRLOCK(&be_list);
-	AST_RWLIST_TRAVERSE(&be_list, match, list) {
+	AST_RWLIST_WRLOCK(generic_list);
+	AST_RWLIST_TRAVERSE(generic_list, match, list) {
 		if (!strcasecmp(name, match->name)) {
 			break;
 		}
 	}
 
 	if (!match) {
-		AST_RWLIST_UNLOCK(&be_list);
+		AST_RWLIST_UNLOCK(generic_list);
 		return 0;
 	}
 
 	active_count = ao2_container_count(active_cdrs_master);
 
 	if (!match->suspended && active_count != 0) {
-		AST_RWLIST_UNLOCK(&be_list);
+		AST_RWLIST_UNLOCK(generic_list);
 		ast_log(AST_LOG_WARNING, "Unable to unregister CDR backend %s; %d CDRs are still active\n",
 			name, active_count);
 		return -1;
 	}
 
-	AST_RWLIST_REMOVE(&be_list, match, list);
-	AST_RWLIST_UNLOCK(&be_list);
+	AST_RWLIST_REMOVE(generic_list, match, list);
+	AST_RWLIST_UNLOCK(generic_list);
 
 	ast_verb(2, "Unregistered '%s' CDR backend\n", name);
 	ast_free(match);
 
 	return 0;
+}
+
+int ast_cdr_unregister(const char *name)
+{
+	return ast_cdr_generic_unregister(&be_list, name);
+}
+
+int ast_cdr_modifier_unregister(const char *name)
+{
+	return ast_cdr_generic_unregister((struct be_list *)&mo_list, name);
 }
 
 struct ast_cdr *ast_cdr_dup(struct ast_cdr *cdr)
@@ -3483,6 +3507,13 @@ static void post_cdr(struct ast_cdr *cdr)
 			ast_debug(1, "Skipping CDR for %s since we weren't answered\n", cdr->channel);
 			continue;
 		}
+
+		/* Modify CDR's */
+		AST_RWLIST_RDLOCK(&mo_list);
+		AST_RWLIST_TRAVERSE(&mo_list, i, list) {
+			i->be(cdr);
+		}
+		AST_RWLIST_UNLOCK(&mo_list);
 
 		if (ast_test_flag(cdr, AST_CDR_FLAG_DISABLE)) {
 			continue;
@@ -4332,11 +4363,6 @@ static int process_config(int reload)
 	return 0;
 }
 
-static void cdr_engine_cleanup(void)
-{
-	destroy_subscriptions();
-}
-
 static void cdr_engine_shutdown(void)
 {
 	stasis_message_router_unsubscribe_and_join(stasis_router);
@@ -4467,26 +4493,33 @@ static int cdr_toggle_runtime_options(void)
 	return mod_cfg ? 0 : -1;
 }
 
-int ast_cdr_engine_init(void)
+static int unload_module(void)
+{
+	destroy_subscriptions();
+
+	return 0;
+}
+
+static int load_module(void)
 {
 	if (process_config(0)) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	cdr_topic = stasis_topic_create("cdr_engine");
 	if (!cdr_topic) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	stasis_router = stasis_message_router_create(cdr_topic);
 	if (!stasis_router) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 	stasis_message_router_set_congestion_limits(stasis_router, -1,
 		10 * AST_TASKPROCESSOR_HIGH_WATER_LEVEL);
 
 	if (STASIS_MESSAGE_TYPE_INIT(cdr_sync_message_type)) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	stasis_message_router_add_cache_update(stasis_router, ast_channel_snapshot_type(), handle_channel_cache_message, NULL);
@@ -4499,28 +4532,27 @@ int ast_cdr_engine_init(void)
 	active_cdrs_master = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
 		NUM_CDR_BUCKETS, cdr_master_hash_fn, NULL, cdr_master_cmp_fn);
 	if (!active_cdrs_master) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 	ao2_container_register("cdrs_master", active_cdrs_master, cdr_master_print_fn);
 
 	active_cdrs_all = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
 		NUM_CDR_BUCKETS, cdr_all_hash_fn, NULL, cdr_all_cmp_fn);
 	if (!active_cdrs_all) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 	ao2_container_register("cdrs_all", active_cdrs_all, cdr_all_print_fn);
 
 	sched = ast_sched_context_create();
 	if (!sched) {
 		ast_log(LOG_ERROR, "Unable to create schedule context.\n");
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	ast_cli_register_multiple(cli_commands, ARRAY_LEN(cli_commands));
-	ast_register_cleanup(cdr_engine_cleanup);
 	ast_register_atexit(cdr_engine_shutdown);
 
-	return cdr_toggle_runtime_options();
+	return cdr_toggle_runtime_options() ? AST_MODULE_LOAD_FAILURE : AST_MODULE_LOAD_SUCCESS;
 }
 
 void ast_cdr_engine_term(void)
@@ -4563,7 +4595,7 @@ void ast_cdr_engine_term(void)
 	}
 }
 
-int ast_cdr_engine_reload(void)
+static int reload_module(void)
 {
 	struct module_config *old_mod_cfg;
 	struct module_config *mod_cfg;
@@ -4589,3 +4621,12 @@ int ast_cdr_engine_reload(void)
 	ao2_cleanup(old_mod_cfg);
 	return cdr_toggle_runtime_options();
 }
+
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "CDR Engine",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload_module,
+	.load_pri = AST_MODPRI_CORE,
+	.requires = "extconfig",
+);

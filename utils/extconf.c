@@ -18,7 +18,7 @@
 
 
 /*!
- * \file extconf
+ * \file
  * A condensation of the pbx_config stuff, to read into exensions.conf, and provide an interface to the data there,
  * for operations outside of asterisk. A huge, awful hack.
  *
@@ -43,6 +43,7 @@
 	<support_level>extended</support_level>
  ***/
 
+#define ASTMM_LIBC ASTMM_IGNORE
 #include "asterisk.h"
 
 #undef DEBUG_THREADS
@@ -73,16 +74,6 @@
 
 static void ast_log(int level, const char *file, int line, const char *function, const char *fmt, ...) __attribute__((format(printf, 5, 6)));
 void ast_verbose(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-
-#define ASINCLUDE_GLOB 1
-#ifdef AST_INCLUDE_GLOB
-
-#if !defined(GLOB_ABORTED)
-#define GLOB_ABORTED GLOB_ABEND
-#endif
-
-# include <glob.h>
-#endif
 
 #define AST_API_MODULE  1 /* gimme the inline defs! */
 struct ast_channel
@@ -118,9 +109,6 @@ void ast_queue_log(const char *queuename, const char *callid, const char *agent,
 
 /* IN CONFLICT: void ast_verbose(const char *fmt, ...)
    __attribute__((format(printf, 1, 2))); */
-
-int ast_register_verbose(void (*verboser)(const char *string));
-int ast_unregister_verbose(void (*verboser)(const char *string));
 
 void ast_console_puts(const char *string);
 
@@ -208,7 +196,7 @@ int mtx_prof = -1;
 
 #ifdef DEBUG_THREADS
 
-#define __ast_mutex_logger(...)  do { if (canlog) ast_log(LOG_ERROR, __VA_ARGS__); else fprintf(stderr, __VA_ARGS__); } while (0)
+#define log_mutex_error(canlog, ...)  do { if (canlog) ast_log(LOG_ERROR, __VA_ARGS__); else fprintf(stderr, __VA_ARGS__); } while (0)
 
 #ifdef THREAD_CRASH
 #define DO_THREAD_CRASH do { *((int *)(0)) = 1; } while(0)
@@ -251,9 +239,9 @@ static inline int __ast_pthread_mutex_init_attr(const char *filename, int lineno
 
 	if ((t->mutex) != ((pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER)) {
 		if ((t->mutex) != (empty_mutex)) {
-			__ast_mutex_logger("%s line %d (%s): Error: mutex '%s' is already initialized.\n",
+			log_mutex_error(canlog, "%s line %d (%s): Error: mutex '%s' is already initialized.\n",
 					   filename, lineno, func, mutex_name);
-			__ast_mutex_logger("%s line %d (%s): Error: previously initialization of mutex '%s'.\n",
+			log_mutex_error(canlog, "%s line %d (%s): Error: previously initialization of mutex '%s'.\n",
 					   t->file[0], t->lineno[0], t->func[0], mutex_name);
 			DO_THREAD_CRASH;
 			return 0;
@@ -290,7 +278,7 @@ static inline int __ast_pthread_mutex_destroy(const char *filename, int lineno, 
 
 #ifdef AST_MUTEX_INIT_W_CONSTRUCTORS
 	if ((t->mutex) == ((pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER)) {
-		__ast_mutex_logger("%s line %d (%s): Error: mutex '%s' is uninitialized.\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error: mutex '%s' is uninitialized.\n",
 				   filename, lineno, func, mutex_name);
 	}
 #endif
@@ -301,19 +289,19 @@ static inline int __ast_pthread_mutex_destroy(const char *filename, int lineno, 
 		pthread_mutex_unlock(&t->mutex);
 		break;
 	case EINVAL:
-		__ast_mutex_logger("%s line %d (%s): Error: attempt to destroy invalid mutex '%s'.\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error: attempt to destroy invalid mutex '%s'.\n",
 				  filename, lineno, func, mutex_name);
 		break;
 	case EBUSY:
-		__ast_mutex_logger("%s line %d (%s): Error: attempt to destroy locked mutex '%s'.\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error: attempt to destroy locked mutex '%s'.\n",
 				   filename, lineno, func, mutex_name);
-		__ast_mutex_logger("%s line %d (%s): Error: '%s' was locked here.\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error: '%s' was locked here.\n",
 				   t->file[t->reentrancy-1], t->lineno[t->reentrancy-1], t->func[t->reentrancy-1], mutex_name);
 		break;
 	}
 
 	if ((res = pthread_mutex_destroy(&t->mutex)))
-		__ast_mutex_logger("%s line %d (%s): Error destroying mutex: %s\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error destroying mutex: %s\n",
 				   filename, lineno, func, strerror(res));
 #ifndef PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
 	else
@@ -334,7 +322,7 @@ static inline int __ast_pthread_mutex_lock(const char *filename, int lineno, con
 
 #if defined(AST_MUTEX_INIT_W_CONSTRUCTORS)
 	if ((t->mutex) == ((pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER)) {
-		__ast_mutex_logger("%s line %d (%s): Error: mutex '%s' is uninitialized.\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error: mutex '%s' is uninitialized.\n",
 				 filename, lineno, func, mutex_name);
 		ast_mutex_init(t);
 	}
@@ -355,9 +343,9 @@ static inline int __ast_pthread_mutex_lock(const char *filename, int lineno, con
 			if (res == EBUSY) {
 				current = time(NULL);
 				if ((current - seconds) && (!((current - seconds) % 5))) {
-					__ast_mutex_logger("%s line %d (%s): Deadlock? waited %d sec for mutex '%s'?\n",
+					log_mutex_error(canlog, "%s line %d (%s): Deadlock? waited %d sec for mutex '%s'?\n",
 							   filename, lineno, func, (int)(current - seconds), mutex_name);
-					__ast_mutex_logger("%s line %d (%s): '%s' was locked here.\n",
+					log_mutex_error(canlog, "%s line %d (%s): '%s' was locked here.\n",
 							   t->file[t->reentrancy-1], t->lineno[t->reentrancy-1],
 							   t->func[t->reentrancy-1], mutex_name);
 				}
@@ -383,11 +371,11 @@ static inline int __ast_pthread_mutex_lock(const char *filename, int lineno, con
 			t->thread[t->reentrancy] = pthread_self();
 			t->reentrancy++;
 		} else {
-			__ast_mutex_logger("%s line %d (%s): '%s' really deep reentrancy!\n",
+			log_mutex_error(canlog, "%s line %d (%s): '%s' really deep reentrancy!\n",
 							   filename, lineno, func, mutex_name);
 		}
 	} else {
-		__ast_mutex_logger("%s line %d (%s): Error obtaining mutex: %s\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error obtaining mutex: %s\n",
 				   filename, lineno, func, strerror(errno));
 		DO_THREAD_CRASH;
 	}
@@ -403,7 +391,7 @@ static inline int __ast_pthread_mutex_trylock(const char *filename, int lineno, 
 
 #if defined(AST_MUTEX_INIT_W_CONSTRUCTORS)
 	if ((t->mutex) == ((pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER)) {
-		__ast_mutex_logger("%s line %d (%s): Error: mutex '%s' is uninitialized.\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error: mutex '%s' is uninitialized.\n",
 				   filename, lineno, func, mutex_name);
 		ast_mutex_init(t);
 	}
@@ -417,11 +405,11 @@ static inline int __ast_pthread_mutex_trylock(const char *filename, int lineno, 
 			t->thread[t->reentrancy] = pthread_self();
 			t->reentrancy++;
 		} else {
-			__ast_mutex_logger("%s line %d (%s): '%s' really deep reentrancy!\n",
+			log_mutex_error(canlog, "%s line %d (%s): '%s' really deep reentrancy!\n",
 					   filename, lineno, func, mutex_name);
 		}
 	} else {
-		__ast_mutex_logger("%s line %d (%s): Warning: '%s' was locked here.\n",
+		log_mutex_error(canlog, "%s line %d (%s): Warning: '%s' was locked here.\n",
                                    t->file[t->reentrancy-1], t->lineno[t->reentrancy-1], t->func[t->reentrancy-1], mutex_name);
 	}
 
@@ -436,21 +424,21 @@ static inline int __ast_pthread_mutex_unlock(const char *filename, int lineno, c
 
 #ifdef AST_MUTEX_INIT_W_CONSTRUCTORS
 	if ((t->mutex) == ((pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER)) {
-		__ast_mutex_logger("%s line %d (%s): Error: mutex '%s' is uninitialized.\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error: mutex '%s' is uninitialized.\n",
 				   filename, lineno, func, mutex_name);
 	}
 #endif
 
 	if (t->reentrancy && (t->thread[t->reentrancy-1] != pthread_self())) {
-		__ast_mutex_logger("%s line %d (%s): attempted unlock mutex '%s' without owning it!\n",
+		log_mutex_error(canlog, "%s line %d (%s): attempted unlock mutex '%s' without owning it!\n",
 				   filename, lineno, func, mutex_name);
-		__ast_mutex_logger("%s line %d (%s): '%s' was locked here.\n",
+		log_mutex_error(canlog, "%s line %d (%s): '%s' was locked here.\n",
 				   t->file[t->reentrancy-1], t->lineno[t->reentrancy-1], t->func[t->reentrancy-1], mutex_name);
 		DO_THREAD_CRASH;
 	}
 
 	if (--t->reentrancy < 0) {
-		__ast_mutex_logger("%s line %d (%s): mutex '%s' freed more times than we've locked!\n",
+		log_mutex_error(canlog, "%s line %d (%s): mutex '%s' freed more times than we've locked!\n",
 				   filename, lineno, func, mutex_name);
 		t->reentrancy = 0;
 	}
@@ -463,7 +451,7 @@ static inline int __ast_pthread_mutex_unlock(const char *filename, int lineno, c
 	}
 
 	if ((res = pthread_mutex_unlock(&t->mutex))) {
-		__ast_mutex_logger("%s line %d (%s): Error releasing mutex: %s\n",
+		log_mutex_error(canlog, "%s line %d (%s): Error releasing mutex: %s\n",
 				   filename, lineno, func, strerror(res));
 		DO_THREAD_CRASH;
 	}
@@ -683,44 +671,6 @@ int ast_channel_trylock(struct ast_channel *chan);
 
 /* from utils.h */
 
-#define ast_free free
-#define ast_free_ptr free
-
-#define MALLOC_FAILURE_MSG \
-	ast_log(LOG_ERROR, "Memory Allocation Failure in function %s at line %d of %s\n", func, lineno, file);
-
-/*!
- * \brief A wrapper for malloc()
- *
- * ast_malloc() is a wrapper for malloc() that will generate an Asterisk log
- * message in the case that the allocation fails.
- *
- * The argument and return value are the same as malloc()
- */
-#define ast_malloc(len) \
-	_ast_malloc((len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-#define ast_calloc(num, len) \
-	_ast_calloc((num), (len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-#define ast_calloc_cache(num, len) \
-	_ast_calloc((num), (len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-#define ast_realloc(p, len) \
-	_ast_realloc((p), (len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-#define ast_strdup(str) \
-	_ast_strdup((str), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-#define ast_strndup(str, len) \
-	_ast_strndup((str), (len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-#define ast_asprintf(ret, fmt, ...) \
-	_ast_asprintf((ret), __FILE__, __LINE__, __PRETTY_FUNCTION__, fmt, __VA_ARGS__)
-
-#define ast_vasprintf(ret, fmt, ap) \
-	_ast_vasprintf((ret), __FILE__, __LINE__, __PRETTY_FUNCTION__, (fmt), (ap))
-
 struct ast_flags {  /* stolen from utils.h */
 	unsigned int flags;
 };
@@ -740,221 +690,6 @@ struct ast_flags {  /* stolen from utils.h */
 					else \
 						(p)->flags &= ~(flag); \
 					} while (0)
-
-
-
-#define MALLOC_FAILURE_MSG \
-	ast_log(LOG_ERROR, "Memory Allocation Failure in function %s at line %d of %s\n", func, lineno, file);
-/*!
- * \brief A wrapper for malloc()
- *
- * ast_malloc() is a wrapper for malloc() that will generate an Asterisk log
- * message in the case that the allocation fails.
- *
- * The argument and return value are the same as malloc()
- */
-#define ast_malloc(len) \
-	_ast_malloc((len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-AST_INLINE_API(
-void * attribute_malloc _ast_malloc(size_t len, const char *file, int lineno, const char *func),
-{
-	void *p;
-
-	if (!(p = malloc(len)))
-		MALLOC_FAILURE_MSG;
-
-	return p;
-}
-)
-
-/*!
- * \brief A wrapper for calloc()
- *
- * ast_calloc() is a wrapper for calloc() that will generate an Asterisk log
- * message in the case that the allocation fails.
- *
- * The arguments and return value are the same as calloc()
- */
-#define ast_calloc(num, len) \
-	_ast_calloc((num), (len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-AST_INLINE_API(
-void * attribute_malloc _ast_calloc(size_t num, size_t len, const char *file, int lineno, const char *func),
-{
-	void *p;
-
-	if (!(p = calloc(num, len)))
-		MALLOC_FAILURE_MSG;
-
-	return p;
-}
-)
-
-/*!
- * \brief A wrapper for calloc() for use in cache pools
- *
- * ast_calloc_cache() is a wrapper for calloc() that will generate an Asterisk log
- * message in the case that the allocation fails. When memory debugging is in use,
- * the memory allocated by this function will be marked as 'cache' so it can be
- * distinguished from normal memory allocations.
- *
- * The arguments and return value are the same as calloc()
- */
-#define ast_calloc_cache(num, len) \
-	_ast_calloc((num), (len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-/*!
- * \brief A wrapper for realloc()
- *
- * ast_realloc() is a wrapper for realloc() that will generate an Asterisk log
- * message in the case that the allocation fails.
- *
- * The arguments and return value are the same as realloc()
- */
-#define ast_realloc(p, len) \
-	_ast_realloc((p), (len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-AST_INLINE_API(
-void *_ast_realloc(void *p, size_t len, const char *file, int lineno, const char *func),
-{
-	void *newp;
-
-	if (!(newp = realloc(p, len)))
-		MALLOC_FAILURE_MSG;
-
-	return newp;
-}
-)
-
-/*!
- * \brief A wrapper for strdup()
- *
- * ast_strdup() is a wrapper for strdup() that will generate an Asterisk log
- * message in the case that the allocation fails.
- *
- * ast_strdup(), unlike strdup(), can safely accept a NULL argument. If a NULL
- * argument is provided, ast_strdup will return NULL without generating any
- * kind of error log message.
- *
- * The argument and return value are the same as strdup()
- */
-#define ast_strdup(str) \
-	_ast_strdup((str), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-AST_INLINE_API(
-char * attribute_malloc _ast_strdup(const char *str, const char *file, int lineno, const char *func),
-{
-	char *newstr = NULL;
-
-	if (str) {
-		if (!(newstr = strdup(str)))
-			MALLOC_FAILURE_MSG;
-	}
-
-	return newstr;
-}
-)
-
-/*!
- * \brief A wrapper for strndup()
- *
- * ast_strndup() is a wrapper for strndup() that will generate an Asterisk log
- * message in the case that the allocation fails.
- *
- * ast_strndup(), unlike strndup(), can safely accept a NULL argument for the
- * string to duplicate. If a NULL argument is provided, ast_strdup will return
- * NULL without generating any kind of error log message.
- *
- * The arguments and return value are the same as strndup()
- */
-#define ast_strndup(str, len) \
-	_ast_strndup((str), (len), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-
-AST_INLINE_API(
-char * attribute_malloc _ast_strndup(const char *str, size_t len, const char *file, int lineno, const char *func),
-{
-	char *newstr = NULL;
-
-	if (str) {
-		if (!(newstr = strndup(str, len)))
-			MALLOC_FAILURE_MSG;
-	}
-
-	return newstr;
-}
-)
-
-/*!
- * \brief A wrapper for asprintf()
- *
- * ast_asprintf() is a wrapper for asprintf() that will generate an Asterisk log
- * message in the case that the allocation fails.
- *
- * The arguments and return value are the same as asprintf()
- */
-#define ast_asprintf(ret, fmt, ...) \
-	_ast_asprintf((ret), __FILE__, __LINE__, __PRETTY_FUNCTION__, fmt, __VA_ARGS__)
-
-AST_INLINE_API(
-__attribute__((format(printf, 5, 6)))
-int _ast_asprintf(char **ret, const char *file, int lineno, const char *func, const char *fmt, ...),
-{
-	int res;
-	va_list ap;
-
-	va_start(ap, fmt);
-	if ((res = vasprintf(ret, fmt, ap)) == -1)
-		MALLOC_FAILURE_MSG;
-	va_end(ap);
-
-	return res;
-}
-)
-
-/*!
- * \brief A wrapper for vasprintf()
- *
- * ast_vasprintf() is a wrapper for vasprintf() that will generate an Asterisk log
- * message in the case that the allocation fails.
- *
- * The arguments and return value are the same as vasprintf()
- */
-#define ast_vasprintf(ret, fmt, ap) \
-	_ast_vasprintf((ret), __FILE__, __LINE__, __PRETTY_FUNCTION__, (fmt), (ap))
-
-AST_INLINE_API(
-__attribute__((format(printf, 5, 0)))
-int _ast_vasprintf(char **ret, const char *file, int lineno, const char *func, const char *fmt, va_list ap),
-{
-	int res;
-
-	if ((res = vasprintf(ret, fmt, ap)) == -1)
-		MALLOC_FAILURE_MSG;
-
-	return res;
-}
-)
-
-#if !defined(ast_strdupa) && defined(__GNUC__)
-/*!
-  \brief duplicate a string in memory from the stack
-  \param s The string to duplicate
-
-  This macro will duplicate the given string.  It returns a pointer to the stack
-  allocatted memory for the new string.
-*/
-#define ast_strdupa(s)                                                    \
-	(__extension__                                                    \
-	({                                                                \
-		const char *__old = (s);                                  \
-		size_t __len = strlen(__old) + 1;                         \
-		char *__new = __builtin_alloca(__len);                    \
-		memcpy (__new, __old, __len);                             \
-		__new;                                                    \
-	}))
-#endif
-
 
 /* from config.c */
 
@@ -1606,20 +1341,14 @@ enum ast_option_flags {
 	AST_OPT_FLAG_TRANSMIT_SILENCE = (1 << 17),
 	/*! Suppress some warnings */
 	AST_OPT_FLAG_DONT_WARN = (1 << 18),
-	/*! End CDRs before the 'h' extension */
-	AST_OPT_FLAG_END_CDR_BEFORE_H_EXTEN = (1 << 19),
 	/*! Always fork, even if verbose or debug settings are non-zero */
 	AST_OPT_FLAG_ALWAYS_FORK = (1 << 21),
 	/*! Disable log/verbose output to remote consoles */
 	AST_OPT_FLAG_MUTE = (1 << 22),
 	/*! There is a per-file debug setting */
 	AST_OPT_FLAG_DEBUG_FILE = (1 << 23),
-	/*! There is a per-file verbose setting */
-	AST_OPT_FLAG_VERBOSE_FILE = (1 << 24),
 	/*! Terminal colors should be adjusted for a light-colored background */
 	AST_OPT_FLAG_LIGHT_BACKGROUND = (1 << 25),
-	/*! Count Initiated seconds in CDR's */
-	AST_OPT_FLAG_INITIATED_SECONDS = (1 << 26),
 	/*! Force black background */
 	AST_OPT_FLAG_FORCE_BLACK_BACKGROUND = (1 << 27),
 };
@@ -1652,7 +1381,6 @@ struct ast_flags ast_options = { AST_DEFAULT_OPTIONS };
 #define ast_opt_reconnect		ast_test_flag(&ast_options, AST_OPT_FLAG_RECONNECT)
 #define ast_opt_transmit_silence	ast_test_flag(&ast_options, AST_OPT_FLAG_TRANSMIT_SILENCE)
 #define ast_opt_dont_warn		ast_test_flag(&ast_options, AST_OPT_FLAG_DONT_WARN)
-#define ast_opt_end_cdr_before_h_exten	ast_test_flag(&ast_options, AST_OPT_FLAG_END_CDR_BEFORE_H_EXTEN)
 #define ast_opt_always_fork		ast_test_flag(&ast_options, AST_OPT_FLAG_ALWAYS_FORK)
 #define ast_opt_mute			ast_test_flag(&ast_options, AST_OPT_FLAG_MUTE)
 
@@ -3415,29 +3143,6 @@ static struct ast_config *config_text_file_load(const char *database, const char
 		CB_INIT();
 	}
 
-#ifdef AST_INCLUDE_GLOB
-	{
-		int glob_ret;
-		glob_t globbuf;
-
-		globbuf.gl_offs = 0;	/* initialize it to silence gcc */
-#ifdef SOLARIS
-		glob_ret = glob(fn, GLOB_NOCHECK, NULL, &globbuf);
-#else
-		glob_ret = glob(fn, GLOB_NOMAGIC|GLOB_BRACE, NULL, &globbuf);
-#endif
-		if (glob_ret == GLOB_NOSPACE)
-			ast_log(LOG_WARNING,
-				"Glob Expansion of pattern '%s' failed: Not enough memory\n", fn);
-		else if (glob_ret  == GLOB_ABORTED)
-			ast_log(LOG_WARNING,
-				"Glob Expansion of pattern '%s' failed: Read error\n", fn);
-		else  {
-			/* loop over expanded files */
-			int i;
-			for (i=0; i<globbuf.gl_pathc; i++) {
-				ast_copy_string(fn, globbuf.gl_pathv[i], sizeof(fn));
-#endif
 	do {
 		if (stat(fn, &statbuf))
 			continue;
@@ -3547,14 +3252,6 @@ static struct ast_config *config_text_file_load(const char *database, const char
 	if (comment) {
 		ast_log(LOG_WARNING,"Unterminated comment detected beginning on line %d\n", nest[comment]);
 	}
-#ifdef AST_INCLUDE_GLOB
-					if (!cfg)
-						break;
-				}
-				globfree(&globbuf);
-			}
-		}
-#endif
 	if (cfg && cfg->include_level == 1 && withcomments && comment_buffer) {
 		if (comment_buffer) {
 			free(comment_buffer);
@@ -4389,12 +4086,50 @@ static struct ast_include *ast_walk_context_includes(struct ast_context *con,
 		return inc->next;
 }
 
+int ast_context_includes_count(struct ast_context *con);
+int ast_context_includes_count(struct ast_context *con)
+{
+	int c = 0;
+	struct ast_include *inc = NULL;
+
+	while ((inc = ast_walk_context_includes(con, inc))) {
+		c++;
+	}
+
+	return c;
+}
+
 struct ast_include *localized_walk_context_includes(struct ast_context *con,
 													struct ast_include *inc);
 struct ast_include *localized_walk_context_includes(struct ast_context *con,
 													struct ast_include *inc)
 {
 	return ast_walk_context_includes(con, inc);
+}
+
+static struct ast_ignorepat *ast_walk_context_ignorepats(struct ast_context *con,
+	struct ast_ignorepat *ip);
+
+static struct ast_ignorepat *ast_walk_context_ignorepats(struct ast_context *con,
+	struct ast_ignorepat *ip)
+{
+	if (!ip)
+		return con ? con->ignorepats : NULL;
+	else
+		return ip->next;
+}
+
+int ast_context_ignorepats_count(struct ast_context *con);
+int ast_context_ignorepats_count(struct ast_context *con)
+{
+	int c = 0;
+	struct ast_ignorepat *ip = NULL;
+
+	while ((ip = ast_walk_context_ignorepats(con, ip))) {
+		c++;
+	}
+
+	return c;
 }
 
 
@@ -4416,6 +4151,19 @@ struct ast_sw *localized_walk_context_switches(struct ast_context *con,
 													struct ast_sw *sw)
 {
 	return ast_walk_context_switches(con, sw);
+}
+
+int ast_context_switches_count(struct ast_context *con);
+int ast_context_switches_count(struct ast_context *con)
+{
+	int c = 0;
+	struct ast_sw *sw = NULL;
+
+	while ((sw = ast_walk_context_switches(con, sw))) {
+		c++;
+	}
+
+	return c;
 }
 
 

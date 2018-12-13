@@ -16,12 +16,11 @@
 	<defaultenabled>no</defaultenabled>
 	<depend>spandsp</depend>
 	<conflict>res_fax</conflict>
-	<support_level>extended</support_level>
+	<support_level>deprecated</support_level>
+	<replacement>res_fax</replacement>
 ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <string.h>
 #include <stdlib.h>
@@ -996,7 +995,7 @@ static int load_module(void)
 
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Simple FAX Application",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-		);
+	.support_level = AST_MODULE_SUPPORT_DEPRECATED,
+	.load = load_module,
+	.unload = unload_module,
+);

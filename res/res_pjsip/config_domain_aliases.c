@@ -62,6 +62,7 @@ static int domain_alias_apply(const struct ast_sorcery *sorcery, void *obj)
 		 */
 		ast_log(LOG_ERROR, "%s '%s' missing required domain being aliased.\n",
 			SIP_SORCERY_DOMAIN_ALIAS_TYPE, ast_sorcery_object_get_id(alias));
+		return -1;
 	}
 	return 0;
 }

@@ -33,8 +33,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/file.h"
 #include "asterisk/channel.h"
 #include "asterisk/pbx.h"
@@ -106,10 +104,10 @@ static void destroy_test_container(struct test_container *x)
 	struct test1 *t1;
 	AST_DLLIST_TRAVERSE_BACKWARDS_SAFE_BEGIN(&x->entries, t1, list) {
 		AST_DLLIST_REMOVE_CURRENT(list);
-		free(t1);
+		ast_free(t1);
 	}
 	AST_DLLIST_TRAVERSE_BACKWARDS_SAFE_END;
-	free(x);
+	ast_free(x);
 }
 
 /* Macros to test:
@@ -337,7 +335,7 @@ static void dll_tests(void)
 
 		if (e == b) {
 			AST_DLLIST_REMOVE_CURRENT(list);  /* C A */
-			free(b);
+			ast_free(b);
 			print_list(tc, "C <=> A");
 		}
 		if (e == a) {

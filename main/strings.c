@@ -37,11 +37,10 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <regex.h>
 #include "asterisk/strings.h"
 #include "asterisk/pbx.h"
+#include "asterisk/vector.h"
 
 /*!
  * core handler for dynamic strings.
@@ -53,13 +52,9 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
  *	ast_str_append_va(...)
  */
 
-#ifdef __AST_DEBUG_MALLOC
-int __ast_debug_str_helper(struct ast_str **buf, ssize_t max_len,
-	int append, const char *fmt, va_list ap, const char *file, int lineno, const char *function)
-#else
 int __ast_str_helper(struct ast_str **buf, ssize_t max_len,
-	int append, const char *fmt, va_list ap)
-#endif
+	int append, const char *fmt, va_list ap,
+	const char *file, int lineno, const char *function)
 {
 	int res;
 	int added;
@@ -111,13 +106,7 @@ int __ast_str_helper(struct ast_str **buf, ssize_t max_len,
 			need = max_len;
 		}
 
-		if (
-#ifdef __AST_DEBUG_MALLOC
-			_ast_str_make_space(buf, need, file, lineno, function)
-#else
-			ast_str_make_space(buf, need)
-#endif
-			) {
+		if (_ast_str_make_space(buf, need, file, lineno, function)) {
 			ast_log_safe(LOG_VERBOSE, "failed to extend from %d to %d\n",
 				(int) (*buf)->__AST_STR_LEN, need);
 
@@ -390,4 +379,45 @@ char *ast_read_line_from_buffer(char **buffer)
 	(*buffer)++;
 
 	return start;
+}
+
+int ast_vector_string_split(struct ast_vector_string *dest,
+	const char *input, const char *delim, int flags,
+	int (*excludes_cmp)(const char *s1, const char *s2))
+{
+	char *buf;
+	char *cur;
+	int no_trim = flags & AST_VECTOR_STRING_SPLIT_NO_TRIM;
+	int allow_empty = flags & AST_VECTOR_STRING_SPLIT_ALLOW_EMPTY;
+
+	ast_assert(dest != NULL);
+	ast_assert(!ast_strlen_zero(delim));
+
+	if (ast_strlen_zero(input)) {
+		return 0;
+	}
+
+	buf = ast_strdupa(input);
+	while ((cur = strsep(&buf, delim))) {
+		if (!no_trim) {
+			cur = ast_strip(cur);
+		}
+
+		if (!allow_empty && ast_strlen_zero(cur)) {
+			continue;
+		}
+
+		if (excludes_cmp && AST_VECTOR_GET_CMP(dest, cur, !excludes_cmp)) {
+			continue;
+		}
+
+		cur = ast_strdup(cur);
+		if (!cur || AST_VECTOR_APPEND(dest, cur)) {
+			ast_free(cur);
+
+			return -1;
+		}
+	}
+
+	return 0;
 }

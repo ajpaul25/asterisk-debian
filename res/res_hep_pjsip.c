@@ -34,8 +34,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <pjsip.h>
 #include <pjsip_ua.h>
 #include <pjlib.h>
@@ -234,10 +232,8 @@ static pjsip_module logging_module = {
 
 static int load_module(void)
 {
-	CHECK_PJSIP_MODULE_LOADED();
-
-	if (!ast_module_check("res_hep.so") || !hepv3_is_loaded()) {
-		ast_log(AST_LOG_WARNING, "res_hep is not loaded or running; declining module load\n");
+	if (!hepv3_is_loaded()) {
+		ast_log(AST_LOG_WARNING, "res_hep is disabled; declining module load\n");
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
@@ -252,7 +248,8 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "PJSIP HEPv3 Logger",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-	       );
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.requires = "res_hep,res_pjsip",
+);

@@ -1,7 +1,8 @@
 BEGIN TRANSACTION;
 
 CREATE TABLE alembic_version (
-    version_num VARCHAR(32) NOT NULL
+    version_num VARCHAR(32) NOT NULL, 
+    CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
 );
 
 GO
@@ -1057,21 +1058,7 @@ UPDATE alembic_version SET version_num='10aedae86a32' WHERE alembic_version.vers
 
 GO
 
--- Running upgrade 10aedae86a32 -> eb88a14f2a
-
-ALTER TABLE ps_endpoints ADD media_encryption_optimistic VARCHAR(3) NULL;
-
-GO
-
-ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (media_encryption_optimistic IN ('yes', 'no'));
-
-GO
-
-UPDATE alembic_version SET version_num='eb88a14f2a' WHERE alembic_version.version_num = '10aedae86a32';
-
-GO
-
--- Running upgrade eb88a14f2a -> 371a3bf4143e
+-- Running upgrade 10aedae86a32 -> 371a3bf4143e
 
 ALTER TABLE ps_endpoints ADD user_eq_phone VARCHAR(3) NULL;
 
@@ -1081,17 +1068,45 @@ ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (user_eq_phone IN ('y
 
 GO
 
-UPDATE alembic_version SET version_num='371a3bf4143e' WHERE alembic_version.version_num = 'eb88a14f2a';
+UPDATE alembic_version SET version_num='371a3bf4143e' WHERE alembic_version.version_num = '10aedae86a32';
 
 GO
 
--- Running upgrade 371a3bf4143e -> 45e3f47c6c44
+-- Running upgrade 371a3bf4143e -> 15b1430ad6f1
+
+ALTER TABLE ps_endpoints ADD moh_passthrough VARCHAR(3) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (moh_passthrough IN ('yes', 'no'));
+
+GO
+
+UPDATE alembic_version SET version_num='15b1430ad6f1' WHERE alembic_version.version_num = '371a3bf4143e';
+
+GO
+
+-- Running upgrade 15b1430ad6f1 -> 945b1098bdd
+
+ALTER TABLE ps_endpoints ADD media_encryption_optimistic VARCHAR(3) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (media_encryption_optimistic IN ('yes', 'no'));
+
+GO
+
+UPDATE alembic_version SET version_num='945b1098bdd' WHERE alembic_version.version_num = '15b1430ad6f1';
+
+GO
+
+-- Running upgrade 945b1098bdd -> 45e3f47c6c44
 
 ALTER TABLE ps_globals ADD endpoint_identifier_order VARCHAR(40) NULL;
 
 GO
 
-UPDATE alembic_version SET version_num='45e3f47c6c44' WHERE alembic_version.version_num = '371a3bf4143e';
+UPDATE alembic_version SET version_num='45e3f47c6c44' WHERE alembic_version.version_num = '945b1098bdd';
 
 GO
 
@@ -1209,13 +1224,31 @@ UPDATE alembic_version SET version_num='28ce1e718f05' WHERE alembic_version.vers
 
 GO
 
--- Running upgrade 28ce1e718f05 -> 189a235b3fd7
+-- Running upgrade 28ce1e718f05 -> 339a3bdf53fc
+
+ALTER TABLE ps_endpoints ALTER COLUMN accountcode VARCHAR(80);
+
+GO
+
+ALTER TABLE sippeers ALTER COLUMN accountcode VARCHAR(80);
+
+GO
+
+ALTER TABLE iaxfriends ALTER COLUMN accountcode VARCHAR(80);
+
+GO
+
+UPDATE alembic_version SET version_num='339a3bdf53fc' WHERE alembic_version.version_num = '28ce1e718f05';
+
+GO
+
+-- Running upgrade 339a3bdf53fc -> 189a235b3fd7
 
 ALTER TABLE ps_globals ADD keep_alive_interval INTEGER NULL;
 
 GO
 
-UPDATE alembic_version SET version_num='189a235b3fd7' WHERE alembic_version.version_num = '28ce1e718f05';
+UPDATE alembic_version SET version_num='189a235b3fd7' WHERE alembic_version.version_num = '339a3bdf53fc';
 
 GO
 
@@ -1403,7 +1436,7 @@ UPDATE alembic_version SET version_num='6be31516058d' WHERE alembic_version.vers
 
 GO
 
--- Running upgrade 6be31516058d -> bca7113d796f
+-- Running upgrade 6be31516058d -> d7e3c73eb2bf
 
 ALTER TABLE ps_endpoints ADD [deny] VARCHAR(95) NULL;
 
@@ -1429,11 +1462,11 @@ ALTER TABLE ps_endpoints ADD contact_acl VARCHAR(40) NULL;
 
 GO
 
-UPDATE alembic_version SET version_num='bca7113d796f' WHERE alembic_version.version_num = '6be31516058d';
+UPDATE alembic_version SET version_num='d7e3c73eb2bf' WHERE alembic_version.version_num = '6be31516058d';
 
 GO
 
--- Running upgrade bca7113d796f -> a845e4d8ade8
+-- Running upgrade d7e3c73eb2bf -> a845e4d8ade8
 
 ALTER TABLE ps_contacts ADD via_addr VARCHAR(40) NULL;
 
@@ -1447,7 +1480,7 @@ ALTER TABLE ps_contacts ADD call_id VARCHAR(255) NULL;
 
 GO
 
-UPDATE alembic_version SET version_num='a845e4d8ade8' WHERE alembic_version.version_num = 'bca7113d796f';
+UPDATE alembic_version SET version_num='a845e4d8ade8' WHERE alembic_version.version_num = 'd7e3c73eb2bf';
 
 GO
 
@@ -1543,7 +1576,21 @@ UPDATE alembic_version SET version_num='4e2493ef32e6' WHERE alembic_version.vers
 
 GO
 
--- Running upgrade 4e2493ef32e6 -> a6ef36f1309
+-- Running upgrade 4e2493ef32e6 -> 7f3e21abe318
+
+ALTER TABLE ps_endpoints ADD preferred_codec_only VARCHAR(3) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (preferred_codec_only IN ('yes', 'no'));
+
+GO
+
+UPDATE alembic_version SET version_num='7f3e21abe318' WHERE alembic_version.version_num = '4e2493ef32e6';
+
+GO
+
+-- Running upgrade 7f3e21abe318 -> a6ef36f1309
 
 ALTER TABLE ps_globals ADD ignore_uri_user_options VARCHAR(3) NULL;
 
@@ -1553,7 +1600,7 @@ ALTER TABLE ps_globals ADD CONSTRAINT yesno_values CHECK (ignore_uri_user_option
 
 GO
 
-UPDATE alembic_version SET version_num='a6ef36f1309' WHERE alembic_version.version_num = '4e2493ef32e6';
+UPDATE alembic_version SET version_num='a6ef36f1309' WHERE alembic_version.version_num = '7f3e21abe318';
 
 GO
 
@@ -1755,7 +1802,21 @@ UPDATE alembic_version SET version_num='d7983954dd96' WHERE alembic_version.vers
 
 GO
 
--- Running upgrade d7983954dd96 -> 164abbd708c
+-- Running upgrade d7983954dd96 -> 39959b9c2566
+
+ALTER TABLE ps_endpoints ADD max_audio_streams INTEGER NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD max_video_streams INTEGER NULL;
+
+GO
+
+UPDATE alembic_version SET version_num='39959b9c2566' WHERE alembic_version.version_num = 'd7983954dd96';
+
+GO
+
+-- Running upgrade 39959b9c2566 -> 164abbd708c
 
 ALTER TABLE ps_endpoints DROP CONSTRAINT pjsip_dtmf_mode_values_v2;
 
@@ -1769,11 +1830,25 @@ ALTER TABLE ps_endpoints ADD CONSTRAINT pjsip_dtmf_mode_values_v3 CHECK (dtmf_mo
 
 GO
 
-UPDATE alembic_version SET version_num='164abbd708c' WHERE alembic_version.version_num = 'd7983954dd96';
+UPDATE alembic_version SET version_num='164abbd708c' WHERE alembic_version.version_num = '39959b9c2566';
 
 GO
 
--- Running upgrade 164abbd708c -> f3d1c5d38b56
+-- Running upgrade 164abbd708c -> 44ccced114ce
+
+ALTER TABLE ps_endpoints ADD webrtc VARCHAR(3) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (webrtc IN ('yes', 'no'));
+
+GO
+
+UPDATE alembic_version SET version_num='44ccced114ce' WHERE alembic_version.version_num = '164abbd708c';
+
+GO
+
+-- Running upgrade 44ccced114ce -> f3d1c5d38b56
 
 ALTER TABLE ps_contacts ADD prune_on_boot VARCHAR(3) NULL;
 
@@ -1783,7 +1858,7 @@ ALTER TABLE ps_contacts ADD CONSTRAINT yesno_values CHECK (prune_on_boot IN ('ye
 
 GO
 
-UPDATE alembic_version SET version_num='f3d1c5d38b56' WHERE alembic_version.version_num = '164abbd708c';
+UPDATE alembic_version SET version_num='f3d1c5d38b56' WHERE alembic_version.version_num = '44ccced114ce';
 
 GO
 
@@ -1829,7 +1904,45 @@ UPDATE alembic_version SET version_num='20abce6d1e3c' WHERE alembic_version.vers
 
 GO
 
--- Running upgrade 20abce6d1e3c -> 52798ad97bdf
+-- Running upgrade 20abce6d1e3c -> de83fac997e2
+
+ALTER TABLE ps_endpoints ADD bundle VARCHAR(3) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (bundle IN ('yes', 'no'));
+
+GO
+
+UPDATE alembic_version SET version_num='de83fac997e2' WHERE alembic_version.version_num = '20abce6d1e3c';
+
+GO
+
+-- Running upgrade de83fac997e2 -> 041c0d3d1857
+
+ALTER TABLE ps_endpoints ADD dtls_auto_generate_cert VARCHAR(3) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (dtls_auto_generate_cert IN ('yes', 'no'));
+
+GO
+
+UPDATE alembic_version SET version_num='041c0d3d1857' WHERE alembic_version.version_num = 'de83fac997e2';
+
+GO
+
+-- Running upgrade 041c0d3d1857 -> e2f04d309071
+
+ALTER TABLE queue_members ADD wrapuptime INTEGER NULL;
+
+GO
+
+UPDATE alembic_version SET version_num='e2f04d309071' WHERE alembic_version.version_num = '041c0d3d1857';
+
+GO
+
+-- Running upgrade e2f04d309071 -> 52798ad97bdf
 
 ALTER TABLE ps_endpoints DROP CONSTRAINT ck_ps_endpoints_identify_by_pjsip_identify_by_values;
 
@@ -1839,7 +1952,7 @@ ALTER TABLE ps_endpoints ALTER COLUMN identify_by VARCHAR(80);
 
 GO
 
-UPDATE alembic_version SET version_num='52798ad97bdf' WHERE alembic_version.version_num = '20abce6d1e3c';
+UPDATE alembic_version SET version_num='52798ad97bdf' WHERE alembic_version.version_num = 'e2f04d309071';
 
 GO
 
@@ -1916,6 +2029,86 @@ ALTER TABLE ps_contacts ALTER COLUMN uri VARCHAR(511);
 GO
 
 UPDATE alembic_version SET version_num='1d3ed26d9978' WHERE alembic_version.version_num = '19b00bc19b7b';
+
+GO
+
+-- Running upgrade 1d3ed26d9978 -> fe6592859b85
+
+ALTER TABLE ps_endpoints ALTER COLUMN mwi_subscribe_replaces_unsolicited VARCHAR(5);
+
+GO
+
+ALTER TABLE ps_endpoints ALTER COLUMN mwi_subscribe_replaces_unsolicited VARCHAR(5);
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT ast_bool_values CHECK (mwi_subscribe_replaces_unsolicited IN ('0', '1', 'off', 'on', 'false', 'true', 'no', 'yes'));
+
+GO
+
+UPDATE alembic_version SET version_num='fe6592859b85' WHERE alembic_version.version_num = '1d3ed26d9978';
+
+GO
+
+-- Running upgrade fe6592859b85 -> 7f85dd44c775
+
+ALTER TABLE ps_endpoints DROP CONSTRAINT yesno_values;
+
+GO
+
+ALTER TABLE ps_endpoints ALTER COLUMN suppress_q850_reason_header VARCHAR(3);
+
+GO
+
+EXEC sp_rename 'ps_endpoints.suppress_q850_reason_header', suppress_q850_reason_headers, 'COLUMN';
+
+GO
+
+ALTER TABLE ps_endpoints ALTER COLUMN suppress_q850_reason_headers VARCHAR(3);
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT yesno_values CHECK (suppress_q850_reason_headers IN ('yes', 'no'));
+
+GO
+
+UPDATE alembic_version SET version_num='7f85dd44c775' WHERE alembic_version.version_num = 'fe6592859b85';
+
+GO
+
+-- Running upgrade 7f85dd44c775 -> 2bb1a85135ad
+
+ALTER TABLE ps_globals ADD use_callerid_contact VARCHAR(5) NULL;
+
+GO
+
+ALTER TABLE ps_globals ADD CONSTRAINT ast_bool_values CHECK (use_callerid_contact IN ('0', '1', 'off', 'on', 'false', 'true', 'no', 'yes'));
+
+GO
+
+UPDATE alembic_version SET version_num='2bb1a85135ad' WHERE alembic_version.version_num = '7f85dd44c775';
+
+GO
+
+-- Running upgrade 2bb1a85135ad -> 1ac563b350a8
+
+ALTER TABLE ps_endpoints ADD trust_connected_line VARCHAR(5) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT ast_bool_values CHECK (trust_connected_line IN ('0', '1', 'off', 'on', 'false', 'true', 'no', 'yes'));
+
+GO
+
+ALTER TABLE ps_endpoints ADD send_connected_line VARCHAR(5) NULL;
+
+GO
+
+ALTER TABLE ps_endpoints ADD CONSTRAINT ast_bool_values CHECK (send_connected_line IN ('0', '1', 'off', 'on', 'false', 'true', 'no', 'yes'));
+
+GO
+
+UPDATE alembic_version SET version_num='1ac563b350a8' WHERE alembic_version.version_num = '2bb1a85135ad';
 
 GO
 

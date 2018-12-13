@@ -30,8 +30,6 @@
  ***/
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <ctype.h>
 
 #include "asterisk/paths.h" /* use ast_config_AST_SPOOL_DIR */

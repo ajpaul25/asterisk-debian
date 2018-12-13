@@ -24,8 +24,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <ctype.h>
 #include <sys/time.h>
 #include <sys/resource.h>

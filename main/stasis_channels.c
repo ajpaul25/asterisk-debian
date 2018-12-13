@@ -30,8 +30,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/astobj2.h"
 #include "asterisk/json.h"
 #include "asterisk/pbx.h"
@@ -227,6 +225,7 @@ static void channel_snapshot_dtor(void *obj)
 
 	ast_string_field_free_memory(snapshot);
 	ao2_cleanup(snapshot->manager_vars);
+	ao2_cleanup(snapshot->ari_vars);
 }
 
 struct ast_channel_snapshot *ast_channel_snapshot_create(struct ast_channel *chan)
@@ -288,7 +287,9 @@ struct ast_channel_snapshot *ast_channel_snapshot_create(struct ast_channel *cha
 	ast_string_field_set(snapshot, language, ast_channel_language(chan));
 
 	if ((bridge = ast_channel_get_bridge(chan))) {
-		ast_string_field_set(snapshot, bridgeid, bridge->uniqueid);
+		if (!ast_test_flag(&bridge->feature_flags, AST_BRIDGE_FLAG_INVISIBLE)) {
+			ast_string_field_set(snapshot, bridgeid, bridge->uniqueid);
+		}
 		ao2_cleanup(bridge);
 	}
 
@@ -302,6 +303,7 @@ struct ast_channel_snapshot *ast_channel_snapshot_create(struct ast_channel *cha
 	ast_set_flag(&snapshot->softhangup_flags, ast_channel_softhangup_internal_flag(chan));
 
 	snapshot->manager_vars = ast_channel_get_manager_vars(chan);
+	snapshot->ari_vars = ast_channel_get_ari_vars(chan);
 	snapshot->tech_properties = ast_channel_tech(chan)->properties;
 
 	return snapshot;
@@ -400,7 +402,7 @@ static void ast_channel_publish_dial_internal(struct ast_channel *caller,
 	msg = stasis_message_create(ast_channel_dial_type(), payload);
 	ao2_ref(payload, -1);
 	if (msg) {
-		publish_message_for_channel_topics(msg, caller);
+		publish_message_for_channel_topics(msg, caller ?: peer);
 		ao2_ref(msg, -1);
 	}
 }
@@ -613,8 +615,8 @@ struct ast_multi_channel_blob *ast_multi_channel_blob_create(struct ast_json *bl
 		return NULL;
 	}
 
-	obj->channel_snapshots = ao2_container_alloc(NUM_MULTI_CHANNEL_BLOB_BUCKETS,
-		channel_role_hash_cb, channel_role_cmp_cb);
+	obj->channel_snapshots = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		NUM_MULTI_CHANNEL_BLOB_BUCKETS, channel_role_hash_cb, NULL, channel_role_cmp_cb);
 	if (!obj->channel_snapshots) {
 		ao2_ref(obj, -1);
 		return NULL;
@@ -717,8 +719,9 @@ struct ao2_container *ast_multi_channel_blob_get_channels(struct ast_multi_chann
 		return NULL;
 	}
 
-	ret_container = ao2_container_alloc(NUM_MULTI_CHANNEL_BLOB_BUCKETS,
-		channel_snapshot_hash_cb, channel_snapshot_cmp_cb);
+	ret_container = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		NUM_MULTI_CHANNEL_BLOB_BUCKETS,
+		channel_snapshot_hash_cb, NULL, channel_snapshot_cmp_cb);
 	if (!ret_container) {
 		return NULL;
 	}
@@ -991,6 +994,10 @@ struct ast_json *ast_channel_snapshot_to_json(
 			snapshot->context, snapshot->exten, snapshot->priority),
 		"creationtime", ast_json_timeval(snapshot->creationtime, NULL),
 		"language", snapshot->language);
+
+	if (snapshot->ari_vars && !AST_LIST_EMPTY(snapshot->ari_vars)) {
+		ast_json_object_set(json_chan, "channelvars", ast_json_channel_vars(snapshot->ari_vars));
+	}
 
 	return json_chan;
 }

@@ -53,8 +53,6 @@
 #include <stdio.h>
 #include <ldap.h>
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/channel.h"
 #include "asterisk/logger.h"
 #include "asterisk/config.h"
@@ -89,7 +87,7 @@ struct category_and_metric {
 	int metric;
 	const char *variable_name;
 	const char *variable_value;
-	int var_metric; /*!< For organizing variables (particularly includes and switch statments) within a context */
+	int var_metric; /*!< For organizing variables (particularly includes and switch statements) within a context */
 };
 
 /*! \brief Table configuration
@@ -1032,7 +1030,7 @@ static struct ast_variable *realtime_ldap(const char *basedn,
 
 /*! \brief See Asterisk doc
  *
- * this function will be called for the switch statment if no match is found with the realtime_ldap function(i.e. it is a failover);
+ * this function will be called for the switch statement if no match is found with the realtime_ldap function(i.e. it is a failover);
  * however, the ast_load_realtime wil match on wildcharacters also depending on what the mode is set to
  * this is an area of asterisk that could do with a lot of modification
  * I think this function returns Realtime dynamic objects
@@ -1987,25 +1985,8 @@ static char *realtime_ldap_status(struct ast_cli_entry *e, int cmd, struct ast_c
 		ast_str_append(&buf, 0, " with username %s", user);
 	}
 
-	if (ctimesec > 31536000) {
-		ast_cli(a->fd, "%s for %d years, %d days, %d hours, %d minutes, %d seconds.\n",
-				ast_str_buffer(buf), ctimesec / 31536000,
-				(ctimesec % 31536000) / 86400, (ctimesec % 86400) / 3600,
-				(ctimesec % 3600) / 60, ctimesec % 60);
-	} else if (ctimesec > 86400) {
-		ast_cli(a->fd, "%s for %d days, %d hours, %d minutes, %d seconds.\n",
-				ast_str_buffer(buf), ctimesec / 86400, (ctimesec % 86400) / 3600,
-				(ctimesec % 3600) / 60, ctimesec % 60);
-	} else if (ctimesec > 3600) {
-		ast_cli(a->fd, "%s for %d hours, %d minutes, %d seconds.\n",
-				ast_str_buffer(buf), ctimesec / 3600, (ctimesec % 3600) / 60,
-				ctimesec % 60);
-	} else if (ctimesec > 60) {
-		ast_cli(a->fd, "%s for %d minutes, %d seconds.\n", ast_str_buffer(buf),
-					ctimesec / 60, ctimesec % 60);
-	} else {
-		ast_cli(a->fd, "%s for %d seconds.\n", ast_str_buffer(buf), ctimesec);
-	}
+	ast_str_append(&buf, 0, " for ");
+	ast_cli_print_timestr_fromseconds(a->fd, ctimesec, ast_str_buffer(buf));
 	ast_free(buf);
 
 	return CLI_SUCCESS;
@@ -2020,4 +2001,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "LDAP realtime interfa
 	.unload = unload_module,
 	.reload = reload,
 	.load_pri = AST_MODPRI_REALTIME_DRIVER,
+	.requires = "extconfig",
 );

@@ -126,8 +126,6 @@ static struct ast_sip_endpoint_identifier anonymous_identifier = {
 
 static int load_module(void)
 {
-	CHECK_PJSIP_MODULE_LOADED();
-
 	ast_sip_register_endpoint_identifier_with_name(&anonymous_identifier, "anonymous");
 	return AST_MODULE_LOAD_SUCCESS;
 }
@@ -139,7 +137,8 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "PJSIP Anonymous endpoint identifier",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-	       );
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.requires = "res_pjsip",
+);

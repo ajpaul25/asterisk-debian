@@ -32,8 +32,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <pjsip.h>
 #include <regex.h>
 
@@ -1368,8 +1366,6 @@ static struct ast_cli_entry cli_pjsip[] = {
 
 static int load_module(void)
 {
-	CHECK_PJSIP_MODULE_LOADED();
-
 	log_level = ast_logger_register_level("PJSIP_HISTORY");
 	if (log_level < 0) {
 		ast_log(LOG_WARNING, "Unable to register history log level\n");
@@ -1407,4 +1403,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP History",
 		.load = load_module,
 		.unload = unload_module,
 		.load_pri = AST_MODPRI_APP_DEPEND,
+		.requires = "res_pjsip",
 	);

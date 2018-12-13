@@ -44,12 +44,10 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <time.h>
 #include <sys/time.h>
 #include <sys/stat.h>
-#include <sys/signal.h>
+#include <signal.h>
 #include <fcntl.h>
 
 #include "asterisk/paths.h"	/* use ast_config_AST_DATA_DIR */
@@ -62,7 +60,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include "asterisk/stringfields.h"
 #include "asterisk/ast_version.h"
 #include "asterisk/manager.h"
-#include "asterisk/_private.h"
+#include "asterisk/module.h"
 #include "asterisk/astobj2.h"
 #include "asterisk/netsock2.h"
 #include "asterisk/json.h"
@@ -458,7 +456,7 @@ void ast_http_send(struct ast_tcptls_session_instance *ser,
 	struct ast_str *server_header_field = ast_str_create(MAX_SERVER_NAME_LENGTH);
 	int send_content;
 
-	if (!ser || !ser->f || !server_header_field) {
+	if (!ser || !server_header_field) {
 		/* The connection is not open. */
 		ast_free(http_header);
 		ast_free(out);
@@ -510,7 +508,7 @@ void ast_http_send(struct ast_tcptls_session_instance *ser,
 	send_content = method != AST_HTTP_HEAD || status_code >= 400;
 
 	/* send http header */
-	if (fprintf(ser->f,
+	if (ast_iostream_printf(ser->stream,
 		"HTTP/1.1 %d %s\r\n"
 		"%s"
 		"Date: %s\r\n"
@@ -529,17 +527,13 @@ void ast_http_send(struct ast_tcptls_session_instance *ser,
 		content_length,
 		send_content && out && ast_str_strlen(out) ? ast_str_buffer(out) : ""
 		) <= 0) {
-		ast_debug(1, "fprintf() failed: %s\n", strerror(errno));
+		ast_debug(1, "ast_iostream_printf() failed: %s\n", strerror(errno));
 		close_connection = 1;
 	} else if (send_content && fd) {
 		/* send file content */
 		while ((len = read(fd, buf, sizeof(buf))) > 0) {
-			/*
-			 * NOTE: Because ser->f is a non-standard FILE *, fwrite() will probably not
-			 * behave exactly as documented.
-			 */
-			if (fwrite(buf, len, 1, ser->f) != 1) {
-				ast_debug(1, "fwrite() failed: %s\n", strerror(errno));
+			if (ast_iostream_write(ser->stream, buf, len) != len) {
+				ast_debug(1, "ast_iostream_write() failed: %s\n", strerror(errno));
 				close_connection = 1;
 				break;
 			}
@@ -569,7 +563,7 @@ void ast_http_create_response(struct ast_tcptls_session_instance *ser, int statu
 		ast_free(http_header_data);
 		ast_free(server_address);
 		ast_free(out);
-		if (ser && ser->f) {
+		if (ser) {
 			ast_debug(1, "HTTP closing session. OOM.\n");
 			ast_tcptls_close_session_file(ser);
 		}
@@ -923,14 +917,9 @@ static int http_body_read_contents(struct ast_tcptls_session_instance *ser, char
 {
 	int res;
 
-	/*
-	 * NOTE: Because ser->f is a non-standard FILE *, fread() does not behave as
-	 * documented.
-	 */
-
-	/* Stay in fread until get all the expected data or timeout. */
-	res = fread(buf, length, 1, ser->f);
-	if (res < 1) {
+	/* Stream is in exclusive mode so we get it all if possible. */
+	res = ast_iostream_read(ser->stream, buf, length);
+	if (res < length) {
 		ast_log(LOG_WARNING, "Short HTTP request %s (Wanted %d)\n",
 			what_getting, length);
 		return -1;
@@ -952,28 +941,12 @@ static int http_body_read_contents(struct ast_tcptls_session_instance *ser, char
  */
 static int http_body_discard_contents(struct ast_tcptls_session_instance *ser, int length, const char *what_getting)
 {
-	int res;
-	char buf[MAX_HTTP_LINE_LENGTH];/* Discard buffer */
+	ssize_t res;
 
-	/*
-	 * NOTE: Because ser->f is a non-standard FILE *, fread() does not behave as
-	 * documented.
-	 */
-
-	/* Stay in fread until get all the expected data or timeout. */
-	while (sizeof(buf) < length) {
-		res = fread(buf, sizeof(buf), 1, ser->f);
-		if (res < 1) {
-			ast_log(LOG_WARNING, "Short HTTP request %s (Wanted %zu of remaining %d)\n",
-				what_getting, sizeof(buf), length);
-			return -1;
-		}
-		length -= sizeof(buf);
-	}
-	res = fread(buf, length, 1, ser->f);
-	if (res < 1) {
-		ast_log(LOG_WARNING, "Short HTTP request %s (Wanted %d of remaining %d)\n",
-			what_getting, length, length);
+	res = ast_iostream_discard(ser->stream, length);
+	if (res < length) {
+		ast_log(LOG_WARNING, "Short HTTP request %s (Wanted %d but got %zd)\n",
+			what_getting, length, res);
 		return -1;
 	}
 	return 0;
@@ -1049,7 +1022,7 @@ static int http_body_get_chunk_length(struct ast_tcptls_session_instance *ser)
 	char header_line[MAX_HTTP_LINE_LENGTH];
 
 	/* get the line of hexadecimal giving chunk-size w/ optional chunk-extension */
-	if (!fgets(header_line, sizeof(header_line), ser->f)) {
+	if (ast_iostream_gets(ser->stream, header_line, sizeof(header_line)) <= 0) {
 		ast_log(LOG_WARNING, "Short HTTP read of chunked header\n");
 		return -1;
 	}
@@ -1076,14 +1049,9 @@ static int http_body_check_chunk_sync(struct ast_tcptls_session_instance *ser)
 	int res;
 	char chunk_sync[2];
 
-	/*
-	 * NOTE: Because ser->f is a non-standard FILE *, fread() does not behave as
-	 * documented.
-	 */
-
 	/* Stay in fread until get the expected CRLF or timeout. */
-	res = fread(chunk_sync, sizeof(chunk_sync), 1, ser->f);
-	if (res < 1) {
+	res = ast_iostream_read(ser->stream, chunk_sync, sizeof(chunk_sync));
+	if (res < sizeof(chunk_sync)) {
 		ast_log(LOG_WARNING, "Short HTTP chunk sync read (Wanted %zu)\n",
 			sizeof(chunk_sync));
 		return -1;
@@ -1112,7 +1080,7 @@ static int http_body_discard_chunk_trailer_headers(struct ast_tcptls_session_ins
 	char header_line[MAX_HTTP_LINE_LENGTH];
 
 	for (;;) {
-		if (!fgets(header_line, sizeof(header_line), ser->f)) {
+		if (ast_iostream_gets(ser->stream, header_line, sizeof(header_line)) <= 0) {
 			ast_log(LOG_WARNING, "Short HTTP read of chunked trailer header\n");
 			return -1;
 		}
@@ -1772,11 +1740,19 @@ static int http_request_headers_get(struct ast_tcptls_session_instance *ser, str
 
 	remaining_headers = MAX_HTTP_REQUEST_HEADERS;
 	for (;;) {
+		ssize_t len;
 		char *name;
 		char *value;
 
-		if (!fgets(header_line, sizeof(header_line), ser->f)) {
+		len = ast_iostream_gets(ser->stream, header_line, sizeof(header_line));
+		if (len <= 0) {
 			ast_http_error(ser, 400, "Bad Request", "Timeout");
+			return -1;
+		}
+		if (header_line[len - 1] != '\n') {
+			/* We didn't get a full line */
+			ast_http_error(ser, 400, "Bad Request",
+				(len == sizeof(header_line) - 1) ? "Header line too long" : "Timeout");
 			return -1;
 		}
 
@@ -1847,15 +1823,24 @@ static int httpd_process_request(struct ast_tcptls_session_instance *ser)
 	struct http_worker_private_data *request;
 	enum ast_http_method http_method = AST_HTTP_UNKNOWN;
 	int res;
+	ssize_t len;
 	char request_line[MAX_HTTP_LINE_LENGTH];
 
-	if (!fgets(request_line, sizeof(request_line), ser->f)) {
+	len = ast_iostream_gets(ser->stream, request_line, sizeof(request_line));
+	if (len <= 0) {
 		return -1;
 	}
 
 	/* Re-initialize the request body tracking data. */
 	request = ser->private_data;
 	http_request_tracking_init(request);
+
+	if (request_line[len - 1] != '\n') {
+		/* We didn't get a full line */
+		ast_http_error(ser, 400, "Bad Request",
+			(len == sizeof(request_line) - 1) ? "Request line too long" : "Timeout");
+		return -1;
+	}
 
 	/* Get method */
 	method = ast_skip_blanks(request_line);
@@ -1930,10 +1915,10 @@ static int httpd_process_request(struct ast_tcptls_session_instance *ser)
 static void *httpd_helper_thread(void *data)
 {
 	struct ast_tcptls_session_instance *ser = data;
-	int flags = 1;
 	int timeout;
+	int arg = 1;
 
-	if (!ser || !ser->f) {
+	if (!ser) {
 		ao2_cleanup(ser);
 		return NULL;
 	}
@@ -1950,12 +1935,10 @@ static void *httpd_helper_thread(void *data)
 	 * This is necessary to prevent delays (caused by buffering) as we
 	 * write to the socket in bits and pieces.
 	 */
-	if (setsockopt(ser->fd, IPPROTO_TCP, TCP_NODELAY, (char *) &flags, sizeof(flags)) < 0) {
+	if (setsockopt(ast_iostream_get_fd(ser->stream), IPPROTO_TCP, TCP_NODELAY, (char *) &arg, sizeof(arg)) < 0) {
 		ast_log(LOG_WARNING, "Failed to set TCP_NODELAY on HTTP connection: %s\n", strerror(errno));
 	}
-
-	/* make sure socket is non-blocking */
-	ast_fd_set_flags(ser->fd, O_NONBLOCK);
+	ast_iostream_nonblock(ser->stream);
 
 	/* Setup HTTP worker private data to keep track of request body reading. */
 	ao2_cleanup(ser->private_data);
@@ -1978,23 +1961,17 @@ static void *httpd_helper_thread(void *data)
 	}
 
 	/* We can let the stream wait for data to arrive. */
-	ast_tcptls_stream_set_exclusive_input(ser->stream_cookie, 1);
+	ast_iostream_set_exclusive_input(ser->stream, 1);
 
 	for (;;) {
-		int ch;
-
 		/* Wait for next potential HTTP request message. */
-		ast_tcptls_stream_set_timeout_inactivity(ser->stream_cookie, timeout);
-		ch = fgetc(ser->f);
-		if (ch == EOF || ungetc(ch, ser->f) == EOF) {
-			/* Between request idle timeout */
-			ast_debug(1, "HTTP idle timeout or peer closed connection.\n");
+		ast_iostream_set_timeout_idle_inactivity(ser->stream, timeout, session_inactivity);
+		if (httpd_process_request(ser)) {
+			/* Break the connection or the connection closed */
 			break;
 		}
-
-		ast_tcptls_stream_set_timeout_inactivity(ser->stream_cookie, session_inactivity);
-		if (httpd_process_request(ser) || !ser->f || feof(ser->f)) {
-			/* Break the connection or the connection closed */
+		if (!ser->stream) {
+			/* Web-socket or similar that took the connection */
 			break;
 		}
 
@@ -2008,10 +1985,9 @@ static void *httpd_helper_thread(void *data)
 done:
 	ast_atomic_fetchadd_int(&session_count, -1);
 
-	if (ser->f) {
-		ast_debug(1, "HTTP closing session.  Top level\n");
-		ast_tcptls_close_session_file(ser);
-	}
+	ast_debug(1, "HTTP closing session.  Top level\n");
+	ast_tcptls_close_session_file(ser);
+
 	ao2_ref(ser, -1);
 	return NULL;
 }
@@ -2090,7 +2066,15 @@ static int __ast_http_load(int reload)
 	int http_tls_was_enabled = 0;
 
 	cfg = ast_config_load2("http.conf", "http", config_flags);
-	if (!cfg || cfg == CONFIG_STATUS_FILEUNCHANGED || cfg == CONFIG_STATUS_FILEINVALID) {
+	if (!cfg || cfg == CONFIG_STATUS_FILEINVALID) {
+		return 0;
+	}
+
+	/* Even if the http.conf hasn't been updated, the TLS certs/keys may have been */
+	if (cfg == CONFIG_STATUS_FILEUNCHANGED) {
+		if (http_tls_cfg.enabled && ast_ssl_setup(https_desc.tls_cfg)) {
+			ast_tcptls_server_start(&https_desc);
+		}
 		return 0;
 	}
 
@@ -2305,7 +2289,7 @@ static char *handle_show_http(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	return CLI_SUCCESS;
 }
 
-int ast_http_reload(void)
+static int reload_module(void)
 {
 	return __ast_http_load(1);
 }
@@ -2314,7 +2298,7 @@ static struct ast_cli_entry cli_http[] = {
 	AST_CLI_DEFINE(handle_show_http, "Display HTTP server status"),
 };
 
-static void http_shutdown(void)
+static int unload_module(void)
 {
 	struct http_uri_redirect *redirect;
 	ast_cli_unregister_multiple(cli_http, ARRAY_LEN(cli_http));
@@ -2336,14 +2320,24 @@ static void http_shutdown(void)
 		ast_free(redirect);
 	}
 	AST_RWLIST_UNLOCK(&uri_redirects);
+
+	return 0;
 }
 
-int ast_http_init(void)
+static int load_module(void)
 {
 	ast_http_uri_link(&statusuri);
 	ast_http_uri_link(&staticuri);
 	ast_cli_register_multiple(cli_http, ARRAY_LEN(cli_http));
-	ast_register_cleanup(http_shutdown);
 
-	return __ast_http_load(0);
+	return __ast_http_load(0) ? AST_MODULE_LOAD_FAILURE : AST_MODULE_LOAD_SUCCESS;
 }
+
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Built-in HTTP Server",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload_module,
+	.load_pri = AST_MODPRI_CORE,
+	.requires = "extconfig",
+);

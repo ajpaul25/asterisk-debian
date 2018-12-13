@@ -26,13 +26,12 @@
  */
 
 /*** MODULEINFO
-	<support_level>core</support_level>
+	<defaultenabled>no</defaultenabled>
+	<support_level>deprecated</support_level>
 	<replacement>app_stack (GoSub)</replacement>
  ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "asterisk/file.h"
 #include "asterisk/channel.h"
@@ -192,8 +191,8 @@ static struct ast_exten *find_matching_priority(struct ast_context *c, const cha
 	int priority, const char *callerid, int iter, int *had_error)
 {
 	struct ast_exten *e;
-	struct ast_include *i;
 	struct ast_context *c2;
+	int idx;
 
 	if (iter >= AST_PBX_MAX_STACK) {
 		if (!(*had_error)) {
@@ -220,7 +219,9 @@ static struct ast_exten *find_matching_priority(struct ast_context *c, const cha
 	}
 
 	/* No match; run through includes */
-	for (i=ast_walk_context_includes(c, NULL); i; i=ast_walk_context_includes(c, i)) {
+	for (idx = 0; idx < ast_context_includes_count(c); idx++) {
+		const struct ast_include *i = ast_context_includes_get(c, idx);
+
 		for (c2=ast_walk_contexts(NULL); c2; c2=ast_walk_contexts(c2)) {
 			if (!strcmp(ast_get_context_name(c2), ast_get_include_name(i))) {
 				e = find_matching_priority(c2, exten, priority, callerid, iter + 1, had_error);
@@ -261,10 +262,17 @@ static int _macro_exec(struct ast_channel *chan, const char *data, int exclusive
 	int save_in_subroutine;
 	struct ast_datastore *macro_store = ast_channel_datastore_find(chan, &macro_ds_info, NULL);
 	int had_infinite_include_error = 0;
+	static int deprecation_notice = 0;
 
 	if (ast_strlen_zero(data)) {
 		ast_log(LOG_WARNING, "Macro() requires arguments. See \"core show application macro\" for help.\n");
 		return -1;
+	}
+
+	if (!deprecation_notice) {
+		deprecation_notice = 1;
+		ast_log(LOG_WARNING, "Macro() is deprecated and will be removed from a future version of Asterisk.\n");
+		ast_log(LOG_WARNING, "Dialplan should be updated to use Gosub instead.\n");
 	}
 
 	do {
@@ -678,4 +686,4 @@ static int load_module(void)
 	return res;
 }
 
-AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Extension Macros");
+AST_MODULE_INFO_STANDARD_DEPRECATED(ASTERISK_GPL_KEY, "Extension Macros");

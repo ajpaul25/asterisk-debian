@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/_private.h"
 #include "asterisk/lock.h"
 #include "asterisk/frame.h"
@@ -227,6 +225,7 @@ struct ast_frame *ast_frisolate(struct ast_frame *fr)
 			out->len = fr->len;
 			out->seqno = fr->seqno;
 		}
+		out->stream_num = fr->stream_num;
 	} else {
 		out = fr;
 	}
@@ -260,7 +259,7 @@ struct ast_frame *ast_frisolate(struct ast_frame *fr)
 
 	if (!(fr->mallocd & AST_MALLOCD_DATA))  {
 		/* The original frame has a non-malloced data buffer. */
-		if (!fr->datalen) {
+		if (!fr->datalen && fr->frametype != AST_FRAME_TEXT) {
 			/* Actually it's just an int so we can simply copy it. */
 			out->data.uint32 = fr->data.uint32;
 			return out;
@@ -357,7 +356,8 @@ struct ast_frame *ast_frdup(const struct ast_frame *f)
 	 */
 	out->mallocd = AST_MALLOCD_HDR;
 	out->offset = AST_FRIENDLY_OFFSET;
-	if (out->datalen) {
+	/* Make sure that empty text frames have a valid data.ptr */
+	if (out->datalen || f->frametype == AST_FRAME_TEXT) {
 		out->data.ptr = buf + sizeof(*out) + AST_FRIENDLY_OFFSET;
 		memcpy(out->data.ptr, f->data.ptr, out->datalen);
 	} else {
@@ -375,6 +375,7 @@ struct ast_frame *ast_frdup(const struct ast_frame *f)
 	out->ts = f->ts;
 	out->len = f->len;
 	out->seqno = f->seqno;
+	out->stream_num = f->stream_num;
 	return out;
 }
 
@@ -555,6 +556,8 @@ void ast_frame_subclass2str(struct ast_frame *f, char *subclass, size_t slen, ch
 			break;
 		}
 		break;
+	case AST_FRAME_RTCP:
+		ast_copy_string(subclass, "RTCP", slen);
 	default:
 		ast_copy_string(subclass, "Unknown Subclass", slen);
 		break;
@@ -609,6 +612,9 @@ void ast_frame_type2str(enum ast_frame_type frame_type, char *ftype, size_t len)
 	case AST_FRAME_VIDEO:
 		ast_copy_string(ftype, "Video", len);
 		break;
+	case AST_FRAME_RTCP:
+		ast_copy_string(ftype, "RTCP", len);
+		break;
 	default:
 		snprintf(ftype, len, "Unknown Frametype '%u'", frame_type);
 		break;
@@ -644,6 +650,9 @@ void ast_frame_dump(const char *name, struct ast_frame *f, char *prefix)
 		return;
 	}
 	if (f->frametype == AST_FRAME_VIDEO) {
+		return;
+	}
+	if (f->frametype == AST_FRAME_RTCP) {
 		return;
 	}
 

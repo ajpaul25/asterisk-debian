@@ -33,12 +33,10 @@
  */
 
 /*** MODULEINFO
-	<support_level>core</support_level>
+	<support_level>extended</support_level>
  ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "asterisk/_private.h"
 #include "asterisk/channel.h"
@@ -403,22 +401,35 @@ static struct ast_calendar *build_calendar(struct ast_config *cfg, const char *c
 {
 	struct ast_calendar *cal;
 	struct ast_variable *v, *last = NULL;
+	int new_calendar = 0;
 
-	if (!(cal = ao2_alloc(sizeof(*cal), calendar_destructor))) {
-		ast_log(LOG_ERROR, "Could not allocate calendar structure. Stopping.\n");
-		return NULL;
-	}
-
-	if (!(cal->events = ao2_container_alloc(CALENDAR_BUCKETS, event_hash_fn, event_cmp_fn))) {
-		ast_log(LOG_ERROR, "Could not allocate events container for %s\n", cat);
+	cal = find_calendar(cat);
+	if (cal && cal->fetch_again_at_reload) {
+		/** Create new calendar, old will be removed during reload */
 		cal = unref_calendar(cal);
-		return NULL;
 	}
+	if (!cal) {
+		new_calendar = 1;
+		if (!(cal = ao2_alloc(sizeof(*cal), calendar_destructor))) {
+			ast_log(LOG_ERROR, "Could not allocate calendar structure. Stopping.\n");
+			return NULL;
+		}
 
-	if (ast_string_field_init(cal, 32)) {
-		ast_log(LOG_ERROR, "Couldn't create string fields for %s\n", cat);
-		cal = unref_calendar(cal);
-		return NULL;
+		cal->events = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+			CALENDAR_BUCKETS, event_hash_fn, NULL, event_cmp_fn);
+		if (!cal->events) {
+			ast_log(LOG_ERROR, "Could not allocate events container for %s\n", cat);
+			cal = unref_calendar(cal);
+			return NULL;
+		}
+
+		if (ast_string_field_init(cal, 32)) {
+			ast_log(LOG_ERROR, "Couldn't create string fields for %s\n", cat);
+			cal = unref_calendar(cal);
+			return NULL;
+		}
+	} else {
+		cal->pending_deletion = 0;
 	}
 
 	ast_string_field_set(cal, name, cat);
@@ -427,6 +438,7 @@ static struct ast_calendar *build_calendar(struct ast_config *cfg, const char *c
 	cal->refresh = 3600;
 	cal->timeframe = 60;
 	cal->notify_waittime = 30000;
+	cal->fetch_again_at_reload = 0;
 
 	for (v = ast_variable_browse(cfg, cat); v; v = v->next) {
 		if (!strcasecmp(v->name, "autoreminder")) {
@@ -448,6 +460,8 @@ static struct ast_calendar *build_calendar(struct ast_config *cfg, const char *c
 			ast_string_field_set(cal, notify_appdata, v->value);
 		} else if (!strcasecmp(v->name, "refresh")) {
 			cal->refresh = atoi(v->value);
+		} else if (!strcasecmp(v->name, "fetch_again_at_reload")) {
+			cal->fetch_again_at_reload = ast_true(v->value);
 		} else if (!strcasecmp(v->name, "timeframe")) {
 			cal->timeframe = atoi(v->value);
 		} else if (!strcasecmp(v->name, "setvar")) {
@@ -480,15 +494,17 @@ static struct ast_calendar *build_calendar(struct ast_config *cfg, const char *c
 				cal->name);
 	}
 
-	cal->thread = AST_PTHREADT_NULL;
-	ast_cond_init(&cal->unload, NULL);
-	ao2_link(calendars, cal);
-	if (ast_pthread_create(&cal->thread, NULL, cal->tech->load_calendar, cal)) {
-		/* If we start failing to create threads, go ahead and return NULL
-		 * and the tech module will be unregistered
-		 */
-		ao2_unlink(calendars, cal);
-		cal = unref_calendar(cal);
+	if (new_calendar) {
+		cal->thread = AST_PTHREADT_NULL;
+		ast_cond_init(&cal->unload, NULL);
+		ao2_link(calendars, cal);
+		if (ast_pthread_create(&cal->thread, NULL, cal->tech->load_calendar, cal)) {
+			/* If we start failing to create threads, go ahead and return NULL
+			 * and the tech module will be unregistered
+			 */
+			ao2_unlink(calendars, cal);
+			cal = unref_calendar(cal);
+		}
 	}
 
 	return cal;
@@ -672,7 +688,8 @@ struct ast_calendar_event *ast_calendar_event_alloc(struct ast_calendar *cal)
 
 struct ao2_container *ast_calendar_event_container_alloc(void)
 {
-	return ao2_container_alloc(CALENDAR_BUCKETS, event_hash_fn, event_cmp_fn);
+	return ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, CALENDAR_BUCKETS,
+		event_hash_fn, NULL, event_cmp_fn);
 }
 
 static void event_notification_destroy(void *data)
@@ -1759,16 +1776,30 @@ static struct ast_custom_function calendar_event_function = {
 	.read = calendar_event_read,
 };
 
+static int cb_pending_deletion(void *user_data, void *arg, int flags)
+{
+	struct ast_calendar *cal = user_data;
+
+	cal->pending_deletion = 1;
+
+	return CMP_MATCH;
+}
+
+static int cb_rm_pending_deletion(void *user_data, void *arg, int flags)
+{
+	struct ast_calendar *cal = user_data;
+
+	return cal->pending_deletion ? CMP_MATCH : 0;
+}
+
 static int reload(void)
 {
 	struct ast_calendar_tech *iter;
 
 	ast_mutex_lock(&reloadlock);
 
-	/* Delete all of the calendars */
-	ao2_callback(calendars, OBJ_UNLINK | OBJ_NODATA | OBJ_MULTIPLE, NULL, NULL);
-
-	/* Load configuration */
+	/* Mark existing calendars for deletion */
+	ao2_callback(calendars, OBJ_NODATA | OBJ_MULTIPLE, cb_pending_deletion, NULL);
 	load_config(1);
 
 	AST_LIST_LOCK(&techs);
@@ -1778,6 +1809,9 @@ static int reload(void)
 		}
 	}
 	AST_LIST_UNLOCK(&techs);
+
+	/* Delete calendars that no longer show up in the config */
+	ao2_callback(calendars, OBJ_UNLINK | OBJ_NODATA | OBJ_MULTIPLE, cb_rm_pending_deletion, NULL);
 
 	ast_mutex_unlock(&reloadlock);
 
@@ -1865,7 +1899,9 @@ static int unload_module(void)
  */
 static int load_module(void)
 {
-	if (!(calendars = ao2_container_alloc(CALENDAR_BUCKETS, calendar_hash_fn, calendar_cmp_fn))) {
+	calendars = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, CALENDAR_BUCKETS,
+		calendar_hash_fn, NULL, calendar_cmp_fn);
+	if (!calendars) {
 		ast_log(LOG_ERROR, "Unable to allocate calendars container!\n");
 		return AST_MODULE_LOAD_DECLINE;
 	}
@@ -1902,9 +1938,9 @@ static int load_module(void)
 	return AST_MODULE_LOAD_SUCCESS;
 }
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Asterisk Calendar integration",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-		.load_pri = AST_MODPRI_DEVSTATE_PROVIDER,
-	);
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.load_pri = AST_MODPRI_DEVSTATE_PROVIDER,
+);

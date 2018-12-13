@@ -1,7 +1,8 @@
 BEGIN TRANSACTION;
 
 CREATE TABLE alembic_version (
-    version_num VARCHAR(32) NOT NULL
+    version_num VARCHAR(32) NOT NULL, 
+    CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
 );
 
 GO
@@ -35,6 +36,20 @@ CREATE TABLE cdr (
 GO
 
 INSERT INTO alembic_version (version_num) VALUES ('210693f3123d');
+
+GO
+
+-- Running upgrade 210693f3123d -> 54cde9847798
+
+ALTER TABLE cdr ALTER COLUMN accountcode VARCHAR(80);
+
+GO
+
+ALTER TABLE cdr ALTER COLUMN peeraccount VARCHAR(80);
+
+GO
+
+UPDATE alembic_version SET version_num='54cde9847798' WHERE alembic_version.version_num = '210693f3123d';
 
 GO
 

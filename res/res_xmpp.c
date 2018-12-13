@@ -48,8 +48,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <ctype.h>
 #include <iksemel.h>
 
@@ -643,7 +641,9 @@ static struct ast_xmpp_client *xmpp_client_alloc(const char *name)
 		return NULL;
 	}
 
-	if (!(client->buddies = ao2_container_alloc(BUDDY_BUCKETS, xmpp_buddy_hash, xmpp_buddy_cmp))) {
+	client->buddies = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, BUDDY_BUCKETS,
+		xmpp_buddy_hash, NULL, xmpp_buddy_cmp);
+	if (!client->buddies) {
 		ast_log(LOG_ERROR, "Could not initialize buddy container for '%s'\n", name);
 		ao2_ref(client, -1);
 		return NULL;
@@ -709,7 +709,9 @@ static void *ast_xmpp_client_config_alloc(const char *cat)
 		return NULL;
 	}
 
-	if (!(cfg->buddies = ao2_container_alloc(BUDDY_BUCKETS, xmpp_buddy_hash, xmpp_buddy_cmp))) {
+	cfg->buddies = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, BUDDY_BUCKETS,
+		xmpp_buddy_hash, NULL, xmpp_buddy_cmp);
+	if (!cfg->buddies) {
 		ao2_ref(cfg, -1);
 		return NULL;
 	}
@@ -725,14 +727,6 @@ static void xmpp_config_destructor(void *obj)
 	struct xmpp_config *cfg = obj;
 	ao2_cleanup(cfg->global);
 	ao2_cleanup(cfg->clients);
-}
-
-/*! \brief Hashing function for configuration */
-static int xmpp_config_hash(const void *obj, const int flags)
-{
-	const struct ast_xmpp_client_config *cfg = obj;
-	const char *name = (flags & OBJ_KEY) ? obj : cfg->name;
-	return ast_str_case_hash(name);
 }
 
 /*! \brief Comparator function for configuration */
@@ -756,7 +750,9 @@ static void *xmpp_config_alloc(void)
 		goto error;
 	}
 
-	if (!(cfg->clients = ao2_container_alloc(1, xmpp_config_hash, xmpp_config_cmp))) {
+	cfg->clients = ao2_container_alloc_list(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		NULL, xmpp_config_cmp);
+	if (!cfg->clients) {
 		goto error;
 	}
 
@@ -1628,11 +1624,15 @@ static void xmpp_init_event_distribution(struct ast_xmpp_client *client)
 	if (!(client->mwi_sub = stasis_subscribe_pool(ast_mwi_topic_all(), xmpp_pubsub_mwi_cb, client))) {
 		return;
 	}
+	stasis_subscription_accept_message_type(client->mwi_sub, ast_mwi_state_type());
+	stasis_subscription_set_filter(client->mwi_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 
 	if (!(client->device_state_sub = stasis_subscribe(ast_device_state_topic_all(), xmpp_pubsub_devstate_cb, client))) {
 		client->mwi_sub = stasis_unsubscribe(client->mwi_sub);
 		return;
 	}
+	stasis_subscription_accept_message_type(client->device_state_sub, ast_device_state_message_type());
+	stasis_subscription_set_filter(client->device_state_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 
 	cached = stasis_cache_dump(ast_device_state_cache(), NULL);
 	ao2_callback(cached, OBJ_NODATA, cached_devstate_cb, client);
@@ -2252,7 +2252,9 @@ static struct ast_xmpp_buddy *xmpp_client_create_buddy(struct ao2_container *con
 		return NULL;
 	}
 
-	if (!(buddy->resources = ao2_container_alloc(RESOURCE_BUCKETS, xmpp_resource_hash, xmpp_resource_cmp))) {
+	buddy->resources = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		RESOURCE_BUCKETS, xmpp_resource_hash, NULL, xmpp_resource_cmp);
+	if (!buddy->resources) {
 		ao2_ref(buddy, -1);
 		return NULL;
 	}
@@ -4779,9 +4781,9 @@ static int reload(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Asterisk XMPP Interface",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-		.load_pri = AST_MODPRI_CHANNEL_DEPEND,
-	       );
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+);

@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/config.h"
 #include "asterisk/netsock2.h"
 #include "asterisk/utils.h"
@@ -333,6 +331,27 @@ int ast_sockaddr_resolve(struct ast_sockaddr **addrs, const char *str,
 cleanup:
 	freeaddrinfo(res);
 	return res_cnt;
+}
+
+/*! \brief Pulls first resolved address and returns it */
+int ast_sockaddr_resolve_first_af(struct ast_sockaddr *addr,
+				      const char* name, int flag, int family)
+{
+	struct ast_sockaddr *addrs;
+	int addrs_cnt;
+
+	addrs_cnt = ast_sockaddr_resolve(&addrs, name, flag, family);
+	if (addrs_cnt <= 0) {
+		return 1;
+	}
+	if (addrs_cnt > 1) {
+		ast_debug(1, "Multiple addresses resolving %s, using the first one only\n", name);
+	}
+
+	ast_sockaddr_copy(addr, &addrs[0]);
+
+	ast_free(addrs);
+	return 0;
 }
 
 int ast_sockaddr_apply_netmask(const struct ast_sockaddr *addr, const struct ast_sockaddr *netmask,

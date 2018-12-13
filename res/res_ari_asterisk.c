@@ -40,8 +40,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/app.h"
 #include "asterisk/module.h"
 #include "asterisk/stasis_app.h"
@@ -1216,7 +1214,6 @@ static struct stasis_rest_handlers asterisk = {
 static int unload_module(void)
 {
 	ast_ari_remove_handler(&asterisk);
-	stasis_app_unref();
 	return 0;
 }
 
@@ -1224,10 +1221,7 @@ static int load_module(void)
 {
 	int res = 0;
 
-	CHECK_ARI_MODULE_LOADED();
 
-
-	stasis_app_ref();
 	res |= ast_ari_add_handler(&asterisk);
 	if (res) {
 		unload_module();
@@ -1241,5 +1235,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "RESTful API module - Ast
 	.support_level = AST_MODULE_SUPPORT_CORE,
 	.load = load_module,
 	.unload = unload_module,
-	.nonoptreq = "res_ari,res_stasis",
-	);
+	.requires = "res_ari,res_ari_model,res_stasis",
+);

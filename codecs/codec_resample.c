@@ -32,8 +32,6 @@
 #include "asterisk.h"
 #include "speex/speex_resampler.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/module.h"
 #include "asterisk/translate.h"
 #include "asterisk/slin.h"

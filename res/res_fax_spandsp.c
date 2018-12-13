@@ -48,13 +48,9 @@
 	<support_level>extended</support_level>
 ***/
 
+/* Needed for spandsp headers */
+#define ASTMM_LIBC ASTMM_IGNORE
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
-#define SPANDSP_EXPOSE_INTERNAL_STRUCTURES
-#include <spandsp.h>
-#include <spandsp/version.h>
 
 #include "asterisk/logger.h"
 #include "asterisk/module.h"
@@ -66,6 +62,10 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include "asterisk/res_fax.h"
 #include "asterisk/channel.h"
 #include "asterisk/format_cache.h"
+
+#define SPANDSP_EXPOSE_INTERNAL_STRUCTURES
+#include <spandsp.h>
+#include <spandsp/version.h>
 
 #define SPANDSP_FAX_SAMPLES 160
 #define SPANDSP_FAX_TIMER_RATE 8000 / SPANDSP_FAX_SAMPLES	/* 50 ticks per second, 20ms, 160 samples per second */
@@ -1263,7 +1263,8 @@ static int load_module(void)
 
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Spandsp G.711 and T.38 FAX Technologies",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-	       );
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.enhances = "res_fax",
+);

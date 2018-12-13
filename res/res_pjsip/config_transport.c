@@ -30,6 +30,7 @@
 #include "asterisk/acl.h"
 #include "asterisk/utils.h"
 #include "include/res_pjsip_private.h"
+/* We're only using a #define from http_websocket.h, no OPTIONAL_API symbols are used. */
 #include "asterisk/http_websocket.h"
 
 #define MAX_POINTER_STRING 33
@@ -1376,7 +1377,8 @@ static int populate_transport_states(void *obj, void *arg, int flags)
 
 struct ao2_container *ast_sip_get_transport_states(void)
 {
-	struct ao2_container *states = ao2_container_alloc(DEFAULT_STATE_BUCKETS, transport_state_hash, transport_state_cmp);
+	struct ao2_container *states = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		DEFAULT_STATE_BUCKETS, transport_state_hash, NULL, transport_state_cmp);
 
 	if (!states) {
 		return NULL;
@@ -1393,7 +1395,8 @@ int ast_sip_initialize_sorcery_transport(void)
 	struct ao2_container *transports = NULL;
 
 	/* Create outbound registration states container. */
-	transport_states = ao2_container_alloc(DEFAULT_STATE_BUCKETS, internal_state_hash, internal_state_cmp);
+	transport_states = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		DEFAULT_STATE_BUCKETS, internal_state_hash, NULL, internal_state_cmp);
 	if (!transport_states) {
 		ast_log(LOG_ERROR, "Unable to allocate transport states container\n");
 		return -1;
@@ -1433,7 +1436,7 @@ int ast_sip_initialize_sorcery_transport(void)
 	ast_sorcery_object_field_register(sorcery, "transport", "allow_reload", "no", OPT_BOOL_T, 1, FLDSET(struct ast_sip_transport, allow_reload));
 	ast_sorcery_object_field_register(sorcery, "transport", "symmetric_transport", "no", OPT_BOOL_T, 1, FLDSET(struct ast_sip_transport, symmetric_transport));
 
-	internal_sip_register_endpoint_formatter(&endpoint_transport_formatter);
+	ast_sip_register_endpoint_formatter(&endpoint_transport_formatter);
 
 	cli_formatter = ao2_alloc(sizeof(struct ast_sip_cli_formatter_entry), NULL);
 	if (!cli_formatter) {
@@ -1463,7 +1466,7 @@ int ast_sip_destroy_sorcery_transport(void)
 	ast_cli_unregister_multiple(cli_commands, ARRAY_LEN(cli_commands));
 	ast_sip_unregister_cli_formatter(cli_formatter);
 
-	internal_sip_unregister_endpoint_formatter(&endpoint_transport_formatter);
+	ast_sip_unregister_endpoint_formatter(&endpoint_transport_formatter);
 
 	ao2_ref(transport_states, -1);
 	transport_states = NULL;

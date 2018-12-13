@@ -28,12 +28,10 @@
  */
 
 /*** MODULEINFO
-	<support_level>extended</support_level>
+	<support_level>deprecated</support_level>
  ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <signal.h>
 #include <fcntl.h>
@@ -213,4 +211,4 @@ static int load_module(void)
 	return ast_register_application_xml(app, ices_exec);
 }
 
-AST_MODULE_INFO_STANDARD_EXTENDED(ASTERISK_GPL_KEY, "Encode and Stream via icecast and ices");
+AST_MODULE_INFO_STANDARD_DEPRECATED(ASTERISK_GPL_KEY, "Encode and Stream via icecast and ices");

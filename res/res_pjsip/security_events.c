@@ -26,8 +26,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <pjsip.h>
 
 #include "asterisk/res_pjsip.h"
