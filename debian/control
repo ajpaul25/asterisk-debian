@@ -49,7 +49,7 @@ Build-Depends:
  libreadline-dev,
  libresample1-dev,
  libsdl-image1.2-dev,
- libsnmp-dev,
+# libsnmp-dev,
  libspandsp-dev,
  libspeex-dev,
  libspeexdsp-dev,
