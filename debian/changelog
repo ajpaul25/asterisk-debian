@@ -1,3 +1,19 @@
+asterisk (1:16.1.0~dfsg-1) experimental; urgency=medium
+
+  [ Bernhard Schmidt ]
+  * New upstream version 16.1.0~dfsg
+  * Update d/watch for Asterisk 16.x
+  * Build with embedded pjproject 2.8 (dfsg-repacked)
+  * Reenable app_macro, many dialplans need it
+  * Fix autopkgtest by parsing XML results
+  * Disable libsnmp-dev temporarily
+
+  [ Rob Thomas ]
+  * Update patches for Asterisk 16.0.1
+  * Build-Depend on libunbound-dev for async DNS
+
+ -- Bernhard Schmidt <berni@debian.org>  Thu, 20 Dec 2018 00:05:50 +0100
+
 asterisk (1:13.23.1~dfsg-1) unstable; urgency=medium
 
   * New upstream version 13.23.1~dfsg
