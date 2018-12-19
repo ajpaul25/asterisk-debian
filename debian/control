@@ -61,6 +61,7 @@ Build-Depends:
  libsystemd-dev [linux-any],
  libswscale-dev,
  libtonezone-dev [linux-any],
+ libunbound-dev,
  liburiparser-dev,
  libvorbis-dev,
  libvpb-dev [linux-any],
