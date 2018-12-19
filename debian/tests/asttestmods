@@ -40,7 +40,7 @@ EOF
 
 run() {
 	$asterisk -rx 'test execute all' 2>&1
-	$asterisk -rx "test generate results txt $results_file"
+	$asterisk -rx "test generate results xml $results_file"
 	$asterisk -rx 'module show like test_' | awk '/Running/ {print $1}' \
 		| sort  > "$output_dir/mods_loaded"
 	ls /usr/lib/asterisk/modules/ | sort | grep ^test_ > "$output_dir/mods_all"
@@ -49,12 +49,11 @@ run() {
 		diff "$output_dir/mods_loaded" "$output_dir/mods_all"
 		echo "Manually disabled: $disable_mods"
 	fi
-	header=`cat "$results_file" | sed -e '/^$/,$d' `
-	failed=`echo "$header" | awk '/^Failed/ {print $3}'`
+	failed=`xmllint --xpath 'string(//testsuite/@errors)' $results_file`
 	test_in_source=`grep AST_TEST_REGISTER tests/test_*.c | wc -l`
 	if [ "$failed" != '0' ]; then
 		echo >&2 "Some tests failed:"
-		echo >&2 "$header"
+		echo >&2 "$results_file"
 		$asterisk -rx "test show results failed" >&2
 	fi
 }
