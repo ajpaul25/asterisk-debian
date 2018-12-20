@@ -1,3 +1,10 @@
+asterisk (1:16.1.0~dfsg-2) experimental; urgency=medium
+
+  * Add patch to rerun autoconf in third_party/pjproject, hopefully fixes
+    FTBFS on new architectures like ppc64el
+
+ -- Bernhard Schmidt <berni@debian.org>  Fri, 21 Dec 2018 00:37:07 +0100
+
 asterisk (1:16.1.0~dfsg-1) experimental; urgency=medium
 
   [ Bernhard Schmidt ]
