@@ -1,3 +1,15 @@
+asterisk (1:16.1.0~dfsg-3) experimental; urgency=medium
+
+  * Adjust MySQL build-dep for current mariadb-10.3 breakage
+  * d/p/autoreconf-pjproject: also update config.guess and config.sub,
+    that should REALLY fix the FTBFS now
+  * Restore previous pjproject md5sum on dh_clean, allows package to be
+    built twice
+  * README.Debian: Fix a typo found by lintian
+  * Add lintian override for bundled libasteriskpj
+
+ -- Bernhard Schmidt <berni@debian.org>  Sat, 22 Dec 2018 23:51:06 +0100
+
 asterisk (1:16.1.0~dfsg-2) experimental; urgency=medium
 
   * Add patch to rerun autoconf in third_party/pjproject, hopefully fixes
