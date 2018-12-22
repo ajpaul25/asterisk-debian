@@ -15,7 +15,10 @@ Build-Depends:
  binutils-dev,
  dahdi-source,
  debhelper (>= 10),
- default-libmysqlclient-dev,
+# MariaDB woes in unstable, see #917075
+# default-libmysqlclient-dev,
+ libmariadb-dev-compat,
+# end MariaDB woes
  freetds-dev,
  libasound2-dev,
  libavcodec-dev,
