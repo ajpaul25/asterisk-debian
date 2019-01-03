@@ -1,3 +1,9 @@
+asterisk (1:13.23.1~dfsg-2) unstable; urgency=medium
+
+  * Fix autopkgtest by parsing XML results (Closes: #909689)
+
+ -- Bernhard Schmidt <berni@debian.org>  Thu, 03 Jan 2019 16:20:10 +0100
+
 asterisk (1:13.23.1~dfsg-1) unstable; urgency=medium
 
   * New upstream version 13.23.1~dfsg
