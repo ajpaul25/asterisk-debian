@@ -53,7 +53,6 @@ Build-Depends:
  libspandsp-dev,
  libspeex-dev,
  libspeexdsp-dev,
- libsqlite0-dev,
  libsqlite3-dev,
  libsrtp2-dev,
  libss7-dev,
