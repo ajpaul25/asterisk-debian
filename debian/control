@@ -43,6 +43,7 @@ Build-Depends:
  libopenr2-dev [linux-any],
  libopus-dev,
  libopusfile-dev,
+ libosptk-dev,
  libpopt-dev,
  libpq-dev,
  libpri-dev,
