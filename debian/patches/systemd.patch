@@ -41,7 +41,7 @@ Last-Update: 2016-04-02
 +# Note: if you changed the parameters passed in the command-line (ExecStart)
 +# be sure to copy them over here as well.
 +[Service]
-+ExecStart = $BASE_DIR/asterisk g -f -U asterisk
++ExecStart = $BASE_DIR/asterisk g -f -p -U asterisk
 +ExecReload = $BASE_DIR/asterisk -rx 'core reload'
 +WorkingDirectory = $varlibdir
 +EOF
@@ -90,7 +90,7 @@ Last-Update: 2016-04-02
 +
 +[Service]
 +Type=notify
-+ExecStart=__ASTERISK_SBIN_DIR__/asterisk -g -f -U asterisk
++ExecStart=__ASTERISK_SBIN_DIR__/asterisk -g -f -p -U asterisk
 +ExecReload=__ASTERISK_SBIN_DIR__/asterisk -rx 'core reload'
 +Restart=on-failure
 +RestartSec=1
