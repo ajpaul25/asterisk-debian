@@ -1,3 +1,19 @@
+asterisk (1:16.1.0~dfsg-4) experimental; urgency=medium
+
+  * Update build-deps
+    - Revert mariadb-10.3 change, not necessary anymore
+    - Add libsnmp-dev again, works now
+    - Add libosptk-dev for Open Settlement Protocol, see Bug#786973.
+      Not sure yet whether we will keep this for unstable.
+    - Drop libsqlite0-dev, deprecated
+  * Do not load any local channel drivers by default (see #821392)
+  * asterisk.service: Attempt to run with realtime priority by default
+    (see #801629)
+  * Improve/fix some race-conditions in sysv-initscript.
+    Thanks to Walter Doekes (see #778746)
+
+ -- Bernhard Schmidt <berni@debian.org>  Fri, 04 Jan 2019 16:00:17 +0100
+
 asterisk (1:16.1.0~dfsg-3) experimental; urgency=medium
 
   * Adjust MySQL build-dep for current mariadb-10.3 breakage
