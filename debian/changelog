@@ -1,3 +1,28 @@
+asterisk (1:16.1.1~dfsg-1) unstable; urgency=medium
+
+  Upload new major version to unstable
+
+  [ Bernhard Schmidt ]
+  * New upstream version 16.1.1 (Closes: #886984, #917481)
+    - build with embedded pjproject 2.8 (dfsg-repacked)
+    - Add lintian overrides for bundled library
+    - Reenable app_macro, many dialplans need it
+  * Update d/watch for Asterisk 16.x
+  * Add signing key for Chris Savinovich <csavinovich@digium.com>
+  * New upstream version 16.1.0~dfsg
+  * README.Debian: Fix a typo found by lintian
+  * Drop libsqlite0-dev, deprecated
+  * Do not load any local channel drivers by default (Closes: #821392)
+  * asterisk.service: Attempt to run with realtime priority by default
+    (Closes: #801629)
+  * Improve/fix some raceconditions in sysv-initscript.
+    Thanks to Walter Doekes (Closes: #778746)
+
+  [ Rob Thomas ]
+  * Build-Depend on libunbound-dev for async DNS
+
+ -- Bernhard Schmidt <berni@debian.org>  Fri, 11 Jan 2019 18:51:43 +0100
+
 asterisk (1:13.23.1~dfsg-2) unstable; urgency=medium
 
   * Fix autopkgtest by parsing XML results (Closes: #909689)
