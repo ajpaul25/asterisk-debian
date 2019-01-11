@@ -335,15 +335,15 @@ static int register_contact_transport_remove_cb(void *data)
 {
 	struct contact_transport_monitor *monitor = data;
 	struct ast_sip_contact *contact;
-	struct ast_named_lock *lock;
+	struct ast_sip_aor *aor;
 
-	lock = ast_named_lock_get(AST_NAMED_LOCK_TYPE_MUTEX, "aor", monitor->aor_name);
-	if (!lock) {
+	aor = ast_sip_location_retrieve_aor(monitor->aor_name);
+	if (!aor) {
 		ao2_ref(monitor, -1);
 		return 0;
 	}
 
-	ao2_lock(lock);
+	ao2_lock(aor);
 	contact = ast_sip_location_retrieve_contact(monitor->contact_name);
 	if (contact) {
 		ast_sip_location_delete_contact(contact);
@@ -358,8 +358,8 @@ static int register_contact_transport_remove_cb(void *data)
 			contact->user_agent);
 		ao2_ref(contact, -1);
 	}
-	ao2_unlock(lock);
-	ast_named_lock_put(lock);
+	ao2_unlock(aor);
+	ao2_ref(aor, -1);
 
 	ao2_ref(monitor, -1);
 	return 0;
@@ -850,20 +850,11 @@ static int register_aor(pjsip_rx_data *rdata,
 		.code = 500,
 	};
 	struct ao2_container *contacts = NULL;
-	struct ast_named_lock *lock;
 
-	lock = ast_named_lock_get(AST_NAMED_LOCK_TYPE_MUTEX, "aor", aor_name);
-	if (!lock) {
-		pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(),
-			rdata, response.code, NULL, NULL, NULL);
-		return PJ_TRUE;
-	}
-
-	ao2_lock(lock);
+	ao2_lock(aor);
 	contacts = ast_sip_location_retrieve_aor_contacts_nolock(aor);
 	if (!contacts) {
-		ao2_unlock(lock);
-		ast_named_lock_put(lock);
+		ao2_unlock(aor);
 		pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(),
 			rdata, response.code, NULL, NULL, NULL);
 		return PJ_TRUE;
@@ -871,8 +862,7 @@ static int register_aor(pjsip_rx_data *rdata,
 
 	register_aor_core(rdata, endpoint, aor, aor_name, contacts, &response);
 	ao2_cleanup(contacts);
-	ao2_unlock(lock);
-	ast_named_lock_put(lock);
+	ao2_unlock(aor);
 
 	/* Now send the REGISTER response to the peer */
 	if (response.tdata) {
@@ -1121,8 +1111,8 @@ static int ami_show_registrations(struct mansession *s, const struct message *m)
 	int count = 0;
 	struct ast_sip_ami ami = { .s = s, .m = m, .arg = &count, .action_id = astman_get_header(m, "ActionID"), };
 
-	astman_send_listack(s, m, "Following are Events for each Inbound "
-			    "registration", "start");
+	astman_send_listack(s, m, "Following are Events for each Inbound registration",
+		"start");
 
 	ami_registrations_endpoints(&ami);
 
@@ -1280,13 +1270,9 @@ static int load_module(void)
 {
 	const pj_str_t STR_REGISTER = { "REGISTER", 8 };
 
-	CHECK_PJPROJECT_MODULE_LOADED();
-
 	ast_pjproject_get_buildopt("PJ_MAX_HOSTNAME", "%d", &pj_max_hostname);
 	/* As of pjproject 2.4.5, PJSIP_MAX_URL_SIZE isn't exposed yet but we try anyway. */
 	ast_pjproject_get_buildopt("PJSIP_MAX_URL_SIZE", "%d", &pjsip_max_url_size);
-
-	CHECK_PJSIP_MODULE_LOADED();
 
 	if (ast_sip_register_service(&registrar_module)) {
 		return AST_MODULE_LOAD_DECLINE;
@@ -1328,8 +1314,9 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP Registrar Support",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_CHANNEL_DEPEND - 3,
-	       );
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_CHANNEL_DEPEND - 3,
+	.requires = "res_pjproject,res_pjsip",
+);

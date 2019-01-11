@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$");
-
 #include "asterisk/astobj2.h"
 #include "asterisk/stasis_internal.h"
 #include "asterisk/stasis.h"
@@ -372,6 +370,11 @@ const char *stasis_topic_name(const struct stasis_topic *topic)
 	return topic->name;
 }
 
+size_t stasis_topic_subscribers(const struct stasis_topic *topic)
+{
+	return AST_VECTOR_SIZE(&topic->subscribers);
+}
+
 /*! \internal */
 struct stasis_subscription {
 	/*! Unique ID for this subscription */
@@ -393,6 +396,11 @@ struct stasis_subscription {
 	/*! Flag set when final message for sub has been processed.
 	 *  Be sure join_lock is held before reading/setting. */
 	int final_message_processed;
+
+	/*! The message types this subscription is accepting */
+	AST_VECTOR(, char) accepted_message_types;
+	/*! The message filter currently in use */
+	enum stasis_subscription_message_filter filter;
 };
 
 static void subscription_dtor(void *obj)
@@ -411,6 +419,8 @@ static void subscription_dtor(void *obj)
 	ast_taskprocessor_unreference(sub->mailbox);
 	sub->mailbox = NULL;
 	ast_cond_destroy(&sub->join_cond);
+
+	AST_VECTOR_FREE(&sub->accepted_message_types);
 }
 
 /*!
@@ -422,19 +432,25 @@ static void subscription_dtor(void *obj)
 static void subscription_invoke(struct stasis_subscription *sub,
 				  struct stasis_message *message)
 {
+	unsigned int final = stasis_subscription_final_message(sub, message);
+	int message_type_id = stasis_message_type_id(stasis_subscription_change_type());
+
 	/* Notify that the final message has been received */
-	if (stasis_subscription_final_message(sub, message)) {
+	if (final) {
 		ao2_lock(sub);
 		sub->final_message_rxed = 1;
 		ast_cond_signal(&sub->join_cond);
 		ao2_unlock(sub);
 	}
 
-	/* Since sub is mostly immutable, no need to lock sub */
-	sub->callback(sub->data, sub, message);
+	if (!final || sub->filter != STASIS_SUBSCRIPTION_FILTER_SELECTIVE ||
+		(message_type_id < AST_VECTOR_SIZE(&sub->accepted_message_types) && AST_VECTOR_GET(&sub->accepted_message_types, message_type_id))) {
+		/* Since sub is mostly immutable, no need to lock sub */
+		sub->callback(sub->data, sub, message);
+	}
 
 	/* Notify that the final message has been processed */
-	if (stasis_subscription_final_message(sub, message)) {
+	if (final) {
 		ao2_lock(sub);
 		sub->final_message_processed = 1;
 		ast_cond_signal(&sub->join_cond);
@@ -502,6 +518,8 @@ struct stasis_subscription *internal_stasis_subscribe(
 	sub->callback = callback;
 	sub->data = data;
 	ast_cond_init(&sub->join_cond, NULL);
+	sub->filter = STASIS_SUBSCRIPTION_FILTER_NONE;
+	AST_VECTOR_INIT(&sub->accepted_message_types, 0);
 
 	if (topic_add_subscription(topic, sub) != 0) {
 		ao2_ref(sub, -1);
@@ -563,7 +581,10 @@ struct stasis_subscription *stasis_unsubscribe(struct stasis_subscription *sub)
 
 	/* When all that's done, remove the ref the mailbox has on the sub */
 	if (sub->mailbox) {
-		ast_taskprocessor_push(sub->mailbox, sub_cleanup, sub);
+		if (ast_taskprocessor_push(sub->mailbox, sub_cleanup, sub)) {
+			/* Nothing we can do here, the conditional is just to keep
+			 * the compiler happy that we're not ignoring the result. */
+		}
 	}
 
 	/* Unsubscribing unrefs the subscription */
@@ -583,6 +604,76 @@ int stasis_subscription_set_congestion_limits(struct stasis_subscription *subscr
 			low_water, high_water);
 	}
 	return res;
+}
+
+int stasis_subscription_accept_message_type(struct stasis_subscription *subscription,
+	const struct stasis_message_type *type)
+{
+	if (!subscription) {
+		return -1;
+	}
+
+	ast_assert(type != NULL);
+	ast_assert(stasis_message_type_name(type) != NULL);
+
+	if (!type || !stasis_message_type_name(type)) {
+		/* Filtering is unreliable as this message type is not yet initialized
+		 * so force all messages through.
+		 */
+		subscription->filter = STASIS_SUBSCRIPTION_FILTER_FORCED_NONE;
+		return 0;
+	}
+
+	ao2_lock(subscription->topic);
+	if (AST_VECTOR_REPLACE(&subscription->accepted_message_types, stasis_message_type_id(type), 1)) {
+		/* We do this for the same reason as above. The subscription can still operate, so allow
+		 * it to do so by forcing all messages through.
+		 */
+		subscription->filter = STASIS_SUBSCRIPTION_FILTER_FORCED_NONE;
+	}
+	ao2_unlock(subscription->topic);
+
+	return 0;
+}
+
+int stasis_subscription_decline_message_type(struct stasis_subscription *subscription,
+	const struct stasis_message_type *type)
+{
+	if (!subscription) {
+		return -1;
+	}
+
+	ast_assert(type != NULL);
+	ast_assert(stasis_message_type_name(type) != NULL);
+
+	if (!type || !stasis_message_type_name(type)) {
+		return 0;
+	}
+
+	ao2_lock(subscription->topic);
+	if (stasis_message_type_id(type) < AST_VECTOR_SIZE(&subscription->accepted_message_types)) {
+		/* The memory is already allocated so this can't fail */
+		AST_VECTOR_REPLACE(&subscription->accepted_message_types, stasis_message_type_id(type), 0);
+	}
+	ao2_unlock(subscription->topic);
+
+	return 0;
+}
+
+int stasis_subscription_set_filter(struct stasis_subscription *subscription,
+	enum stasis_subscription_message_filter filter)
+{
+	if (!subscription) {
+		return -1;
+	}
+
+	ao2_lock(subscription->topic);
+	if (subscription->filter != STASIS_SUBSCRIPTION_FILTER_FORCED_NONE) {
+		subscription->filter = filter;
+	}
+	ao2_unlock(subscription->topic);
+
+	return 0;
 }
 
 void stasis_subscription_join(struct stasis_subscription *subscription)
@@ -780,6 +871,18 @@ static void dispatch_message(struct stasis_subscription *sub,
 	struct stasis_message *message,
 	int synchronous)
 {
+	/* Determine if this subscription is interested in this message. Note that final
+	 * messages are special and are always invoked on the subscription.
+	 */
+	if (sub->filter == STASIS_SUBSCRIPTION_FILTER_SELECTIVE) {
+		int message_type_id = stasis_message_type_id(stasis_message_type(message));
+		if ((message_type_id >= AST_VECTOR_SIZE(&sub->accepted_message_types) ||
+			!AST_VECTOR_GET(&sub->accepted_message_types, message_type_id)) &&
+			!stasis_subscription_final_message(sub, message)) {
+			return;
+		}
+	}
+
 	if (!sub->mailbox) {
 		/* Dispatch directly */
 		subscription_invoke(sub, message);
@@ -838,6 +941,11 @@ static void publish_msg(struct stasis_topic *topic,
 
 	ast_assert(topic != NULL);
 	ast_assert(message != NULL);
+
+	/* If there are no subscribers don't bother */
+	if (!stasis_topic_subscribers(topic)) {
+		return;
+	}
 
 	/*
 	 * The topic may be unref'ed by the subscription invocation.
@@ -969,22 +1077,23 @@ static void subscription_change_dtor(void *obj)
 {
 	struct stasis_subscription_change *change = obj;
 
-	ast_string_field_free_memory(change);
 	ao2_cleanup(change->topic);
 }
 
 static struct stasis_subscription_change *subscription_change_alloc(struct stasis_topic *topic, const char *uniqueid, const char *description)
 {
+	size_t description_len = strlen(description) + 1;
 	struct stasis_subscription_change *change;
 
-	change = ao2_alloc(sizeof(struct stasis_subscription_change), subscription_change_dtor);
-	if (!change || ast_string_field_init(change, 128)) {
-		ao2_cleanup(change);
+	change = ao2_alloc_options(sizeof(*change) + description_len + strlen(uniqueid) + 1,
+		subscription_change_dtor, AO2_ALLOC_OPT_LOCK_NOLOCK);
+	if (!change) {
 		return NULL;
 	}
 
-	ast_string_field_set(change, uniqueid, uniqueid);
-	ast_string_field_set(change, description, description);
+	strcpy(change->description, description); /* SAFE */
+	change->uniqueid = change->description + description_len;
+	strcpy(change->uniqueid, uniqueid); /* SAFE */
 	ao2_ref(topic, +1);
 	change->topic = topic;
 
@@ -1081,6 +1190,15 @@ static void topic_pool_dtor(void *obj)
 {
 	struct stasis_topic_pool *pool = obj;
 
+#ifdef AO2_DEBUG
+	{
+		char *container_name =
+			ast_alloca(strlen(stasis_topic_name(pool->pool_topic)) + strlen("-pool") + 1);
+		sprintf(container_name, "%s-pool", stasis_topic_name(pool->pool_topic));
+		ao2_container_unregister(container_name);
+	}
+#endif
+
 	ao2_cleanup(pool->pool_container);
 	pool->pool_container = NULL;
 	ao2_cleanup(pool->pool_topic);
@@ -1145,6 +1263,18 @@ static int topic_pool_entry_cmp(void *obj, void *arg, int flags)
 	return CMP_MATCH;
 }
 
+#ifdef AO2_DEBUG
+static void topic_pool_prnt_obj(void *v_obj, void *where, ao2_prnt_fn *prnt)
+{
+	struct topic_pool_entry *entry = v_obj;
+
+	if (!entry) {
+		return;
+	}
+	prnt(where, "%s", stasis_topic_name(entry->topic));
+}
+#endif
+
 struct stasis_topic_pool *stasis_topic_pool_create(struct stasis_topic *pooled_topic)
 {
 	struct stasis_topic_pool *pool;
@@ -1154,16 +1284,31 @@ struct stasis_topic_pool *stasis_topic_pool_create(struct stasis_topic *pooled_t
 		return NULL;
 	}
 
-	pool->pool_container = ao2_container_alloc(TOPIC_POOL_BUCKETS,
-		topic_pool_entry_hash, topic_pool_entry_cmp);
+	pool->pool_container = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		TOPIC_POOL_BUCKETS, topic_pool_entry_hash, NULL, topic_pool_entry_cmp);
 	if (!pool->pool_container) {
 		ao2_cleanup(pool);
 		return NULL;
 	}
+
+#ifdef AO2_DEBUG
+	{
+		char *container_name =
+			ast_alloca(strlen(stasis_topic_name(pooled_topic)) + strlen("-pool") + 1);
+		sprintf(container_name, "%s-pool", stasis_topic_name(pooled_topic));
+		ao2_container_register(container_name, pool->pool_container, topic_pool_prnt_obj);
+	}
+#endif
+
 	ao2_ref(pooled_topic, +1);
 	pool->pool_topic = pooled_topic;
 
 	return pool;
+}
+
+void stasis_topic_pool_delete_topic(struct stasis_topic_pool *pool, const char *topic_name)
+{
+	ao2_find(pool->pool_container, topic_name, OBJ_SEARCH_KEY | OBJ_NODATA | OBJ_UNLINK);
 }
 
 struct stasis_topic *stasis_topic_pool_get_topic(struct stasis_topic_pool *pool, const char *topic_name)
@@ -1334,8 +1479,8 @@ static struct ast_json *multi_user_event_to_json(
 
 	ast_json_object_set(out, "type", ast_json_string_create("ChannelUserevent"));
 	ast_json_object_set(out, "timestamp", ast_json_timeval(*tv, NULL));
-	ast_json_object_set(out, "eventname", ast_json_string_create(ast_json_string_get((ast_json_object_get(blob, "eventname")))));
-	ast_json_object_set(out, "userevent", ast_json_deep_copy(blob));
+	ast_json_object_set(out, "eventname", ast_json_ref(ast_json_object_get(blob, "eventname")));
+	ast_json_object_set(out, "userevent", ast_json_ref(blob));
 
 	for (type = 0; type < STASIS_UMOS_MAX; ++type) {
 		for (i = 0; i < AST_VECTOR_SIZE(&multi->snapshots[type]); ++i) {

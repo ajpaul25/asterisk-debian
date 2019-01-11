@@ -36,8 +36,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/file.h"
 #include "asterisk/channel.h"
 #include "asterisk/pbx.h"
@@ -118,6 +116,9 @@ static SQLHSTMT custom_prepare(struct odbc_obj *obj, void *data)
 
 	res = SQLPrepare(stmt, (unsigned char *)cps->sql, SQL_NTS);
 	if ((res != SQL_SUCCESS) && (res != SQL_SUCCESS_WITH_INFO)) {
+		if (res == SQL_ERROR) {
+			ast_odbc_print_errors(SQL_HANDLE_STMT, stmt, "SQL Prepare");
+		}
 		ast_log(LOG_WARNING, "SQL Prepare failed! [%s]\n", cps->sql);
 		SQLFreeHandle (SQL_HANDLE_STMT, stmt);
 		return NULL;
@@ -633,6 +634,9 @@ static SQLHSTMT update2_prepare(struct odbc_obj *obj, void *data)
 
 	res = SQLPrepare(stmt, (unsigned char *)ast_str_buffer(sql), SQL_NTS);
 	if ((res != SQL_SUCCESS) && (res != SQL_SUCCESS_WITH_INFO)) {
+		if (res == SQL_ERROR) {
+			ast_odbc_print_errors(SQL_HANDLE_STMT, stmt, "SQL Prepare");
+		}
 		ast_log(LOG_WARNING, "SQL Prepare failed! [%s]\n", ast_str_buffer(sql));
 		SQLFreeHandle(SQL_HANDLE_STMT, stmt);
 		return NULL;
@@ -1235,9 +1239,10 @@ static int reload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "Realtime ODBC configuration",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload_module,
-		.load_pri = AST_MODPRI_REALTIME_DRIVER,
-		);
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload_module,
+	.load_pri = AST_MODPRI_REALTIME_DRIVER,
+	.requires = "extconfig,res_odbc",
+);

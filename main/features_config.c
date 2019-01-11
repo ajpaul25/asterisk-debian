@@ -26,6 +26,8 @@
 #include "asterisk/app.h"
 #include "asterisk/cli.h"
 
+#include "features_config.h"
+
 /*** DOCUMENTATION
 	<configInfo name="features" language="en_US">
 		<synopsis>Features Configuration</synopsis>
@@ -378,9 +380,9 @@
 #define DEFAULT_ATXFER_COMPLETE                     "*2"
 #define DEFAULT_ATXFER_THREEWAY                     "*3"
 #define DEFAULT_ATXFER_SWAP                         "*4"
-#define DEFAULT_TRANSFER_DIAL_ATTEMPTS              1
+#define DEFAULT_TRANSFER_DIAL_ATTEMPTS              3
 #define DEFAULT_TRANSFER_RETRY_SOUND                "pbx-invalid"
-#define DEFAULT_TRANSFER_INVALID_SOUND              "pbx-invalid"
+#define DEFAULT_TRANSFER_INVALID_SOUND              "privacy-incorrect"
 
 /*! Default pickup options */
 #define DEFAULT_PICKUPEXTEN                         "*8"
@@ -757,8 +759,8 @@ static struct features_config *__features_config_alloc(int allocate_applicationm
 			return NULL;
 		}
 
-		cfg->featuregroups = ao2_container_alloc_options(AO2_ALLOC_OPT_LOCK_NOLOCK, 11, featuregroup_hash,
-			featuregroup_cmp);
+		cfg->featuregroups = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_NOLOCK, 0, 11,
+			featuregroup_hash, NULL, featuregroup_cmp);
 		if (!cfg->featuregroups) {
 			return NULL;
 		}
@@ -1971,7 +1973,7 @@ static struct ast_cli_entry cli_features_config[] = {
 	AST_CLI_DEFINE(handle_feature_show, "Lists configured features"),
 };
 
-void ast_features_config_shutdown(void)
+void unload_features_config(void)
 {
 	ast_custom_function_unregister(&featuremap_function);
 	ast_custom_function_unregister(&feature_function);
@@ -1980,7 +1982,7 @@ void ast_features_config_shutdown(void)
 	ao2_global_obj_release(globals);
 }
 
-int ast_features_config_reload(void)
+int reload_features_config(void)
 {
 	/* Rearm the parking config options have moved warning. */
 	parking_warning = 0;
@@ -1991,7 +1993,7 @@ int ast_features_config_reload(void)
 	return 0;
 }
 
-int ast_features_config_init(void)
+int load_features_config(void)
 {
 	int res;
 

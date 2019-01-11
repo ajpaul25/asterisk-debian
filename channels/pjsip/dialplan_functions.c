@@ -121,6 +121,60 @@
 		<ref type="function">PJSIP_MEDIA_OFFER</ref>
 	</see-also>
 </function>
+<function name="PJSIP_PARSE_URI" language="en_US">
+	<synopsis>
+		Parse an uri and return a type part of the URI.
+	</synopsis>
+	<syntax>
+		<parameter name="uri" required="true">
+			<para>URI to parse</para>
+		</parameter>
+		<parameter name="type" required="true">
+			<para>The <literal>type</literal> parameter specifies which URI part to read</para>
+			<enumlist>
+				<enum name="display">
+					<para>Display name.</para>
+				</enum>
+				<enum name="scheme">
+					<para>URI scheme.</para>
+				</enum>
+				<enum name="user">
+					<para>User part.</para>
+				</enum>
+				<enum name="passwd">
+					<para>Password part.</para>
+				</enum>
+				<enum name="host">
+					<para>Host part.</para>
+				</enum>
+				<enum name="port">
+					<para>Port number, or zero.</para>
+				</enum>
+				<enum name="user_param">
+					<para>User parameter.</para>
+				</enum>
+				<enum name="method_param">
+					<para>Method parameter.</para>
+				</enum>
+				<enum name="transport_param">
+					<para>Transport parameter.</para>
+				</enum>
+				<enum name="ttl_param">
+					<para>TTL param, or -1.</para>
+				</enum>
+				<enum name="lr_param">
+					<para>Loose routing param, or zero.</para>
+				</enum>
+				<enum name="maddr_param">
+					<para>Maddr param.</para>
+				</enum>
+			</enumlist>
+		</parameter>
+	</syntax>
+	<description>
+		<para>Parse an URI and return a specified part of the URI.</para>
+	</description>
+</function>
 <info name="CHANNEL" language="en_US" tech="PJSIP">
 	<enumlist>
 		<enum name="rtp">
@@ -454,13 +508,12 @@
 #include <pjlib.h>
 #include <pjsip_ua.h>
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/astobj2.h"
 #include "asterisk/module.h"
 #include "asterisk/acl.h"
 #include "asterisk/app.h"
 #include "asterisk/channel.h"
+#include "asterisk/stream.h"
 #include "asterisk/format.h"
 #include "asterisk/dsp.h"
 #include "asterisk/pbx.h"
@@ -486,8 +539,8 @@ static const char *t38state_to_string[T38_MAX_ENUM] = {
 static int channel_read_rtp(struct ast_channel *chan, const char *type, const char *field, char *buf, size_t buflen)
 {
 	struct ast_sip_channel_pvt *channel = ast_channel_tech_pvt(chan);
-	struct chan_pjsip_pvt *pvt;
-	struct ast_sip_session_media *media = NULL;
+	struct ast_sip_session *session;
+	struct ast_sip_session_media *media;
 	struct ast_sockaddr addr;
 
 	if (!channel) {
@@ -495,9 +548,9 @@ static int channel_read_rtp(struct ast_channel *chan, const char *type, const ch
 		return -1;
 	}
 
-	pvt = channel->pvt;
-	if (!pvt) {
-		ast_log(AST_LOG_WARNING, "Channel %s has no chan_pjsip pvt!\n", ast_channel_name(chan));
+	session = channel->session;
+	if (!session) {
+		ast_log(AST_LOG_WARNING, "Channel %s has no session!\n", ast_channel_name(chan));
 		return -1;
 	}
 
@@ -507,9 +560,9 @@ static int channel_read_rtp(struct ast_channel *chan, const char *type, const ch
 	}
 
 	if (ast_strlen_zero(field) || !strcmp(field, "audio")) {
-		media = pvt->media[SIP_MEDIA_AUDIO];
+		media = session->active_media_state->default_session[AST_MEDIA_TYPE_AUDIO];
 	} else if (!strcmp(field, "video")) {
-		media = pvt->media[SIP_MEDIA_VIDEO];
+		media = session->active_media_state->default_session[AST_MEDIA_TYPE_VIDEO];
 	} else {
 		ast_log(AST_LOG_WARNING, "Unknown media type field '%s' for 'rtp' information\n", field);
 		return -1;
@@ -538,7 +591,7 @@ static int channel_read_rtp(struct ast_channel *chan, const char *type, const ch
 			snprintf(buf, buflen, "%d", 0);
 		}
 	} else if (!strcmp(type, "hold")) {
-		snprintf(buf, buflen, "%d", media->held ? 1 : 0);
+		snprintf(buf, buflen, "%d", media->remotely_held ? 1 : 0);
 	} else {
 		ast_log(AST_LOG_WARNING, "Unknown type field '%s' specified for 'rtp' information\n", type);
 		return -1;
@@ -553,17 +606,17 @@ static int channel_read_rtp(struct ast_channel *chan, const char *type, const ch
 static int channel_read_rtcp(struct ast_channel *chan, const char *type, const char *field, char *buf, size_t buflen)
 {
 	struct ast_sip_channel_pvt *channel = ast_channel_tech_pvt(chan);
-	struct chan_pjsip_pvt *pvt;
-	struct ast_sip_session_media *media = NULL;
+	struct ast_sip_session *session;
+	struct ast_sip_session_media *media;
 
 	if (!channel) {
 		ast_log(AST_LOG_WARNING, "Channel %s has no pvt!\n", ast_channel_name(chan));
 		return -1;
 	}
 
-	pvt = channel->pvt;
-	if (!pvt) {
-		ast_log(AST_LOG_WARNING, "Channel %s has no chan_pjsip pvt!\n", ast_channel_name(chan));
+	session = channel->session;
+	if (!session) {
+		ast_log(AST_LOG_WARNING, "Channel %s has no session!\n", ast_channel_name(chan));
 		return -1;
 	}
 
@@ -573,9 +626,9 @@ static int channel_read_rtcp(struct ast_channel *chan, const char *type, const c
 	}
 
 	if (ast_strlen_zero(field) || !strcmp(field, "audio")) {
-		media = pvt->media[SIP_MEDIA_AUDIO];
+		media = session->active_media_state->default_session[AST_MEDIA_TYPE_AUDIO];
 	} else if (!strcmp(field, "video")) {
-		media = pvt->media[SIP_MEDIA_VIDEO];
+		media = session->active_media_state->default_session[AST_MEDIA_TYPE_VIDEO];
 	} else {
 		ast_log(AST_LOG_WARNING, "Unknown media type field '%s' for 'rtcp' information\n", field);
 		return -1;
@@ -987,22 +1040,238 @@ int pjsip_acf_dial_contacts_read(struct ast_channel *chan, const char *cmd, char
 	return 0;
 }
 
+/*! \brief Session refresh state information */
+struct session_refresh_state {
+	/*! \brief Created proposed media state */
+	struct ast_sip_session_media_state *media_state;
+};
+
+/*! \brief Destructor for session refresh information */
+static void session_refresh_state_destroy(void *obj)
+{
+	struct session_refresh_state *state = obj;
+
+	ast_sip_session_media_state_free(state->media_state);
+	ast_free(obj);
+}
+
+/*! \brief Datastore for attaching session refresh state information */
+static const struct ast_datastore_info session_refresh_datastore = {
+	.type = "pjsip_session_refresh",
+	.destroy = session_refresh_state_destroy,
+};
+
+/*! \brief Helper function which retrieves or allocates a session refresh state information datastore */
+static struct session_refresh_state *session_refresh_state_get_or_alloc(struct ast_sip_session *session)
+{
+	RAII_VAR(struct ast_datastore *, datastore, ast_sip_session_get_datastore(session, "pjsip_session_refresh"), ao2_cleanup);
+	struct session_refresh_state *state;
+
+	/* While the datastore refcount is decremented this is operating in the serializer so it will remain valid regardless */
+	if (datastore) {
+		return datastore->data;
+	}
+
+	if (!(datastore = ast_sip_session_alloc_datastore(&session_refresh_datastore, "pjsip_session_refresh"))
+		|| !(datastore->data = ast_calloc(1, sizeof(struct session_refresh_state)))
+		|| ast_sip_session_add_datastore(session, datastore)) {
+		return NULL;
+	}
+
+	state = datastore->data;
+	state->media_state = ast_sip_session_media_state_alloc();
+	if (!state->media_state) {
+		ast_sip_session_remove_datastore(session, "pjsip_session_refresh");
+		return NULL;
+	}
+	state->media_state->topology = ast_stream_topology_clone(session->endpoint->media.topology);
+	if (!state->media_state->topology) {
+		ast_sip_session_remove_datastore(session, "pjsip_session_refresh");
+		return NULL;
+	}
+
+	datastore->data = state;
+
+	return state;
+}
+
+/*! \brief Struct used to push PJSIP_PARSE_URI function arguments to task processor */
+struct parse_uri_args {
+	const char *uri;
+	const char *type;
+	char *buf;
+	size_t buflen;
+	int ret;
+};
+
+/*! \internal \brief Taskprocessor callback that handles the PJSIP_PARSE_URI on a PJSIP thread */
+static int parse_uri_cb(void *data)
+{
+	struct parse_uri_args *args = data;
+	pj_pool_t *pool;
+	pjsip_name_addr *uri;
+	pjsip_sip_uri *sip_uri;
+	pj_str_t tmp;
+
+	args->ret = 0;
+
+	pool = pjsip_endpt_create_pool(ast_sip_get_pjsip_endpoint(), "ParseUri", 128, 128);
+	if (!pool) {
+		ast_log(LOG_ERROR, "Failed to allocate ParseUri endpoint pool.\n");
+		args->ret = -1;
+		return 0;
+	}
+
+	pj_strdup2_with_null(pool, &tmp, args->uri);
+	uri = (pjsip_name_addr *)pjsip_parse_uri(pool, tmp.ptr, tmp.slen, PJSIP_PARSE_URI_AS_NAMEADDR);
+	if (!uri) {
+		ast_log(LOG_WARNING, "Failed to parse URI '%s'\n", args->uri);
+		pjsip_endpt_release_pool(ast_sip_get_pjsip_endpoint(), pool);
+		args->ret = -1;
+		return 0;
+	}
+
+	if (!strcmp(args->type, "scheme")) {
+		ast_copy_pj_str(args->buf, pjsip_uri_get_scheme(uri), args->buflen);
+		pjsip_endpt_release_pool(ast_sip_get_pjsip_endpoint(), pool);
+		return 0;
+	} else if (!strcmp(args->type, "display")) {
+		ast_copy_pj_str(args->buf, &uri->display, args->buflen);
+		pjsip_endpt_release_pool(ast_sip_get_pjsip_endpoint(), pool);
+		return 0;
+	}
+
+	sip_uri = pjsip_uri_get_uri(uri);
+	if (!sip_uri) {
+		ast_log(LOG_ERROR, "Failed to get an URI object for '%s'\n", args->uri);
+		pjsip_endpt_release_pool(ast_sip_get_pjsip_endpoint(), pool);
+		args->ret = -1;
+		return 0;
+	}
+
+	if (!strcmp(args->type, "user")) {
+		ast_copy_pj_str(args->buf, &sip_uri->user, args->buflen);
+	} else if (!strcmp(args->type, "passwd")) {
+		ast_copy_pj_str(args->buf, &sip_uri->passwd, args->buflen);
+	} else if (!strcmp(args->type, "host")) {
+		ast_copy_pj_str(args->buf, &sip_uri->host, args->buflen);
+	} else if (!strcmp(args->type, "port")) {
+		snprintf(args->buf, args->buflen, "%d", sip_uri->port);
+	} else if (!strcmp(args->type, "user_param")) {
+		ast_copy_pj_str(args->buf, &sip_uri->user_param, args->buflen);
+	} else if (!strcmp(args->type, "method_param")) {
+		ast_copy_pj_str(args->buf, &sip_uri->method_param, args->buflen);
+	} else if (!strcmp(args->type, "transport_param")) {
+		ast_copy_pj_str(args->buf, &sip_uri->transport_param, args->buflen);
+	} else if (!strcmp(args->type, "ttl_param")) {
+		snprintf(args->buf, args->buflen, "%d", sip_uri->ttl_param);
+	} else if (!strcmp(args->type, "lr_param")) {
+		snprintf(args->buf, args->buflen, "%d", sip_uri->lr_param);
+	} else if (!strcmp(args->type, "maddr_param")) {
+		ast_copy_pj_str(args->buf, &sip_uri->maddr_param, args->buflen);
+	} else {
+		ast_log(AST_LOG_WARNING, "Unknown type part '%s' specified\n", args->type);
+		pjsip_endpt_release_pool(ast_sip_get_pjsip_endpoint(), pool);
+		args->ret = -1;
+		return 0;
+	}
+
+	pjsip_endpt_release_pool(ast_sip_get_pjsip_endpoint(), pool);
+
+	return 0;
+}
+
+int pjsip_acf_parse_uri_read(struct ast_channel *chan, const char *cmd, char *data, char *buf, size_t buflen)
+{
+	struct parse_uri_args func_args = { 0, };
+
+	AST_DECLARE_APP_ARGS(args,
+		AST_APP_ARG(uri_str);
+		AST_APP_ARG(type);
+	);
+
+	AST_STANDARD_APP_ARGS(args, data);
+
+	if (ast_strlen_zero(args.uri_str)) {
+		ast_log(LOG_WARNING, "An URI must be specified when using the '%s' dialplan function\n", cmd);
+		return -1;
+	}
+
+	if (ast_strlen_zero(args.type)) {
+		ast_log(LOG_WARNING, "A type part of the URI must be specified when using the '%s' dialplan function\n", cmd);
+		return -1;
+	}
+
+	memset(buf, 0, buflen);
+
+	func_args.uri = args.uri_str;
+	func_args.type = args.type;
+	func_args.buf = buf;
+	func_args.buflen = buflen;
+	if (ast_sip_push_task_wait_serializer(NULL, parse_uri_cb, &func_args)) {
+		ast_log(LOG_WARNING, "Unable to parse URI: failed to push task\n");
+		return -1;
+	}
+
+	return func_args.ret;
+}
+
 static int media_offer_read_av(struct ast_sip_session *session, char *buf,
 			       size_t len, enum ast_media_type media_type)
 {
+	struct ast_stream_topology *topology;
 	int idx;
+	struct ast_stream *stream = NULL;
+	struct ast_format_cap *caps;
 	size_t accum = 0;
 
+	if (session->inv_session->dlg->state == PJSIP_DIALOG_STATE_ESTABLISHED) {
+		struct session_refresh_state *state;
+
+		/* As we've already answered we need to store our media state until we are ready to send it */
+		state = session_refresh_state_get_or_alloc(session);
+		if (!state) {
+			return -1;
+		}
+		topology = state->media_state->topology;
+	} else {
+		/* The session is not yet up so we are initially answering or offering */
+		if (!session->pending_media_state->topology) {
+			session->pending_media_state->topology = ast_stream_topology_clone(session->endpoint->media.topology);
+			if (!session->pending_media_state->topology) {
+				return -1;
+			}
+		}
+		topology = session->pending_media_state->topology;
+	}
+
+	/* Find the first suitable stream */
+	for (idx = 0; idx < ast_stream_topology_get_count(topology); ++idx) {
+		stream = ast_stream_topology_get_stream(topology, idx);
+
+		if (ast_stream_get_type(stream) != media_type ||
+			ast_stream_get_state(stream) == AST_STREAM_STATE_REMOVED) {
+			stream = NULL;
+			continue;
+		}
+
+		break;
+	}
+
+	/* If no suitable stream then exit early */
+	if (!stream) {
+		buf[0] = '\0';
+		return 0;
+	}
+
+	caps = ast_stream_get_formats(stream);
+
 	/* Note: buf is not terminated while the string is being built. */
-	for (idx = 0; idx < ast_format_cap_count(session->req_caps); ++idx) {
+	for (idx = 0; idx < ast_format_cap_count(caps); ++idx) {
 		struct ast_format *fmt;
 		size_t size;
 
-		fmt = ast_format_cap_get_format(session->req_caps, idx);
-		if (ast_format_get_type(fmt) != media_type) {
-			ao2_ref(fmt, -1);
-			continue;
-		}
+		fmt = ast_format_cap_get_format(caps, idx);
 
 		/* Add one for a comma or terminator */
 		size = strlen(ast_format_get_name(fmt)) + 1;
@@ -1036,9 +1305,43 @@ struct media_offer_data {
 static int media_offer_write_av(void *obj)
 {
 	struct media_offer_data *data = obj;
+	struct ast_stream_topology *topology;
+	struct ast_stream *stream;
+	struct ast_format_cap *caps;
 
-	ast_format_cap_remove_by_type(data->session->req_caps, data->media_type);
-	ast_format_cap_update_by_allow_disallow(data->session->req_caps, data->value, 1);
+	if (data->session->inv_session->dlg->state == PJSIP_DIALOG_STATE_ESTABLISHED) {
+		struct session_refresh_state *state;
+
+		/* As we've already answered we need to store our media state until we are ready to send it */
+		state = session_refresh_state_get_or_alloc(data->session);
+		if (!state) {
+			return -1;
+		}
+		topology = state->media_state->topology;
+	} else {
+		/* The session is not yet up so we are initially answering or offering */
+		if (!data->session->pending_media_state->topology) {
+			data->session->pending_media_state->topology = ast_stream_topology_clone(data->session->endpoint->media.topology);
+			if (!data->session->pending_media_state->topology) {
+				return -1;
+			}
+		}
+		topology = data->session->pending_media_state->topology;
+	}
+
+	/* XXX This method won't work when it comes time to do multistream support. The proper way to do this
+	 * will either be to
+	 * a) Alter all media streams of a particular type.
+	 * b) Change the dialplan function to be able to specify which stream to alter and alter only that
+	 * one stream
+	 */
+	stream = ast_stream_topology_get_first_stream_by_type(topology, data->media_type);
+	if (!stream) {
+		return 0;
+	}
+	caps = ast_stream_get_formats(stream);
+	ast_format_cap_remove_by_type(caps, data->media_type);
+	ast_format_cap_update_by_allow_disallow(caps, data->value, 1);
 
 	return 0;
 }
@@ -1164,7 +1467,7 @@ static int dtmf_mode_refresh_cb(void *obj)
 		ast_debug(3, "Changing DTMF mode on channel %s after OFFER/ANSWER completion. Sending session refresh\n", ast_channel_name(data->session->channel));
 
 		ast_sip_session_refresh(data->session, NULL, NULL,
-			sip_session_response_cb, data->method, 1);
+			sip_session_response_cb, data->method, 1, NULL);
 	} else if (data->session->inv_session->state == PJSIP_INV_STATE_INCOMING) {
 		ast_debug(3, "Changing DTMF mode on channel %s during OFFER/ANSWER exchange. Updating SDP answer\n", ast_channel_name(data->session->channel));
 		ast_sip_session_regenerate_answer(data->session, NULL);
@@ -1176,7 +1479,7 @@ static int dtmf_mode_refresh_cb(void *obj)
 int pjsip_acf_dtmf_mode_write(struct ast_channel *chan, const char *cmd, char *data, const char *value)
 {
 	struct ast_sip_channel_pvt *channel;
-	struct chan_pjsip_pvt *pjsip_pvt;
+	struct ast_sip_session_media *media;
 	int dsp_features = 0;
 	int dtmf = -1;
 	struct refresh_data rdata = {
@@ -1215,30 +1518,31 @@ int pjsip_acf_dtmf_mode_write(struct ast_channel *chan, const char *cmd, char *d
 
 	channel->session->dtmf = dtmf;
 
-	pjsip_pvt = channel->pvt;
-	if (pjsip_pvt->media[SIP_MEDIA_AUDIO]  && (pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp) {
+	media = channel->session->active_media_state->default_session[AST_MEDIA_TYPE_AUDIO];
+
+	if (media && media->rtp) {
 		if (channel->session->dtmf == AST_SIP_DTMF_RFC_4733) {
-			ast_rtp_instance_set_prop((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_PROPERTY_DTMF, 1);
-			ast_rtp_instance_dtmf_mode_set((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_DTMF_MODE_RFC2833);
+			ast_rtp_instance_set_prop(media->rtp, AST_RTP_PROPERTY_DTMF, 1);
+			ast_rtp_instance_dtmf_mode_set(media->rtp, AST_RTP_DTMF_MODE_RFC2833);
 		} else if (channel->session->dtmf == AST_SIP_DTMF_INFO) {
-			ast_rtp_instance_set_prop((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_PROPERTY_DTMF, 0);
-			ast_rtp_instance_dtmf_mode_set((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_DTMF_MODE_NONE);
+			ast_rtp_instance_set_prop(media->rtp, AST_RTP_PROPERTY_DTMF, 0);
+			ast_rtp_instance_dtmf_mode_set(media->rtp, AST_RTP_DTMF_MODE_NONE);
 		} else if (channel->session->dtmf == AST_SIP_DTMF_INBAND) {
-			ast_rtp_instance_set_prop((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_PROPERTY_DTMF, 0);
-			ast_rtp_instance_dtmf_mode_set((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_DTMF_MODE_INBAND);
+			ast_rtp_instance_set_prop(media->rtp, AST_RTP_PROPERTY_DTMF, 0);
+			ast_rtp_instance_dtmf_mode_set(media->rtp, AST_RTP_DTMF_MODE_INBAND);
 		} else if (channel->session->dtmf == AST_SIP_DTMF_NONE) {
-			ast_rtp_instance_set_prop((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_PROPERTY_DTMF, 0);
-			ast_rtp_instance_dtmf_mode_set((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_DTMF_MODE_NONE);
+			ast_rtp_instance_set_prop(media->rtp, AST_RTP_PROPERTY_DTMF, 0);
+			ast_rtp_instance_dtmf_mode_set(media->rtp, AST_RTP_DTMF_MODE_NONE);
 		} else if (channel->session->dtmf == AST_SIP_DTMF_AUTO) {
-			if (ast_rtp_instance_dtmf_mode_get((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp) != AST_RTP_DTMF_MODE_RFC2833) {
+			if (ast_rtp_instance_dtmf_mode_get(media->rtp) != AST_RTP_DTMF_MODE_RFC2833) {
 				/* no RFC4733 negotiated, enable inband */
-				ast_rtp_instance_dtmf_mode_set((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_DTMF_MODE_INBAND);
+				ast_rtp_instance_dtmf_mode_set(media->rtp, AST_RTP_DTMF_MODE_INBAND);
 			}
 		} else if (channel->session->dtmf == AST_SIP_DTMF_AUTO_INFO) {
-			ast_rtp_instance_set_prop((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_PROPERTY_DTMF, 0);
-			if (ast_rtp_instance_dtmf_mode_get((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp) == AST_RTP_DTMF_MODE_INBAND) {
+			ast_rtp_instance_set_prop(media->rtp, AST_RTP_PROPERTY_DTMF, 0);
+			if (ast_rtp_instance_dtmf_mode_get(media->rtp) == AST_RTP_DTMF_MODE_INBAND) {
 				/* if inband, switch to INFO */
-				ast_rtp_instance_dtmf_mode_set((pjsip_pvt->media[SIP_MEDIA_AUDIO])->rtp, AST_RTP_DTMF_MODE_NONE);
+				ast_rtp_instance_dtmf_mode_set(media->rtp, AST_RTP_DTMF_MODE_NONE);
 			}
 		}
 	}
@@ -1273,9 +1577,18 @@ int pjsip_acf_dtmf_mode_write(struct ast_channel *chan, const char *cmd, char *d
 static int refresh_write_cb(void *obj)
 {
 	struct refresh_data *data = obj;
+	struct session_refresh_state *state;
+
+	state = session_refresh_state_get_or_alloc(data->session);
+	if (!state) {
+		return -1;
+	}
 
 	ast_sip_session_refresh(data->session, NULL, NULL,
-		sip_session_response_cb, data->method, 1);
+		sip_session_response_cb, data->method, 1, state->media_state);
+
+	state->media_state = NULL;
+	ast_sip_session_remove_datastore(data->session, "pjsip_session_refresh");
 
 	return 0;
 }

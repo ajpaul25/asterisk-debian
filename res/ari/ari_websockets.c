@@ -18,8 +18,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/ari.h"
 #include "asterisk/astobj2.h"
 #include "asterisk/http_websocket.h"
@@ -200,4 +198,10 @@ void ari_handle_websocket(struct ast_websocket_server *ws_server,
 	};
 	ast_websocket_uri_cb(ser, &fake_urih, uri, method, get_params,
 		headers);
+}
+
+const char *ast_ari_websocket_session_id(
+	const struct ast_ari_websocket_session *session)
+{
+	return ast_websocket_session_id(session->ws_session);
 }

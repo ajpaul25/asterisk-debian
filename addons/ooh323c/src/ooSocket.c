@@ -15,8 +15,6 @@
  *****************************************************************************/
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #ifdef SOLARIS
 #include <sys/sockio.h>
 #endif

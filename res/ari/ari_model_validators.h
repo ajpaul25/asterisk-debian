@@ -23,11 +23,10 @@
  * the validator's function pointer.
  *
  * The reason for this seamingly useless indirection is the way function
- * pointers interfere with module loading. Asterisk attempts to dlopen() each
- * module using \c RTLD_LAZY in order to read some metadata from the module.
- * Unfortunately, if you take the address of a function, the function has to be
- * resolvable at load time, even if \c RTLD_LAZY is specified. By moving the
- * function-address-taking into this module, we can once again be lazy.
+ * pointers used to interfere with module loading. Previously, Asterisk
+ * attempted to dlopen() each module using \c RTLD_LAZY in order to read some
+ * metadata from the module. Using functions to get the function pointer
+ * allowed us to be lazy.
  */
 
  /*
@@ -1205,6 +1204,24 @@ int ast_ari_validate_peer_status_change(struct ast_json *json);
 ari_validator ast_ari_validate_peer_status_change_fn(void);
 
 /*!
+ * \brief Validator for PlaybackContinuing.
+ *
+ * Event showing the continuation of a media playback operation from one media URI to the next in the list.
+ *
+ * \param json JSON object to validate.
+ * \returns True (non-zero) if valid.
+ * \returns False (zero) if invalid.
+ */
+int ast_ari_validate_playback_continuing(struct ast_json *json);
+
+/*!
+ * \brief Function pointer to ast_ari_validate_playback_continuing().
+ *
+ * See \ref ast_ari_model_validators.h for more details.
+ */
+ari_validator ast_ari_validate_playback_continuing_fn(void);
+
+/*!
  * \brief Validator for PlaybackFinished.
  *
  * Event showing the completion of a media playback operation.
@@ -1432,6 +1449,7 @@ ari_validator ast_ari_validate_application_fn(void);
  * Channel
  * - accountcode: string (required)
  * - caller: CallerID (required)
+ * - channelvars: object
  * - connected: CallerID (required)
  * - creationtime: Date (required)
  * - dialplan: DialplanCEP (required)
@@ -1477,6 +1495,7 @@ ari_validator ast_ari_validate_application_fn(void);
  * - id: string (required)
  * - language: string
  * - media_uri: string (required)
+ * - next_media_uri: string
  * - state: string (required)
  * - target_uri: string (required)
  * DeviceState
@@ -1727,6 +1746,12 @@ ari_validator ast_ari_validate_application_fn(void);
  * - timestamp: Date
  * - endpoint: Endpoint (required)
  * - peer: Peer (required)
+ * PlaybackContinuing
+ * - asterisk_id: string
+ * - type: string (required)
+ * - application: string (required)
+ * - timestamp: Date
+ * - playback: Playback (required)
  * PlaybackFinished
  * - asterisk_id: string
  * - type: string (required)

@@ -10,7 +10,19 @@
  * we need to dynamically determine which docker image we're going to use and
  * you can't do that in a delcarative pipeline.
  */
+def timeoutTime = 30
+def timeoutUnits = 'MINUTES'
+if (env.TIMEOUT_UNITTESTS) {
+	def _timeout = env.TIMEOUT_UNITTESTS.split()
+	timeoutTime = _timeout[0].toInteger()
+	timeoutUnits = _timeout[1]
+}
+
 pipeline {
+	options {
+		timestamps()
+		timeout(time: timeoutTime, unit: timeoutUnits)
+	}
 	triggers {
 		/*
 		 * This trigger will match either the "asterisk" or "Security-asterisk"
@@ -129,7 +141,7 @@ pipeline {
 					def randomImage = env.DOCKER_REGISTRY + "/" + ri;
 					def bt = env.BUILD_TAG.replaceAll(/[^a-zA-Z0-9_.-]/, '-')
 					def dockerOptions = "--privileged --ulimit core=0 --ulimit nofile=10240 " +
-						" -v /srv/jenkins:/srv/jenkins:rw -v /srv/cache:/srv/cache:rw " +
+						" --mount type=tmpfs,tmpfs-size=1g,dst=/tmp -v /srv/jenkins:/srv/jenkins:rw -v /srv/cache:/srv/cache:rw " +
 						" --entrypoint='' --name ${bt}-build"
 					def outputdir = "tests/CI/output/UnitTests"
 
@@ -169,8 +181,8 @@ pipeline {
 	}
 	post {
 		cleanup {
-			sh "sudo make distclean 2&>/dev/null || : "
-			sh "sudo rm -rf tests/CI/output 2&>/dev/null || : "
+			sh "sudo make distclean >/dev/null 2>&1 || : "
+			sh "sudo rm -rf tests/CI/output >/dev/null 2>&1 || : "
 		}
 		/*
 		 * The Gerrit Trigger will automatically post the "Verified" results back

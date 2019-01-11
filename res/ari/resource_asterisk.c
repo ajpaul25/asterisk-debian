@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/ast_version.h"
 #include "asterisk/buildinfo.h"
 #include "asterisk/logger.h"

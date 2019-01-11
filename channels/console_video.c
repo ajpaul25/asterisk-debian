@@ -41,7 +41,6 @@
  ***/
 
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include <sys/ioctl.h>
 #include "asterisk/cli.h"
 #include "asterisk/file.h"

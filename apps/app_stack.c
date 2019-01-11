@@ -32,8 +32,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/pbx.h"
 #include "asterisk/module.h"
 #include "asterisk/app.h"
@@ -1280,7 +1278,7 @@ static int unload_module(void)
 {
 	ast_install_stack_functions(NULL);
 
-	ast_agi_unregister(ast_module_info->self, &gosub_agi_command);
+	ast_agi_unregister(&gosub_agi_command);
 
 	ast_unregister_application(app_return);
 	ast_unregister_application(app_pop);
@@ -1318,9 +1316,9 @@ static int load_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT | AST_MODFLAG_LOAD_ORDER, "Dialplan subroutines (Gosub, Return, etc)",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_APP_DEPEND,
-		.nonoptreq = "res_agi",
-		);
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_APP_DEPEND,
+	.optional_modules = "res_agi",
+);

@@ -1,14 +1,14 @@
 """add_prune_on_boot
 
 Revision ID: f3d1c5d38b56
-Revises: 164abbd708c
+Revises: 44ccced114ce
 Create Date: 2017-08-04 17:31:23.124767
 
 """
 
 # revision identifiers, used by Alembic.
 revision = 'f3d1c5d38b56'
-down_revision = '164abbd708c'
+down_revision = '44ccced114ce'
 
 from alembic import op
 import sqlalchemy as sa

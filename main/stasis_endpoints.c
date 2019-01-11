@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/astobj2.h"
 #include "asterisk/stasis.h"
 #include "asterisk/stasis_endpoints.h"
@@ -84,7 +82,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 						<enum name="Unknown"/>
 						<enum name="Unreachable"/>
 						<enum name="Reachable"/>
-						<enum name="Created"/>
+						<enum name="Unqualified"/>
 						<enum name="Removed"/>
 						<enum name="Updated"/>
 					</enumlist>

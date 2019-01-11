@@ -38,9 +38,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
-#include "asterisk/_private.h"
+#include "asterisk/module.h"
 
 #include "asterisk/channel.h"
 #include "asterisk/pbx.h"
@@ -1423,7 +1421,7 @@ static void destroy_subscriptions(void)
 	cel_cel_forwarder = stasis_forward_cancel(cel_cel_forwarder);
 }
 
-static void cel_engine_cleanup(void)
+static int unload_module(void)
 {
 	destroy_routes();
 	destroy_subscriptions();
@@ -1435,6 +1433,8 @@ static void cel_engine_cleanup(void)
 	ao2_global_obj_release(cel_dialstatus_store);
 	ao2_global_obj_release(cel_linkedids);
 	ao2_global_obj_release(cel_backends);
+
+	return 0;
 }
 
 /*!
@@ -1557,42 +1557,44 @@ static int create_routes(void)
 AO2_STRING_FIELD_HASH_FN(cel_linkedid, id)
 AO2_STRING_FIELD_CMP_FN(cel_linkedid, id)
 
-int ast_cel_engine_init(void)
+static int load_module(void)
 {
 	struct ao2_container *container;
 
-	container = ao2_container_alloc(NUM_APP_BUCKETS, cel_linkedid_hash_fn, cel_linkedid_cmp_fn);
+	container = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		NUM_APP_BUCKETS, cel_linkedid_hash_fn, NULL, cel_linkedid_cmp_fn);
 	ao2_global_obj_replace_unref(cel_linkedids, container);
 	ao2_cleanup(container);
 	if (!container) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
-	container = ao2_container_alloc(NUM_DIALSTATUS_BUCKETS,
-		cel_dialstatus_hash_fn, cel_dialstatus_cmp_fn);
+	container = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		NUM_DIALSTATUS_BUCKETS, cel_dialstatus_hash_fn, NULL, cel_dialstatus_cmp_fn);
 	ao2_global_obj_replace_unref(cel_dialstatus_store, container);
 	ao2_cleanup(container);
 	if (!container) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	if (STASIS_MESSAGE_TYPE_INIT(cel_generic_type)) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	if (ast_cli_register(&cli_status)) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
-	container = ao2_container_alloc(BACKEND_BUCKETS, cel_backend_hash_fn, cel_backend_cmp_fn);
+	container = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, BACKEND_BUCKETS,
+		cel_backend_hash_fn, NULL, cel_backend_cmp_fn);
 	ao2_global_obj_replace_unref(cel_backends, container);
 	ao2_cleanup(container);
 	if (!container) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	if (aco_info_init(&cel_cfg_info)) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	aco_option_register(&cel_cfg_info, "enable", ACO_EXACT, general_options, "no", OPT_BOOL_T, 1, FLDSET(struct ast_cel_general_config, enable));
@@ -1604,7 +1606,7 @@ int ast_cel_engine_init(void)
 		struct cel_config *cel_cfg = cel_config_alloc();
 
 		if (!cel_cfg) {
-			return -1;
+			return AST_MODULE_LOAD_FAILURE;
 		}
 
 		/* We couldn't process the configuration so create a default config. */
@@ -1616,18 +1618,17 @@ int ast_cel_engine_init(void)
 	}
 
 	if (create_subscriptions()) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	if (ast_cel_check_enabled() && create_routes()) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
-	ast_register_cleanup(cel_engine_cleanup);
-	return 0;
+	return AST_MODULE_LOAD_SUCCESS;
 }
 
-int ast_cel_engine_reload(void)
+static int reload_module(void)
 {
 	unsigned int was_enabled = ast_cel_check_enabled();
 	unsigned int is_enabled;
@@ -1747,3 +1748,12 @@ int ast_cel_backend_register(const char *name, ast_cel_backend_cb backend_callba
 	ao2_ref(backend, -1);
 	return 0;
 }
+
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "CEL Engine",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload_module,
+	.load_pri = AST_MODPRI_CORE,
+	.requires = "extconfig",
+);

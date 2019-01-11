@@ -17,7 +17,8 @@
  */
 
 /*!
- * \file \brief Test JSON API.
+ * \file
+ * \brief Test JSON API.
  *
  * While some of these tests are actually testing our JSON library wrapper, the bulk of
  * them are exploratory tests to determine what the behavior of the underlying JSON
@@ -36,7 +37,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include "asterisk/json.h"
 #include "asterisk/module.h"
 #include "asterisk/test.h"
@@ -1816,5 +1816,7 @@ static int load_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, 0, "JSON testing",
-		.load = load_module,
-		.unload = unload_module);
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module
+);

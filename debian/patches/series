@@ -31,3 +31,4 @@ ffmpeg-detection.patch
 ffmpeg-includes.patch
 
 build-reproducibly
+autoreconf-pjproject

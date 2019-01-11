@@ -4,12 +4,13 @@ Last-Update: 2016-03-19
 
 --- a/channels/chan_vpb.cc
 +++ b/channels/chan_vpb.cc
-@@ -49,7 +49,6 @@
+@@ -49,7 +49,7 @@
  
  /*** MODULEINFO
  	<depend>vpb</depend>
 -	<defaultenabled>no</defaultenabled>
- 	<support_level>extended</support_level>
++	<defaultenabled>yes</defaultenabled>
+ 	<support_level>deprecated</support_level>
   ***/
  
 --- a/channels/chan_mgcp.c

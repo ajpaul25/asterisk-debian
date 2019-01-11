@@ -31,8 +31,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <math.h>
 #include <signal.h>
 #include <sys/time.h>
@@ -2388,7 +2386,7 @@ static int handle_waitfordigit(struct ast_channel *chan, AGI *agi, int argc, con
 		return RESULT_SHOWUSAGE;
 	if (sscanf(argv[3], "%30d", &to) != 1)
 		return RESULT_SHOWUSAGE;
-	res = ast_waitfordigit_full(chan, to, agi->audio, agi->ctrl);
+	res = ast_waitfordigit_full(chan, to, NULL, agi->audio, agi->ctrl);
 	ast_agi_send(agi->fd, chan, "200 result=%d\n", res);
 	return (res >= 0) ? RESULT_SUCCESS : RESULT_FAILURE;
 }
@@ -2668,7 +2666,7 @@ static int handle_getoption(struct ast_channel *chan, AGI *agi, int argc, const 
 
 	/* If the user didnt press a key, wait for digitTimeout*/
 	if (res == 0 ) {
-		res = ast_waitfordigit_full(chan, timeout, agi->audio, agi->ctrl);
+		res = ast_waitfordigit_full(chan, timeout, NULL, agi->audio, agi->ctrl);
 		/* Make sure the new result is in the escape digits of the GET OPTION */
 		if ( !strchr(edigits,res) )
 			res=0;
@@ -3817,8 +3815,6 @@ int AST_OPTIONAL_API_NAME(ast_agi_register)(struct ast_module *mod, agi_command 
 		AST_RWLIST_WRLOCK(&agi_commands);
 		AST_LIST_INSERT_TAIL(&agi_commands, cmd, list);
 		AST_RWLIST_UNLOCK(&agi_commands);
-		if (mod != ast_module_info->self)
-			ast_module_ref(ast_module_info->self);
 		ast_verb(2, "AGI Command '%s' registered\n",fullcmd);
 		return 1;
 	} else {
@@ -3827,7 +3823,7 @@ int AST_OPTIONAL_API_NAME(ast_agi_register)(struct ast_module *mod, agi_command 
 	}
 }
 
-int AST_OPTIONAL_API_NAME(ast_agi_unregister)(struct ast_module *mod, agi_command *cmd)
+int AST_OPTIONAL_API_NAME(ast_agi_unregister)(agi_command *cmd)
 {
 	struct agi_command *e;
 	int unregistered = 0;
@@ -3839,8 +3835,6 @@ int AST_OPTIONAL_API_NAME(ast_agi_unregister)(struct ast_module *mod, agi_comman
 	AST_RWLIST_TRAVERSE_SAFE_BEGIN(&agi_commands, e, list) {
 		if (cmd == e) {
 			AST_RWLIST_REMOVE_CURRENT(list);
-			if (mod != ast_module_info->self)
-				ast_module_unref(ast_module_info->self);
 #ifdef AST_XML_DOCS
 			if (e->docsrc == AST_XML_DOC) {
 				ast_free((char *) e->summary);
@@ -3887,7 +3881,7 @@ int AST_OPTIONAL_API_NAME(ast_agi_register_multiple)(struct ast_module *mod, str
 			   to fail is if the command is not
 			   registered
 			*/
-			(void) ast_agi_unregister(mod, cmd + x - 1);
+			(void) ast_agi_unregister(cmd + x - 1);
 		}
 		return -1;
 	}
@@ -3895,7 +3889,7 @@ int AST_OPTIONAL_API_NAME(ast_agi_register_multiple)(struct ast_module *mod, str
 	return 0;
 }
 
-int AST_OPTIONAL_API_NAME(ast_agi_unregister_multiple)(struct ast_module *mod, struct agi_command *cmd, unsigned int len)
+int AST_OPTIONAL_API_NAME(ast_agi_unregister_multiple)(struct agi_command *cmd, unsigned int len)
 {
 	unsigned int i;
 	int res = 0;
@@ -3905,7 +3899,7 @@ int AST_OPTIONAL_API_NAME(ast_agi_unregister_multiple)(struct ast_module *mod, s
 		   attempts failed... there is no recourse if
 		   any of them do
 		*/
-		res |= ast_agi_unregister(mod, cmd + i);
+		res |= ast_agi_unregister(cmd + i);
 	}
 
 	return res;
@@ -4042,14 +4036,19 @@ static enum agi_result agi_handle_command(struct ast_channel *chan, AGI *agi, ch
 
 	parse_args(buf, &argc, argv);
 	c = find_command(argv, 0);
-	if (c && (!dead || (dead && c->dead))) {
-		/* if this command wasn't registered by res_agi, be sure to usecount
-		the module we are using */
-		if (c->mod != ast_module_info->self)
-			ast_module_ref(c->mod);
+	if (!c || !ast_module_running_ref(c->mod)) {
+		ami_res = "Invalid or unknown command";
+		resultcode = 510;
+
+		ast_agi_send(agi->fd, chan, "%d %s\n", resultcode, ami_res);
+
+		publish_async_exec_end(chan, command_id, ami_cmd, resultcode, ami_res);
+
+		return AGI_RESULT_SUCCESS;
+	}
+
+	if (!dead || (dead && c->dead)) {
 		res = c->handler(chan, agi, argc, argv);
-		if (c->mod != ast_module_info->self)
-			ast_module_unref(c->mod);
 		switch (res) {
 		case RESULT_SHOWUSAGE:
 			ami_res = "Usage";
@@ -4096,21 +4095,15 @@ static enum agi_result agi_handle_command(struct ast_channel *chan, AGI *agi, ch
 
 			break;
 		}
-	} else if (c) {
+	} else {
 		ami_res = "Command Not Permitted on a dead channel or intercept routine";
 		resultcode = 511;
 
 		ast_agi_send(agi->fd, chan, "%d %s\n", resultcode, ami_res);
 
 		publish_async_exec_end(chan, command_id, ami_cmd, resultcode, ami_res);
-	} else {
-		ami_res = "Invalid or unknown command";
-		resultcode = 510;
-
-		ast_agi_send(agi->fd, chan, "%d %s\n", resultcode, ami_res);
-
-		publish_async_exec_end(chan, command_id, ami_cmd, resultcode, ami_res);
 	}
+	ast_module_unref(c->mod);
 
 	return AGI_RESULT_SUCCESS;
 }
@@ -4662,7 +4655,7 @@ AST_TEST_DEFINE(test_agi_null_docs)
 	}
 #endif
 
-	ast_agi_unregister(ast_module_info->self, &noop_command);
+	ast_agi_unregister(&noop_command);
 	return res;
 }
 #endif
@@ -4676,7 +4669,7 @@ static int unload_module(void)
 	STASIS_MESSAGE_TYPE_CLEANUP(agi_async_end_type);
 
 	ast_cli_unregister_multiple(cli_agi, ARRAY_LEN(cli_agi));
-	ast_agi_unregister_multiple(ast_module_info->self, commands, ARRAY_LEN(commands));
+	ast_agi_unregister_multiple(commands, ARRAY_LEN(commands));
 	ast_unregister_application(eapp);
 	ast_unregister_application(deadapp);
 	ast_manager_unregister("AGI");
@@ -4709,15 +4702,13 @@ static int load_module(void)
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
-	/* For Optional API. */
-	ast_module_shutdown_ref(ast_module_info->self);
-
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Asterisk Gateway Interface (AGI)",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_APP_DEPEND,
-		);
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_APP_DEPEND,
+	.requires = "res_speech",
+);

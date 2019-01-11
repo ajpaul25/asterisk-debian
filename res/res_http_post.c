@@ -33,8 +33,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <gmime/gmime.h>
@@ -224,7 +222,7 @@ static int find_sequence(char * inbuf, int inlen, char * matchbuf, int matchlen)
 * This function has two modes.  The first to find a boundary marker.  The
 * second is to find the filename immediately after the boundary.
 */
-static int readmimefile(FILE *fin, FILE *fout, char *boundary, int contentlen)
+static int readmimefile(struct ast_iostream *in, FILE *fout, char *boundary, int contentlen)
 {
 	int find_filename = 0;
 	char buf[4096];
@@ -235,7 +233,7 @@ static int readmimefile(FILE *fin, FILE *fout, char *boundary, int contentlen)
 	int boundary_len;
 	char * path_end, * path_start, * filespec;
 
-	if (NULL == fin || NULL == fout || NULL == boundary || 0 >= contentlen) {
+	if (NULL == in || NULL == fout || NULL == boundary || 0 >= contentlen) {
 		return -1;
 	}
 
@@ -249,8 +247,8 @@ static int readmimefile(FILE *fin, FILE *fout, char *boundary, int contentlen)
 		}
 
 		if (0 < num_to_read) {
-			if (fread(&(buf[char_in_buf]), 1, num_to_read, fin) < num_to_read) {
-				ast_log(LOG_WARNING, "fread() failed: %s\n", strerror(errno));
+			if (ast_iostream_read(in, &(buf[char_in_buf]), num_to_read) < num_to_read) {
+				ast_log(LOG_WARNING, "read failed: %s\n", strerror(errno));
 				num_to_read = 0;
 			}
 			contentlen -= num_to_read;
@@ -391,7 +389,7 @@ static int http_post_callback(struct ast_tcptls_session_instance *ser, const str
 	 */
 	ast_http_body_read_status(ser, 0);
 
-	if (0 > readmimefile(ser->f, f, boundary_marker, content_len)) {
+	if (0 > readmimefile(ser->stream, f, boundary_marker, content_len)) {
 		ast_debug(1, "Cannot find boundary marker in POST request.\n");
 		fclose(f);
 		ast_http_error(ser, 400, "Bad Request", "Cannot find boundary marker in POST request.");
@@ -515,4 +513,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "HTTP POST support",
 	.load = load_module,
 	.unload = unload_module,
 	.reload = reload,
+	.requires = "http",
 );

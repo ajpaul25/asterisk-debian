@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$");
-
 #include <stdbool.h>
 #include <math.h>
 #include <unistd.h>
@@ -442,8 +440,9 @@ static int init_timing_thread(void)
 
 static int load_module(void)
 {
-	if (!(pthread_timers = ao2_container_alloc(PTHREAD_TIMER_BUCKETS,
-		pthread_timer_hash, pthread_timer_cmp))) {
+	pthread_timers = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		PTHREAD_TIMER_BUCKETS, pthread_timer_hash, NULL, pthread_timer_cmp);
+	if (!pthread_timers) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
@@ -475,8 +474,8 @@ static int unload_module(void)
 	return res;
 }
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "pthread Timing Interface",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_TIMING,
-		);
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_TIMING,
+);

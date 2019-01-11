@@ -17,7 +17,8 @@
  */
 
 /*!
- * \file \brief Test Stasis message bus.
+ * \file
+ * \brief Test Stasis message bus.
  *
  * \author\verbatim David M. Lee, II <dlee@digium.com> \endverbatim
  *
@@ -30,8 +31,6 @@
  ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "asterisk/astobj2.h"
 #include "asterisk/module.h"
@@ -2104,6 +2103,7 @@ static int load_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, 0, "Stasis testing",
-		.load = load_module,
-		.unload = unload_module
-	);
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module
+);

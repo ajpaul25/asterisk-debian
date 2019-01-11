@@ -54,7 +54,7 @@
 - \ref manager.c Main manager code file
  */
 
-#define AMI_VERSION                     "2.10.4"
+#define AMI_VERSION                     "5.0.0"
 #define DEFAULT_MANAGER_PORT 5038	/* Default port for Asterisk management via TCP */
 #define DEFAULT_MANAGER_TLS_PORT 5039	/* Default port for Asterisk management via TCP */
 
@@ -180,10 +180,10 @@ struct manager_action {
 
 /*! \brief External routines may register/unregister manager callbacks this way
  * \note  Use ast_manager_register2() to register with help text for new manager commands */
-#define ast_manager_register(action, authority, func, synopsis) ast_manager_register2(action, authority, func, ast_module_info->self, synopsis, NULL)
+#define ast_manager_register(action, authority, func, synopsis) ast_manager_register2(action, authority, func, AST_MODULE_SELF, synopsis, NULL)
 
 /*! \brief Register a manager callback using XML documentation to describe the manager. */
-#define ast_manager_register_xml(action, authority, func) ast_manager_register2(action, authority, func, ast_module_info->self, NULL, NULL)
+#define ast_manager_register_xml(action, authority, func) ast_manager_register2(action, authority, func, AST_MODULE_SELF, NULL, NULL)
 
 /*!
  * \brief Register a manager callback using XML documentation to describe the manager.
@@ -355,12 +355,6 @@ void __attribute__((format(printf, 2, 3))) astman_append(struct mansession *s, c
 
 /*! \brief Determinie if a manager session ident is authenticated */
 int astman_is_authed(uint32_t ident);
-
-/*! \brief Called by Asterisk initialization */
-int init_manager(void);
-
-/*! \brief Called by Asterisk module functions and the CLI command */
-int reload_manager(void);
 
 /*!
  * \brief Add a datastore to a session

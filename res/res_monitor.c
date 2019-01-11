@@ -24,13 +24,12 @@
  */
 
 /*** MODULEINFO
-	<depend type="module">func_periodic_hook</depend>
-	<support_level>core</support_level>
+	<use type="module">func_periodic_hook</use>
+	<support_level>deprecated</support_level>
+	<replacement>app_mixmonitor</replacement>
  ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <sys/stat.h>
 #include <libgen.h>
@@ -987,9 +986,6 @@ static int load_module(void)
 	ast_manager_register_xml("PauseMonitor", EVENT_FLAG_CALL, pause_monitor_action);
 	ast_manager_register_xml("UnpauseMonitor", EVENT_FLAG_CALL, unpause_monitor_action);
 
-	/* For Optional API. */
-	ast_module_shutdown_ref(ast_module_info->self);
-
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
@@ -1011,8 +1007,9 @@ static int unload_module(void)
 
 /* usecount semantics need to be defined */
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Call Monitoring Resource",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_CHANNEL_DEPEND,
-		);
+	.support_level = AST_MODULE_SUPPORT_DEPRECATED,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+	.optional_modules = "func_periodic_hook",
+);

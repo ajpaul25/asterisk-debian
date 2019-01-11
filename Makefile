@@ -76,9 +76,6 @@ export AST_DEVMODE_STRICT # Enables shadow warnings (-Wshadow)
 export _SOLINK            # linker flags for all shared objects
 export SOLINK             # linker flags for loadable modules
 export DYLINK             # linker flags for shared libraries
-export STATIC_BUILD       # Additional cflags, set to -static
-                          # for static builds. Probably
-                          # should go directly to ASTLDFLAGS
 
 #--- paths to various commands
 # The makeopts include below tries to set these if they're found during
@@ -167,20 +164,19 @@ LINKER_SYMBOL_PREFIX=
 # Default install directory for DAHDI hooks.
 DAHDI_UDEV_HOOK_DIR = /usr/share/dahdi/span_config.d
 
-# This Makefile previously contained a note about the ability to use .asterisk.makeopts
-# from your home directory or /etc/asterisk.makeopts to set defaults for menuselect.
-# These files have never worked in this branch of Asterisk.  The work around is to
-# manually copy the file containing defaults before running 'make menuselect':
-#
-# cp ${HOME}/.asterisk.makeopts menuselect.makeopts
-#   or
-# cp /etc/asterisk.makeopts menuselect.makeopts
-#
-# As an alternative, menuselect/menuselect can be used by a script to enable or disable
-# individual options or entire categories.  To use this feature you must first
-# compile menuselect using 'make menuselect.makeopts'.  For information about parameters
-# supported run:
-# menuselect/menuselect --help
+# If the file .asterisk.makeopts is present in your home directory, you can
+# include all of your favorite menuselect options so that every time you download
+# a new version of Asterisk, you don't have to run menuselect to set them.
+# The file /etc/asterisk.makeopts will also be included but can be overridden
+# by the file in your home directory.
+
+ifeq ($(wildcard menuselect.makeopts),)
+	USER_MAKEOPTS=$(wildcard ~/.asterisk.makeopts)
+	GLOBAL_MAKEOPTS=$(wildcard /etc/asterisk.makeopts)
+else
+	USER_MAKEOPTS=
+	GLOBAL_MAKEOPTS=
+endif
 
 
 MOD_SUBDIR_CFLAGS="-I$(ASTTOPDIR)/include"
@@ -358,10 +354,10 @@ makeopts: configure
 	@echo "****"
 	@exit 1
 
-menuselect.makeopts: menuselect/menuselect menuselect-tree makeopts build_tools/menuselect-deps
-ifeq ($(filter %menuselect,$(MAKECMDGOALS)),)
+menuselect.makeopts: menuselect/menuselect menuselect-tree makeopts build_tools/menuselect-deps $(GLOBAL_MAKEOPTS) $(USER_MAKEOPTS)
+ifeq ($(filter %.menuselect,$(MAKECMDGOALS)),)
 	menuselect/menuselect --check-deps $@
-	menuselect/menuselect --check-deps $@
+	menuselect/menuselect --check-deps $@ $(GLOBAL_MAKEOPTS) $(USER_MAKEOPTS)
 endif
 
 $(MOD_SUBDIRS_MENUSELECT_TREE):
@@ -950,7 +946,7 @@ config:
 		if [ -z "$(DESTDIR)" ] ; then \
 			/sbin/chkconfig --add asterisk ; \
 		fi ; \
-	elif [ -f /etc/os-release ] && [ "opensuse" = "$(shell . /etc/os-release && echo $$ID)" ] ; then \
+	elif [ -f /etc/os-release ] && [ "opensuse" = "$(shell . /etc/os-release 2>/dev/null && echo $$ID)" ] ; then \
 		./build_tools/install_subst contrib/init.d/rc.suse.asterisk  "$(DESTDIR)/etc/init.d/asterisk"; \
 		if [ ! -f /etc/sysconfig/asterisk ] ; then \
 			$(INSTALL) -m 644 contrib/init.d/etc_default_asterisk "$(DESTDIR)/etc/sysconfig/asterisk" ; \
@@ -962,7 +958,7 @@ config:
 		./build_tools/install_subst contrib/init.d/rc.archlinux.asterisk  "$(DESTDIR)/etc/init.d/asterisk"; \
 	elif [ -f /etc/slackware-version ]; then \
 		./build_tools/install_subst contrib/init.d/rc.slackware.asterisk  "$(DESTDIR)/etc/rc.d/rc.asterisk"; \
-	elif [ -f /etc/os-release ] && [ "slackware" = "$(shell . /etc/os-release && echo $$ID)" ] ; then \
+	elif [ -f /etc/os-release ] && [ "slackware" = "$(shell . /etc/os-release 2>/dev/null && echo $$ID)" ] ; then \
 		./build_tools/install_subst contrib/init.d/rc.slackware.asterisk  "$(DESTDIR)/etc/rc.d/rc.asterisk"; \
 	elif [ -d "$(DESTDIR)/Library/LaunchDaemons" ]; then \
 		if [ ! -f "$(DESTDIR)/Library/LaunchDaemons/org.asterisk.asterisk.plist" ]; then \

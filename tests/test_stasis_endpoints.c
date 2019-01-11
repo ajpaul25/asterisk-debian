@@ -17,7 +17,8 @@
  */
 
 /*!
- * \file \brief Test endpoints.
+ * \file
+ * \brief Test endpoints.
  *
  * \author\verbatim David M. Lee, II <dlee@digium.com> \endverbatim
  *
@@ -31,8 +32,6 @@
  ***/
 
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "asterisk/astobj2.h"
 #include "asterisk/channel.h"
@@ -305,7 +304,8 @@ static int load_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Endpoint stasis-related testing",
+	.support_level = AST_MODULE_SUPPORT_CORE,
 	.load = load_module,
 	.unload = unload_module,
-	.nonoptreq = "res_stasis_test",
-	);
+	.requires = "res_stasis_test",
+);

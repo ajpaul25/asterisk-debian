@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <math.h>
 
 #include "asterisk/lock.h"
@@ -43,22 +41,8 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 #include "asterisk/cli.h"
 #include "asterisk/module.h"
 #include "asterisk/astobj2.h"
-#include "asterisk/data.h"
 
 #include "asterisk/_private.h" /* _init(), _reload() */
-
-#define DATA_EXPORT_TONE_ZONE(MEMBER)					\
-	MEMBER(ast_tone_zone, country, AST_DATA_STRING)			\
-	MEMBER(ast_tone_zone, description, AST_DATA_STRING)		\
-	MEMBER(ast_tone_zone, nrringcadence, AST_DATA_UNSIGNED_INTEGER)
-
-AST_DATA_STRUCTURE(ast_tone_zone, DATA_EXPORT_TONE_ZONE);
-
-#define DATA_EXPORT_TONE_ZONE_SOUND(MEMBER)			\
-	MEMBER(ast_tone_zone_sound, name, AST_DATA_STRING)	\
-	MEMBER(ast_tone_zone_sound, data, AST_DATA_STRING)
-
-AST_DATA_STRUCTURE(ast_tone_zone_sound, DATA_EXPORT_TONE_ZONE_SOUND);
 
 /* Globals */
 static const char config[] = "indications.conf";
@@ -604,7 +588,9 @@ static int ast_register_indication(struct ast_tone_zone *zone, const char *indic
 	}
 	AST_LIST_TRAVERSE_SAFE_END;
 
-	if (!(ts = ao2_alloc(sizeof(*ts), ast_tone_zone_sound_destructor))) {
+	ts = ao2_alloc_options(sizeof(*ts), ast_tone_zone_sound_destructor,
+		AO2_ALLOC_OPT_LOCK_NOLOCK);
+	if (!ts) {
 		return -1;
 	}
 
@@ -1125,38 +1111,11 @@ static int ast_tone_zone_cmp(void *obj, void *arg, int flags)
 			CMP_MATCH | CMP_STOP : 0;
 }
 
-int ast_tone_zone_data_add_structure(struct ast_data *tree, struct ast_tone_zone *zone)
-{
-	struct ast_data *data_zone_sound;
-	struct ast_tone_zone_sound *s;
-
-	ast_data_add_structure(ast_tone_zone, tree, zone);
-
-	if (AST_LIST_EMPTY(&zone->tones)) {
-		return 0;
-	}
-
-	data_zone_sound = ast_data_add_node(tree, "tones");
-	if (!data_zone_sound) {
-		return -1;
-	}
-
-	ast_tone_zone_lock(zone);
-
-	AST_LIST_TRAVERSE(&zone->tones, s, entry) {
-		ast_data_add_structure(ast_tone_zone_sound, data_zone_sound, s);
-	}
-
-	ast_tone_zone_unlock(zone);
-
-	return 0;
-}
-
 /*!
  * \internal
  * \brief Clean up resources on Asterisk shutdown
  */
-static void indications_shutdown(void)
+static int unload_module(void)
 {
 	ast_cli_unregister_multiple(cli_indications, ARRAY_LEN(cli_indications));
 	if (default_tone_zone) {
@@ -1167,29 +1126,39 @@ static void indications_shutdown(void)
 		ao2_ref(ast_tone_zones, -1);
 		ast_tone_zones = NULL;
 	}
+
+	return 0;
 }
 
 /*! \brief Load indications module */
-int ast_indications_init(void)
+static int load_module(void)
 {
-	ast_tone_zones = ao2_container_alloc(NUM_TONE_ZONE_BUCKETS,
-			ast_tone_zone_hash, ast_tone_zone_cmp);
+	ast_tone_zones = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		NUM_TONE_ZONE_BUCKETS, ast_tone_zone_hash, NULL, ast_tone_zone_cmp);
 	if (!ast_tone_zones) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	if (load_indications(0)) {
-		return -1;
+		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	ast_cli_register_multiple(cli_indications, ARRAY_LEN(cli_indications));
 
-	ast_register_cleanup(indications_shutdown);
-	return 0;
+	return AST_MODULE_LOAD_SUCCESS;
 }
 
 /*! \brief Reload indications module */
-int ast_indications_reload(void)
+static int reload_module(void)
 {
 	return load_indications(1);
 }
+
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "Indication Tone Handling",
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload_module,
+	.load_pri = AST_MODPRI_CORE,
+	.requires = "extconfig",
+);

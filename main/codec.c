@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/logger.h"
 #include "asterisk/codec.h"
 #include "asterisk/format.h"
@@ -250,8 +248,8 @@ static void codec_shutdown(void)
 
 int ast_codec_init(void)
 {
-	codecs = ao2_container_alloc_options(AO2_ALLOC_OPT_LOCK_RWLOCK, CODEC_BUCKETS,
-		ast_codec_hash_fn, codec_cmp);
+	codecs = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_RWLOCK, 0, CODEC_BUCKETS,
+		ast_codec_hash_fn, NULL, codec_cmp);
 	if (!codecs) {
 		return -1;
 	}
@@ -359,6 +357,21 @@ const char *ast_codec_media_type2str(enum ast_media_type type)
 		return "text";
 	default:
 		return "<unknown>";
+	}
+}
+
+enum ast_media_type ast_media_type_from_str(const char *media_type_str)
+{
+	if (!strcasecmp(media_type_str, "audio")) {
+		return AST_MEDIA_TYPE_AUDIO;
+	} else if (!strcasecmp(media_type_str, "video")) {
+		return AST_MEDIA_TYPE_VIDEO;
+	} else if (!strcasecmp(media_type_str, "image")) {
+		return AST_MEDIA_TYPE_IMAGE;
+	} else if (!strcasecmp(media_type_str, "text")) {
+		return AST_MEDIA_TYPE_TEXT;
+	} else {
+		return AST_MEDIA_TYPE_UNKNOWN;
 	}
 }
 

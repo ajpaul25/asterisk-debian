@@ -25,8 +25,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/astobj2.h"
 #include "asterisk/paths.h"
 #include "asterisk/stasis_app_recording.h"
@@ -59,6 +57,24 @@ const char *stasis_app_stored_recording_get_file(
 		return NULL;
 	}
 	return recording->file;
+}
+
+const char *stasis_app_stored_recording_get_filename(
+	struct stasis_app_stored_recording *recording)
+{
+	if (!recording) {
+		return NULL;
+	}
+	return recording->file_with_ext;
+}
+
+const char *stasis_app_stored_recording_get_extension(
+	struct stasis_app_stored_recording *recording)
+{
+	if (!recording) {
+		return NULL;
+	}
+	return recording->format;
 }
 
 /*!
@@ -107,18 +123,9 @@ static int split_path(const char *path, char **dir, char **file)
 		return -1;
 	}
 
-#if defined(__AST_DEBUG_MALLOC)
 	*dir = ast_strdup(real_dir); /* Dupe so we can ast_free() */
-#else
-	/*
-	 * ast_std_free() and ast_free() are the same thing at this time
-	 * so we don't need to dupe.
-	 */
-	*dir = real_dir;
-	real_dir = NULL;
-#endif	/* defined(__AST_DEBUG_MALLOC) */
 	*file = ast_strdup(file_portion);
-	return 0;
+	return (*dir && *file) ? 0 : -1;
 }
 
 struct match_recording_data {

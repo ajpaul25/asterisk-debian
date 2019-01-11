@@ -96,7 +96,7 @@ cleanup:
 	return res;
 }
 
-static int digest_create_request_with_auth_from_old(const struct ast_sip_auth_vector *auths,
+static int digest_create_request_with_auth(const struct ast_sip_auth_vector *auths,
 	pjsip_rx_data *challenge, pjsip_tx_data *old_request, pjsip_tx_data **new_request)
 {
 	pjsip_auth_clt_sess auth_sess;
@@ -118,8 +118,8 @@ static int digest_create_request_with_auth_from_old(const struct ast_sip_auth_ve
 	}
 	/* If there was no dialog, then this is probably a REGISTER so no endpoint */
 	if (!id) {
-		id = ast_alloca(strlen(challenge->pkt_info.src_name) + 7 /* ':' + port + NULL */);
-		sprintf(id, "%s:%d", challenge->pkt_info.src_name, challenge->pkt_info.src_port);
+		id = ast_alloca(AST_SOCKADDR_BUFLEN);
+		pj_sockaddr_print(&challenge->pkt_info.src_addr, id, AST_SOCKADDR_BUFLEN, 3);
 		id_type = "Host";
 	}
 
@@ -199,21 +199,12 @@ static int digest_create_request_with_auth_from_old(const struct ast_sip_auth_ve
 	return -1;
 }
 
-static int digest_create_request_with_auth(const struct ast_sip_auth_vector *auths, pjsip_rx_data *challenge,
-		pjsip_transaction *tsx, pjsip_tx_data **new_request)
-{
-	return digest_create_request_with_auth_from_old(auths, challenge, tsx->last_tx, new_request);
-}
-
 static struct ast_sip_outbound_authenticator digest_authenticator = {
 	.create_request_with_auth = digest_create_request_with_auth,
-	.create_request_with_auth_from_old = digest_create_request_with_auth_from_old,
 };
 
 static int load_module(void)
 {
-	CHECK_PJSIP_MODULE_LOADED();
-
 	if (ast_sip_register_outbound_authenticator(&digest_authenticator)) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
@@ -227,8 +218,9 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP authentication resource",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+	.requires = "res_pjsip",
 );

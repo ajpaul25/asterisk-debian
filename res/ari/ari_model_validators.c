@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include "asterisk/logger.h"
 #include "asterisk/module.h"
 #include "ari_model_validators.h"
@@ -1053,6 +1051,15 @@ int ast_ari_validate_channel(struct ast_json *json)
 				res = 0;
 			}
 		} else
+		if (strcmp("channelvars", ast_json_object_iter_key(iter)) == 0) {
+			int prop_is_valid;
+			prop_is_valid = ast_ari_validate_object(
+				ast_json_object_iter_value(iter));
+			if (!prop_is_valid) {
+				ast_log(LOG_ERROR, "ARI Channel field channelvars failed validation\n");
+				res = 0;
+			}
+		} else
 		if (strcmp("connected", ast_json_object_iter_key(iter)) == 0) {
 			int prop_is_valid;
 			has_connected = 1;
@@ -1759,6 +1766,15 @@ int ast_ari_validate_playback(struct ast_json *json)
 				ast_json_object_iter_value(iter));
 			if (!prop_is_valid) {
 				ast_log(LOG_ERROR, "ARI Playback field media_uri failed validation\n");
+				res = 0;
+			}
+		} else
+		if (strcmp("next_media_uri", ast_json_object_iter_key(iter)) == 0) {
+			int prop_is_valid;
+			prop_is_valid = ast_ari_validate_string(
+				ast_json_object_iter_value(iter));
+			if (!prop_is_valid) {
+				ast_log(LOG_ERROR, "ARI Playback field next_media_uri failed validation\n");
 				res = 0;
 			}
 		} else
@@ -5093,6 +5109,9 @@ int ast_ari_validate_event(struct ast_json *json)
 	if (strcmp("PeerStatusChange", discriminator) == 0) {
 		return ast_ari_validate_peer_status_change(json);
 	} else
+	if (strcmp("PlaybackContinuing", discriminator) == 0) {
+		return ast_ari_validate_playback_continuing(json);
+	} else
 	if (strcmp("PlaybackFinished", discriminator) == 0) {
 		return ast_ari_validate_playback_finished(json);
 	} else
@@ -5293,6 +5312,9 @@ int ast_ari_validate_message(struct ast_json *json)
 	} else
 	if (strcmp("PeerStatusChange", discriminator) == 0) {
 		return ast_ari_validate_peer_status_change(json);
+	} else
+	if (strcmp("PlaybackContinuing", discriminator) == 0) {
+		return ast_ari_validate_playback_continuing(json);
 	} else
 	if (strcmp("PlaybackFinished", discriminator) == 0) {
 		return ast_ari_validate_playback_finished(json);
@@ -5605,6 +5627,94 @@ int ast_ari_validate_peer_status_change(struct ast_json *json)
 ari_validator ast_ari_validate_peer_status_change_fn(void)
 {
 	return ast_ari_validate_peer_status_change;
+}
+
+int ast_ari_validate_playback_continuing(struct ast_json *json)
+{
+	int res = 1;
+	struct ast_json_iter *iter;
+	int has_type = 0;
+	int has_application = 0;
+	int has_playback = 0;
+
+	for (iter = ast_json_object_iter(json); iter; iter = ast_json_object_iter_next(json, iter)) {
+		if (strcmp("asterisk_id", ast_json_object_iter_key(iter)) == 0) {
+			int prop_is_valid;
+			prop_is_valid = ast_ari_validate_string(
+				ast_json_object_iter_value(iter));
+			if (!prop_is_valid) {
+				ast_log(LOG_ERROR, "ARI PlaybackContinuing field asterisk_id failed validation\n");
+				res = 0;
+			}
+		} else
+		if (strcmp("type", ast_json_object_iter_key(iter)) == 0) {
+			int prop_is_valid;
+			has_type = 1;
+			prop_is_valid = ast_ari_validate_string(
+				ast_json_object_iter_value(iter));
+			if (!prop_is_valid) {
+				ast_log(LOG_ERROR, "ARI PlaybackContinuing field type failed validation\n");
+				res = 0;
+			}
+		} else
+		if (strcmp("application", ast_json_object_iter_key(iter)) == 0) {
+			int prop_is_valid;
+			has_application = 1;
+			prop_is_valid = ast_ari_validate_string(
+				ast_json_object_iter_value(iter));
+			if (!prop_is_valid) {
+				ast_log(LOG_ERROR, "ARI PlaybackContinuing field application failed validation\n");
+				res = 0;
+			}
+		} else
+		if (strcmp("timestamp", ast_json_object_iter_key(iter)) == 0) {
+			int prop_is_valid;
+			prop_is_valid = ast_ari_validate_date(
+				ast_json_object_iter_value(iter));
+			if (!prop_is_valid) {
+				ast_log(LOG_ERROR, "ARI PlaybackContinuing field timestamp failed validation\n");
+				res = 0;
+			}
+		} else
+		if (strcmp("playback", ast_json_object_iter_key(iter)) == 0) {
+			int prop_is_valid;
+			has_playback = 1;
+			prop_is_valid = ast_ari_validate_playback(
+				ast_json_object_iter_value(iter));
+			if (!prop_is_valid) {
+				ast_log(LOG_ERROR, "ARI PlaybackContinuing field playback failed validation\n");
+				res = 0;
+			}
+		} else
+		{
+			ast_log(LOG_ERROR,
+				"ARI PlaybackContinuing has undocumented field %s\n",
+				ast_json_object_iter_key(iter));
+			res = 0;
+		}
+	}
+
+	if (!has_type) {
+		ast_log(LOG_ERROR, "ARI PlaybackContinuing missing required field type\n");
+		res = 0;
+	}
+
+	if (!has_application) {
+		ast_log(LOG_ERROR, "ARI PlaybackContinuing missing required field application\n");
+		res = 0;
+	}
+
+	if (!has_playback) {
+		ast_log(LOG_ERROR, "ARI PlaybackContinuing missing required field playback\n");
+		res = 0;
+	}
+
+	return res;
+}
+
+ari_validator ast_ari_validate_playback_continuing_fn(void)
+{
+	return ast_ari_validate_playback_continuing;
 }
 
 int ast_ari_validate_playback_finished(struct ast_json *json)

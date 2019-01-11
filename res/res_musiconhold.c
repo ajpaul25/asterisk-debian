@@ -39,12 +39,10 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <ctype.h>
 #include <signal.h>
 #include <sys/time.h>
-#include <sys/signal.h>
+#include <signal.h>
 #include <netinet/in.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -148,9 +146,12 @@ struct moh_files_state {
 #define MOH_CUSTOM		(1 << 2)
 #define MOH_RANDOMIZE		(1 << 3)
 #define MOH_SORTALPHA		(1 << 4)
+#define MOH_RANDSTART		(MOH_RANDOMIZE | MOH_SORTALPHA) /*!< Sorted but start at random position */
+#define MOH_SORTMODE		(3 << 3)
 
-#define MOH_CACHERTCLASSES      (1 << 5)        /*!< Should we use a separate instance of MOH for each user or not */
-#define MOH_ANNOUNCEMENT	(1 << 6)			/*!< Do we play announcement files between songs on this channel? */
+#define MOH_CACHERTCLASSES	(1 << 5)	/*!< Should we use a separate instance of MOH for each user or not */
+#define MOH_ANNOUNCEMENT	(1 << 6)	/*!< Do we play announcement files between songs on this channel? */
+#define MOH_PREFERCHANNELCLASS	(1 << 7)	/*!< Should queue moh override channel moh */
 
 /* Custom astobj2 flag */
 #define MOH_NOTDELETED          (1 << 30)       /*!< Find only records that aren't deleted? */
@@ -212,11 +213,12 @@ static struct ao2_container *mohclasses;
 #define MPG_123 "/usr/bin/mpg123"
 #define MAX_MP3S 256
 
+static void moh_parse_options(struct ast_variable *var, struct mohclass *mohclass);
 static int reload(void);
 
 #define mohclass_ref(class,string)   (ao2_t_ref((class), +1, (string)), class)
 
-#ifndef REF_DEBUG
+#ifndef AST_DEVMODE
 #define mohclass_unref(class,string) ({ ao2_t_ref((class), -1, (string)); (struct mohclass *) NULL; })
 #else
 #define mohclass_unref(class,string) _mohclass_unref(class, string, __FILE__,__LINE__,__PRETTY_FUNCTION__)
@@ -225,14 +227,14 @@ static struct mohclass *_mohclass_unref(struct mohclass *class, const char *tag,
 	struct mohclass *dup = ao2_callback(mohclasses, OBJ_POINTER, ao2_match_by_addr, class);
 
 	if (dup) {
-		if (__ao2_ref_debug(dup, -1, (char *) tag, (char *) file, line, funcname) == 2) {
+		if (__ao2_ref(dup, -1, tag, file, line, funcname) == 2) {
 			ast_log(LOG_WARNING, "Attempt to unref mohclass %p (%s) when only 1 ref remained, and class is still in a container! (at %s:%d (%s))\n",
 				class, class->name, file, line, funcname);
 		} else {
 			ao2_ref(class, -1);
 		}
 	} else {
-		__ao2_ref_debug(class, -1, (char *) tag, (char *) file, line, funcname);
+		__ao2_ref(class, -1, tag, file, line, funcname);
 	}
 	return NULL;
 }
@@ -345,7 +347,7 @@ static int ast_moh_files_next(struct ast_channel *chan)
 		/* If a specific file has been saved confirm it still exists and that it is still valid */
 		state->pos = state->save_pos;
 		state->save_pos = -1;
-	} else if (ast_test_flag(state->class, MOH_RANDOMIZE)) {
+	} else if (ast_test_flag(state->class, MOH_SORTMODE) == MOH_RANDOMIZE) {
 		/* Get a random file and ensure we can open it */
 		for (tries = 0; tries < 20; tries++) {
 			state->pos = ast_random() % state->class->total_files;
@@ -400,11 +402,28 @@ static int ast_moh_files_next(struct ast_channel *chan)
 
 static struct ast_frame *moh_files_readframe(struct ast_channel *chan)
 {
-	struct ast_frame *f = NULL;
+	struct ast_frame *f;
 
-	if (!(ast_channel_stream(chan) && (f = ast_readframe(ast_channel_stream(chan))))) {
-		if (!ast_moh_files_next(chan))
+	f = ast_readframe(ast_channel_stream(chan));
+	if (!f) {
+		/* Either there was no file stream setup or we reached EOF. */
+		if (!ast_moh_files_next(chan)) {
+			/*
+			 * Either we resetup the previously saved file stream position
+			 * or we started a new file stream.
+			 */
 			f = ast_readframe(ast_channel_stream(chan));
+			if (!f) {
+				/*
+				 * We can get here if we were very unlucky because the
+				 * resetup file stream was saved at EOF when MOH was
+				 * previously stopped.
+				 */
+				if (!ast_moh_files_next(chan)) {
+					f = ast_readframe(ast_channel_stream(chan));
+				}
+			}
+		}
 	}
 
 	return f;
@@ -907,12 +926,8 @@ static struct mohclass *_get_mohbyname(const char *name, int warn, int flags, co
 
 	ast_copy_string(tmp_class.name, name, sizeof(tmp_class.name));
 
-#ifdef REF_DEBUG
-	moh = __ao2_find_debug(mohclasses, &tmp_class, flags,
+	moh = __ao2_find(mohclasses, &tmp_class, flags,
 		"get_mohbyname", file, lineno, funcname);
-#else
-	moh = __ao2_find(mohclasses, &tmp_class, flags);
-#endif
 
 	if (!moh && warn) {
 		ast_log(LOG_WARNING, "Music on Hold class '%s' not found in memory. Verify your configuration.\n", name);
@@ -1061,6 +1076,45 @@ static struct ast_generator mohgen = {
 	.generate = moh_generate,
 	.digit    = moh_handle_digit,
 };
+
+static void moh_parse_options(struct ast_variable *var, struct mohclass *mohclass)
+{
+	for (; var; var = var->next) {
+		if (!strcasecmp(var->name, "name")) {
+			ast_copy_string(mohclass->name, var->value, sizeof(mohclass->name));
+		} else if (!strcasecmp(var->name, "mode")) {
+			ast_copy_string(mohclass->mode, var->value, sizeof(mohclass->mode));
+		} else if (!strcasecmp(var->name, "directory")) {
+			ast_copy_string(mohclass->dir, var->value, sizeof(mohclass->dir));
+		} else if (!strcasecmp(var->name, "application")) {
+			ast_copy_string(mohclass->args, var->value, sizeof(mohclass->args));
+		} else if (!strcasecmp(var->name, "digit") && (isdigit(*var->value) || strchr("*#", *var->value))) {
+			mohclass->digit = *var->value;
+		} else if (!strcasecmp(var->name, "random")) {
+			static int deprecation_warning = 0;
+			if (!deprecation_warning) {
+				ast_log(LOG_WARNING, "Music on hold 'random' setting is deprecated in 14.  Please use 'sort=random' instead.\n");
+				deprecation_warning = 1;
+			}
+			ast_set2_flag(mohclass, ast_true(var->value), MOH_RANDOMIZE);
+		} else if (!strcasecmp(var->name, "sort")) {
+			if (!strcasecmp(var->value, "random")) {
+				ast_set_flag(mohclass, MOH_RANDOMIZE);
+			} else if (!strcasecmp(var->value, "alpha")) {
+				ast_set_flag(mohclass, MOH_SORTALPHA);
+			} else if (!strcasecmp(var->value, "randstart")) {
+				ast_set_flag(mohclass, MOH_RANDSTART);
+			}
+		} else if (!strcasecmp(var->name, "format")) {
+			ao2_cleanup(mohclass->format);
+			mohclass->format = ast_format_cache_get(var->value);
+			if (!mohclass->format) {
+				ast_log(LOG_WARNING, "Unknown format '%s' -- defaulting to SLIN\n", var->value);
+				mohclass->format = ao2_bump(ast_format_slin);
+			}
+		}
+	}
+}
 
 static int moh_add_file(struct mohclass *class, const char *filepath)
 {
@@ -1345,17 +1399,9 @@ static struct mohclass *_moh_class_malloc(const char *file, int line, const char
 {
 	struct mohclass *class;
 
-	if ((class =
-#ifdef REF_DEBUG
-			__ao2_alloc_debug(sizeof(*class), moh_class_destructor,
-				AO2_ALLOC_OPT_LOCK_MUTEX, "Allocating new moh class", file, line, funcname, 1)
-#elif defined(__AST_DEBUG_MALLOC)
-			__ao2_alloc_debug(sizeof(*class), moh_class_destructor,
-				AO2_ALLOC_OPT_LOCK_MUTEX, "Allocating new moh class", file, line, funcname, 0)
-#else
-			ao2_alloc(sizeof(*class), moh_class_destructor)
-#endif
-		)) {
+	class = __ao2_alloc(sizeof(*class), moh_class_destructor, AO2_ALLOC_OPT_LOCK_MUTEX,
+		"Allocating new moh class", file, line, funcname);
+	if (class) {
 		class->format = ao2_bump(ast_format_slin);
 		class->srcfd = -1;
 		class->kill_delay = 100000;
@@ -1382,43 +1428,43 @@ static int local_ast_moh_start(struct ast_channel *chan, const char *mclass, con
 	struct moh_files_state *state = ast_channel_music_state(chan);
 	struct ast_variable *var = NULL;
 	int res = 0;
+	int i;
 	int realtime_possible = ast_check_realtime("musiconhold");
 	int warn_if_not_in_memory = !realtime_possible;
+	const char *classes[] = {NULL, NULL, interpclass, "default"};
+
+	if (ast_test_flag(global_flags, MOH_PREFERCHANNELCLASS)) {
+		classes[0] = ast_channel_musicclass(chan);
+		classes[1] = mclass;
+	} else {
+		classes[0] = mclass;
+		classes[1] = ast_channel_musicclass(chan);
+	}
 
 	/* The following is the order of preference for which class to use:
 	 * 1) The channels explicitly set musicclass, which should *only* be
 	 *    set by a call to Set(CHANNEL(musicclass)=whatever) in the dialplan.
+	 *    Unless preferchannelclass in musiconhold.conf is false
 	 * 2) The mclass argument. If a channel is calling ast_moh_start() as the
 	 *    result of receiving a HOLD control frame, this should be the
 	 *    payload that came with the frame.
-	 * 3) The interpclass argument. This would be from the mohinterpret
+	 * 3) The channels explicitly set musicclass, which should *only* be
+	 *    set by a call to Set(CHANNEL(musicclass)=whatever) in the dialplan.
+	 * 4) The interpclass argument. This would be from the mohinterpret
 	 *    option from channel drivers. This is the same as the old musicclass
 	 *    option.
-	 * 4) The default class.
+	 * 5) The default class.
 	 */
-	if (!ast_strlen_zero(ast_channel_musicclass(chan))) {
-		mohclass = get_mohbyname(ast_channel_musicclass(chan), warn_if_not_in_memory, 0);
-		if (!mohclass && realtime_possible) {
-			var = load_realtime_musiconhold(ast_channel_musicclass(chan));
-		}
-	}
-	if (!mohclass && !var && !ast_strlen_zero(mclass)) {
-		mohclass = get_mohbyname(mclass, warn_if_not_in_memory, 0);
-		if (!mohclass && realtime_possible) {
-			var = load_realtime_musiconhold(mclass);
-		}
-	}
-	if (!mohclass && !var && !ast_strlen_zero(interpclass)) {
-		mohclass = get_mohbyname(interpclass, warn_if_not_in_memory, 0);
-		if (!mohclass && realtime_possible) {
-			var = load_realtime_musiconhold(interpclass);
-		}
-	}
 
-	if (!mohclass && !var) {
-		mohclass = get_mohbyname("default", warn_if_not_in_memory, 0);
-		if (!mohclass && realtime_possible) {
-			var = load_realtime_musiconhold("default");
+	for (i = 0; i < ARRAY_LEN(classes); ++i) {
+		if (!ast_strlen_zero(classes[i])) {
+			mohclass = get_mohbyname(classes[i], warn_if_not_in_memory, 0);
+			if (!mohclass && realtime_possible) {
+				var = load_realtime_musiconhold(classes[i]);
+			}
+			if (mohclass || var) {
+				break;
+			}
 		}
 	}
 
@@ -1426,37 +1472,12 @@ static int local_ast_moh_start(struct ast_channel *chan, const char *mclass, con
 	 * above guarantees that if var is non-NULL, then mohclass must be NULL.
 	 */
 	if (var) {
-		struct ast_variable *tmp = NULL;
-
 		if ((mohclass = moh_class_malloc())) {
 			mohclass->realtime = 1;
-			for (tmp = var; tmp; tmp = tmp->next) {
-				if (!strcasecmp(tmp->name, "name"))
-					ast_copy_string(mohclass->name, tmp->value, sizeof(mohclass->name));
-				else if (!strcasecmp(tmp->name, "mode"))
-					ast_copy_string(mohclass->mode, tmp->value, sizeof(mohclass->mode));
-				else if (!strcasecmp(tmp->name, "directory"))
-					ast_copy_string(mohclass->dir, tmp->value, sizeof(mohclass->dir));
-				else if (!strcasecmp(tmp->name, "application"))
-					ast_copy_string(mohclass->args, tmp->value, sizeof(mohclass->args));
-				else if (!strcasecmp(tmp->name, "digit") && (isdigit(*tmp->value) || strchr("*#", *tmp->value)))
-					mohclass->digit = *tmp->value;
-				else if (!strcasecmp(tmp->name, "random"))
-					ast_set2_flag(mohclass, ast_true(tmp->value), MOH_RANDOMIZE);
-				else if (!strcasecmp(tmp->name, "sort") && !strcasecmp(tmp->value, "random"))
-					ast_set_flag(mohclass, MOH_RANDOMIZE);
-				else if (!strcasecmp(tmp->name, "sort") && !strcasecmp(tmp->value, "alpha"))
-					ast_set_flag(mohclass, MOH_SORTALPHA);
-				else if (!strcasecmp(tmp->name, "format")) {
-					ao2_cleanup(mohclass->format);
-					mohclass->format = ast_format_cache_get(tmp->value);
-					if (!mohclass->format) {
-						ast_log(LOG_WARNING, "Unknown format '%s' -- defaulting to SLIN\n", tmp->value);
-						mohclass->format = ao2_bump(ast_format_slin);
-					}
-				}
-			}
+
+			moh_parse_options(var, mohclass);
 			ast_variables_destroy(var);
+
 			if (ast_strlen_zero(mohclass->dir)) {
 				if (!strcasecmp(mohclass->mode, "custom")) {
 					strcpy(mohclass->dir, "nodir");
@@ -1504,8 +1525,14 @@ static int local_ast_moh_start(struct ast_channel *chan, const char *mclass, con
 						mohclass = mohclass_unref(mohclass, "unreffing potential mohclass (moh_scan_files failed)");
 						return -1;
 					}
-					if (strchr(mohclass->args, 'r'))
+					if (strchr(mohclass->args, 'r')) {
+						static int deprecation_warning = 0;
+						if (!deprecation_warning) {
+							ast_log(LOG_WARNING, "Music on hold 'application=r' setting is deprecated in 14.  Please use 'sort=random' instead.\n");
+							deprecation_warning = 1;
+						}
 						ast_set_flag(mohclass, MOH_RANDOMIZE);
+					}
 				} else if (!strcasecmp(mohclass->mode, "mp3") || !strcasecmp(mohclass->mode, "mp3nb") || !strcasecmp(mohclass->mode, "quietmp3") || !strcasecmp(mohclass->mode, "quietmp3nb") || !strcasecmp(mohclass->mode, "httpmp3") || !strcasecmp(mohclass->mode, "custom")) {
 
 					if (!strcasecmp(mohclass->mode, "custom"))
@@ -1725,6 +1752,7 @@ static int load_moh_classes(int reload)
 	}
 
 	ast_clear_flag(global_flags, AST_FLAGS_ALL);
+	ast_set2_flag(global_flags, 1, MOH_PREFERCHANNELCLASS);
 
 	cat = ast_category_browse(cfg, NULL);
 	for (; cat; cat = ast_category_browse(cfg, cat)) {
@@ -1733,14 +1761,12 @@ static int load_moh_classes(int reload)
 			for (var = ast_variable_browse(cfg, cat); var; var = var->next) {
 				if (!strcasecmp(var->name, "cachertclasses")) {
 					ast_set2_flag(global_flags, ast_true(var->value), MOH_CACHERTCLASSES);
+				} else if (!strcasecmp(var->name, "preferchannelclass")) {
+					ast_set2_flag(global_flags, ast_true(var->value), MOH_PREFERCHANNELCLASS);
 				} else {
 					ast_log(LOG_WARNING, "Unknown option '%s' in [general] section of musiconhold.conf\n", var->name);
 				}
 			}
-		}
-		/* These names were deprecated in 1.4 and should not be used until after the next major release. */
-		if (!strcasecmp(cat, "classes") || !strcasecmp(cat, "moh_files") ||
-				!strcasecmp(cat, "general")) {
 			continue;
 		}
 
@@ -1748,6 +1774,9 @@ static int load_moh_classes(int reload)
 			break;
 		}
 
+		moh_parse_options(ast_variable_browse(cfg, cat), class);
+		/* For compatibility with the past, we overwrite any name=name
+		 * with the context [name]. */
 		ast_copy_string(class->name, cat, sizeof(class->name));
 		for (var = ast_variable_browse(cfg, cat); var; var = var->next) {
 			if (!strcasecmp(var->name, "mode")) {
@@ -1976,7 +2005,9 @@ static int load_module(void)
 {
 	int res;
 
-	if (!(mohclasses = ao2_t_container_alloc(53, moh_class_hash, moh_class_cmp, "Moh class container"))) {
+	mohclasses = ao2_t_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, 53,
+		moh_class_hash, NULL, moh_class_cmp, "Moh class container");
+	if (!mohclasses) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
 

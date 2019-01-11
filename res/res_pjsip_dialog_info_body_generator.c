@@ -20,7 +20,6 @@
 	<depend>pjproject</depend>
 	<depend>res_pjsip</depend>
 	<depend>res_pjsip_pubsub</depend>
-	<depend>res_pjsip_exten_state</depend>
 	<support_level>core</support_level>
  ***/
 
@@ -61,20 +60,20 @@ static void *dialog_info_allocate_body(void *data)
 	return ast_sip_presence_xml_create_node(state_data->pool, NULL, "dialog-info");
 }
 
-static struct ast_datastore *dialog_info_xml_state_find_or_create(struct ast_sip_subscription *sub)
+static struct ast_datastore *dialog_info_xml_state_find_or_create(struct ao2_container *datastores)
 {
-	struct ast_datastore *datastore = ast_sip_subscription_get_datastore(sub, "dialog-info+xml");
+	struct ast_datastore *datastore = ast_datastores_find(datastores, "dialog-info+xml");
 
 	if (datastore) {
 		return datastore;
 	}
 
-	datastore = ast_sip_subscription_alloc_datastore(&dialog_info_xml_datastore, "dialog-info+xml");
+	datastore = ast_datastores_alloc_datastore(&dialog_info_xml_datastore, "dialog-info+xml");
 	if (!datastore) {
 		return NULL;
 	}
 	datastore->data = ast_calloc(1, sizeof(struct dialog_info_xml_state));
-	if (!datastore->data || ast_sip_subscription_add_datastore(sub, datastore)) {
+	if (!datastore->data || ast_datastores_add(datastores, datastore)) {
 		ao2_ref(datastore, -1);
 		return NULL;
 	}
@@ -82,9 +81,9 @@ static struct ast_datastore *dialog_info_xml_state_find_or_create(struct ast_sip
 	return datastore;
 }
 
-static unsigned int dialog_info_xml_get_version(struct ast_sip_subscription *sub, unsigned int *version)
+static unsigned int dialog_info_xml_get_version(struct ao2_container *datastores, unsigned int *version)
 {
-	struct ast_datastore *datastore = dialog_info_xml_state_find_or_create(sub);
+	struct ast_datastore *datastore = dialog_info_xml_state_find_or_create(datastores);
 	struct dialog_info_xml_state *state;
 
 	if (!datastore) {
@@ -110,11 +109,11 @@ static int dialog_info_generate_body_content(void *body, void *data)
 	struct ast_sip_endpoint *endpoint = NULL;
 	unsigned int notify_early_inuse_ringing = 0;
 
-	if (!local || !state_data->sub) {
+	if (!local || !state_data->datastores) {
 		return -1;
 	}
 
-	if (dialog_info_xml_get_version(state_data->sub, &version)) {
+	if (dialog_info_xml_get_version(state_data->datastores, &version)) {
 		ast_log(LOG_WARNING, "dialog-info+xml version could not be retrieved from datastore\n");
 		return -1;
 	}
@@ -163,7 +162,7 @@ static int dialog_info_generate_body_content(void *body, void *data)
 /* The maximum number of times the ast_str() for the body text can grow before we declare an XML body
  * too large to send.
  */
-#define MAX_STRING_GROWTHS 3
+#define MAX_STRING_GROWTHS 6
 
 static void dialog_info_to_string(void *body, struct ast_str **str)
 {
@@ -199,8 +198,6 @@ static struct ast_sip_pubsub_body_generator dialog_info_body_generator = {
 
 static int load_module(void)
 {
-	CHECK_PJSIP_PUBSUB_MODULE_LOADED();
-
 	if (ast_sip_pubsub_register_body_generator(&dialog_info_body_generator)) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
@@ -215,8 +212,9 @@ static int unload_module(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP Extension State Dialog Info+XML Provider",
-		.support_level = AST_MODULE_SUPPORT_CORE,
-		.load = load_module,
-		.unload = unload_module,
-		.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+	.support_level = AST_MODULE_SUPPORT_CORE,
+	.load = load_module,
+	.unload = unload_module,
+	.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+	.requires = "res_pjsip,res_pjsip_pubsub",
 );

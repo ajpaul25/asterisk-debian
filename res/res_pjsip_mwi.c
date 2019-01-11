@@ -160,7 +160,7 @@ static int mwi_serializer_pool_setup(void)
 		/* Create name with seq number appended. */
 		ast_taskprocessor_build_name(tps_name, sizeof(tps_name), "pjsip/mwi");
 
-		mwi_serializer_pool[idx] = ast_sip_create_serializer_named(tps_name);
+		mwi_serializer_pool[idx] = ast_sip_create_serializer(tps_name);
 		if (!mwi_serializer_pool[idx]) {
 			mwi_serializer_pool_shutdown();
 			return -1;
@@ -269,6 +269,9 @@ static struct mwi_stasis_subscription *mwi_stasis_subscription_alloc(const char 
 		ao2_ref(mwi_sub, -1);
 		mwi_stasis_sub = NULL;
 	}
+	stasis_subscription_accept_message_type(mwi_stasis_sub->stasis_sub, ast_mwi_state_type());
+	stasis_subscription_accept_message_type(mwi_stasis_sub->stasis_sub, stasis_subscription_change_type());
+	stasis_subscription_set_filter(mwi_stasis_sub->stasis_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 	return mwi_stasis_sub;
 }
 
@@ -358,7 +361,8 @@ static struct mwi_subscription *mwi_subscription_alloc(struct ast_sip_endpoint *
 		sub->sip_sub = sip_sub;
 	}
 
-	sub->stasis_subs = ao2_container_alloc(STASIS_BUCKETS, stasis_sub_hash, stasis_sub_cmp);
+	sub->stasis_subs = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		STASIS_BUCKETS, stasis_sub_hash, NULL, stasis_sub_cmp);
 	if (!sub->stasis_subs) {
 		ao2_cleanup(sub);
 		return NULL;
@@ -1339,8 +1343,6 @@ static int reload(void)
 
 static int load_module(void)
 {
-	CHECK_PJSIP_MODULE_LOADED();
-
 	if (ast_sip_register_subscription_handler(&mwi_handler)) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
@@ -1366,7 +1368,11 @@ static int load_module(void)
 		if (ast_test_flag(&ast_options, AST_OPT_FLAG_FULLY_BOOTED)) {
 			ast_sip_push_task(NULL, send_initial_notify_all, NULL);
 		} else {
-			stasis_subscribe_pool(ast_manager_get_topic(), mwi_startup_event_cb, NULL);
+			struct stasis_subscription *sub;
+
+			sub = stasis_subscribe_pool(ast_manager_get_topic(), mwi_startup_event_cb, NULL);
+			stasis_subscription_accept_message_type(sub, ast_manager_get_generic_type());
+			stasis_subscription_set_filter(sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
 		}
 	}
 
@@ -1397,4 +1403,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP MWI resource",
 	.unload = unload_module,
 	.reload = reload,
 	.load_pri = AST_MODPRI_CHANNEL_DEPEND + 5,
+	.requires = "res_pjsip,res_pjsip_pubsub",
 );

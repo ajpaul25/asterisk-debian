@@ -260,7 +260,7 @@ set of configuration files installed to /etc/asterisk:
 
 If you do need any of those protocols, copy the sample file from
 /usr/share/asterisk/conf/samples/FILE.conf.sample to
-/etc/asterisk/FILE.conf and resart asterisk (or the specific module).
+/etc/asterisk/FILE.conf and restart asterisk (or the specific module).
 
 
 Missing Documentation

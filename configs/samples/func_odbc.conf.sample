@@ -11,8 +11,8 @@
 ; in a second func_odbc call.
 ; Note that you'll need additional dialplan locks for this behaviour to work.
 ; There are better ways: using stored procedures/functions instead.
-; This option is enabled by default.
-;single_db_connection=yes
+; This option is disabled by default.
+;single_db_connection=no
 ;
 ;
 ; Each context is a separately defined function.  By convention, all

@@ -68,8 +68,8 @@
 %option bison-locations
 
 %{
+#define ASTMM_LIBC ASTMM_REDIRECT
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -78,6 +78,12 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #if !defined(GLOB_ABORTED)
 #define GLOB_ABORTED GLOB_ABEND
+#endif
+#if !defined(GLOB_BRACE)
+#define GLOB_BRACE 0
+#endif
+#if !defined(GLOB_NOMAGIC)
+#define GLOB_NOMAGIC 0
 #endif
 
 #include "asterisk/logger.h"

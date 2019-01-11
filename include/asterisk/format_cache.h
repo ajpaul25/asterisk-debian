@@ -214,6 +214,11 @@ extern struct ast_format *ast_format_siren7;
 extern struct ast_format *ast_format_opus;
 
 /*!
+ * \brief Built-in cached Codec 2 format.
+ */
+extern struct ast_format *ast_format_codec2;
+
+/*!
  * \brief Built-in cached t140 format.
  */
 extern struct ast_format *ast_format_t140;
@@ -222,6 +227,11 @@ extern struct ast_format *ast_format_t140;
  * \brief Built-in cached t140 red format.
  */
 extern struct ast_format *ast_format_t140_red;
+
+/*!
+ * \brief Built-in cached T.38 format.
+ */
+extern struct ast_format *ast_format_t38;
 
 /*!
  * \brief Built-in "null" format.
@@ -265,20 +275,13 @@ int ast_format_cache_set(struct ast_format *format);
  * \note The returned format has its reference count incremented. It must be
  * dropped using ao2_ref or ao2_cleanup.
  */
-struct ast_format *__ast_format_cache_get(const char *name);
-struct ast_format *__ast_format_cache_get_debug(const char *name, const char *tag, const char *file, int line, const char *func);
+struct ast_format *__ast_format_cache_get(const char *name,
+	const char *tag, const char *file, int line, const char *func);
 
-#ifdef REF_DEBUG
 #define ast_format_cache_get(name) \
-	__ast_format_cache_get_debug((name), "", __FILE__, __LINE__, __PRETTY_FUNCTION__)
+	__ast_format_cache_get((name), "ast_format_cache_get", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define ast_t_format_cache_get(name, tag) \
-	__ast_format_cache_get_debug((name), (tag), __FILE__, __LINE__, __PRETTY_FUNCTION__)
-#else
-#define ast_format_cache_get(name) \
-	__ast_format_cache_get((name))
-#define ast_t_format_cache_get(name, tag) \
-	__ast_format_cache_get((name))
-#endif
+	__ast_format_cache_get((name), (tag), __FILE__, __LINE__, __PRETTY_FUNCTION__)
 
 
 /*!

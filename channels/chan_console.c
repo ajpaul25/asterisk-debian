@@ -62,9 +62,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
-#include <sys/signal.h>  /* SIGURG */
+#include <signal.h>  /* SIGURG */
 
 #include <portaudio.h>
 
@@ -871,7 +869,7 @@ static char *cli_console_dial(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	} else
 		ast_cli(a->fd, "No such extension '%s' in context '%s'\n", mye, myc);
 
-	free(s);
+	ast_free(s);
 
 	unref_pvt(pvt);
 
@@ -1536,7 +1534,9 @@ static int load_module(void)
 
 	init_pvt(&globals, NULL);
 
-	if (!(pvts = ao2_container_alloc(NUM_PVT_BUCKETS, pvt_hash_cb, pvt_cmp_cb)))
+	pvts = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, NUM_PVT_BUCKETS,
+		pvt_hash_cb, NULL, pvt_cmp_cb);
+	if (!pvts)
 		goto return_error;
 
 	if (load_config(0))
@@ -1582,9 +1582,9 @@ static int reload(void)
 }
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "Console Channel Driver",
-		.support_level = AST_MODULE_SUPPORT_EXTENDED,
-		.load = load_module,
-		.unload = unload_module,
-		.reload = reload,
-		.load_pri = AST_MODPRI_CHANNEL_DRIVER,
+	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.load = load_module,
+	.unload = unload_module,
+	.reload = reload,
+	.load_pri = AST_MODPRI_CHANNEL_DRIVER,
 );

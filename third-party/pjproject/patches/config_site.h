@@ -8,7 +8,7 @@
  * Since both pjproject and asterisk source files will include config_site.h,
  * we need to make sure that only pjproject source files include asterisk_malloc_debug.h.
  */
-#if defined(MALLOC_DEBUG) && !defined(_ASTERISK_ASTMM_H)
+#if !defined(_ASTERISK_ASTMM_H)
 #include "asterisk_malloc_debug.h"
 #endif
 
@@ -21,7 +21,10 @@
 #define PJMEDIA_HAS_SRTP 0
 
 #define PJ_HAS_IPV6 1
+#if !defined(AST_DEVMODE) && !defined(PJPROJECT_BUNDLED_ASSERTIONS)
 #define NDEBUG 1
+#endif
+
 #define PJ_MAX_HOSTNAME (256)
 #define PJSIP_MAX_URL_SIZE (512)
 #ifdef PJ_HAS_LINUX_EPOLL

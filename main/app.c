@@ -35,8 +35,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
@@ -388,6 +386,7 @@ int ast_app_run_macro(struct ast_channel *autoservice_chan, struct ast_channel *
 	return res;
 }
 
+/* BUGBUG this is not thread safe. */
 static const struct ast_app_stack_funcs *app_stack_callbacks;
 
 void ast_install_stack_functions(const struct ast_app_stack_funcs *funcs)
@@ -401,16 +400,16 @@ const char *ast_app_expand_sub_args(struct ast_channel *chan, const char *args)
 	const char *new_args;
 
 	funcs = app_stack_callbacks;
-	if (!funcs || !funcs->expand_sub_args) {
+	if (!funcs || !funcs->expand_sub_args || !ast_module_running_ref(funcs->module)) {
 		ast_log(LOG_WARNING,
 			"Cannot expand 'Gosub(%s)' arguments.  The app_stack module is not available.\n",
 			args);
 		return NULL;
 	}
-	ast_module_ref(funcs->module);
 
 	new_args = funcs->expand_sub_args(chan, args);
 	ast_module_unref(funcs->module);
+
 	return new_args;
 }
 
@@ -420,13 +419,12 @@ int ast_app_exec_sub(struct ast_channel *autoservice_chan, struct ast_channel *s
 	int res;
 
 	funcs = app_stack_callbacks;
-	if (!funcs || !funcs->run_sub) {
+	if (!funcs || !funcs->run_sub || !ast_module_running_ref(funcs->module)) {
 		ast_log(LOG_WARNING,
 			"Cannot run 'Gosub(%s)'.  The app_stack module is not available.\n",
 			sub_args);
 		return -1;
 	}
-	ast_module_ref(funcs->module);
 
 	if (autoservice_chan) {
 		ast_autoservice_start(autoservice_chan);
@@ -2020,7 +2018,7 @@ int ast_app_group_set_channel(struct ast_channel *chan, const char *data)
 	AST_RWLIST_TRAVERSE_SAFE_BEGIN(&groups, gi, group_list) {
 		if ((gi->chan == chan) && ((ast_strlen_zero(category) && ast_strlen_zero(gi->category)) || (!ast_strlen_zero(gi->category) && !strcasecmp(gi->category, category)))) {
 			AST_RWLIST_REMOVE_CURRENT(group_list);
-			free(gi);
+			ast_free(gi);
 			break;
 		}
 	}
@@ -2028,7 +2026,7 @@ int ast_app_group_set_channel(struct ast_channel *chan, const char *data)
 
 	if (ast_strlen_zero(group)) {
 		/* Enable unsetting the group */
-	} else if ((gi = calloc(1, len))) {
+	} else if ((gi = ast_calloc(1, len))) {
 		gi->chan = chan;
 		gi->group = (char *) gi + sizeof(*gi);
 		strcpy(gi->group, group);
@@ -2162,9 +2160,6 @@ int ast_app_group_list_unlock(void)
 	return AST_RWLIST_UNLOCK(&groups);
 }
 
-#undef ast_app_separate_args
-unsigned int ast_app_separate_args(char *buf, char delim, char **array, int arraylen);
-
 unsigned int __ast_app_separate_args(char *buf, char delim, int remove_chars, char **array, int arraylen)
 {
 	int argc;
@@ -2227,12 +2222,6 @@ unsigned int __ast_app_separate_args(char *buf, char delim, int remove_chars, ch
 	}
 
 	return argc;
-}
-
-/* ABI compatible function */
-unsigned int ast_app_separate_args(char *buf, char delim, char **array, int arraylen)
-{
-	return __ast_app_separate_args(buf, delim, 1, array, arraylen);
 }
 
 static enum AST_LOCK_RESULT ast_lock_path_lockfile(const char *path)
@@ -2304,9 +2293,9 @@ static void path_lock_destroy(struct path_lock *obj)
 		close(obj->fd);
 	}
 	if (obj->path) {
-		free(obj->path);
+		ast_free(obj->path);
 	}
-	free(obj);
+	ast_free(obj);
 }
 
 static enum AST_LOCK_RESULT ast_lock_path_flock(const char *path)
@@ -2350,7 +2339,7 @@ static enum AST_LOCK_RESULT ast_lock_path_flock(const char *path)
 		return AST_LOCK_FAILURE;
 	}
 	pl->fd = fd;
-	pl->path = strdup(path);
+	pl->path = ast_strdup(path);
 
 	time(&start);
 	while (
@@ -3355,6 +3344,9 @@ int ast_delete_mwi_state_full(const char *mailbox, const char *context, struct a
 	if (clear_msg) {
 		stasis_publish(mailbox_specific_topic, clear_msg);
 	}
+
+	stasis_topic_pool_delete_topic(mwi_topic_pool, stasis_topic_name(mailbox_specific_topic));
+
 	ao2_cleanup(clear_msg);
 	return 0;
 }

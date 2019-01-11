@@ -29,8 +29,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #include <ctype.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -74,11 +72,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 static char base64[64];
 static char b2a[256];
-
-/* This is for binary compatibility with modules built before
- * ast_log_safe existed. */
-#define _AST_MEM_BACKTRACE_BUFLEN 60
-void *_ast_mem_backtrace_buffer[_AST_MEM_BACKTRACE_BUFLEN];
 
 AST_THREADSTORAGE(inet_ntoa_buf);
 
@@ -623,10 +616,9 @@ static int dev_urandom_fd = -1;
 #undef pthread_create /* For ast_pthread_create function only */
 #endif /* !__linux__ */
 
-#if !defined(LOW_MEMORY)
-
 #ifdef DEBUG_THREADS
 
+#if !defined(LOW_MEMORY)
 /*! \brief A reasonable maximum number of locks a thread would be holding ... */
 #define AST_MAX_LOCKS 64
 
@@ -729,14 +721,12 @@ static void lock_info_destroy(void *data)
  * \brief The thread storage key for per-thread lock info
  */
 AST_THREADSTORAGE_CUSTOM(thread_lock_info, NULL, lock_info_destroy);
-#ifdef HAVE_BKTR
+#endif /* ! LOW_MEMORY */
+
 void ast_store_lock_info(enum ast_lock_type type, const char *filename,
 	int line_num, const char *func, const char *lock_name, void *lock_addr, struct ast_bt *bt)
-#else
-void ast_store_lock_info(enum ast_lock_type type, const char *filename,
-	int line_num, const char *func, const char *lock_name, void *lock_addr)
-#endif
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 	int i;
 
@@ -787,10 +777,12 @@ void ast_store_lock_info(enum ast_lock_type type, const char *filename,
 	lock_info->num_locks++;
 
 	pthread_mutex_unlock(&lock_info->lock);
+#endif /* ! LOW_MEMORY */
 }
 
 void ast_mark_lock_acquired(void *lock_addr)
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 
 	if (!(lock_info = ast_threadstorage_get(&thread_lock_info, sizeof(*lock_info))))
@@ -801,10 +793,12 @@ void ast_mark_lock_acquired(void *lock_addr)
 		lock_info->locks[lock_info->num_locks - 1].pending = 0;
 	}
 	pthread_mutex_unlock(&lock_info->lock);
+#endif /* ! LOW_MEMORY */
 }
 
 void ast_mark_lock_failed(void *lock_addr)
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 
 	if (!(lock_info = ast_threadstorage_get(&thread_lock_info, sizeof(*lock_info))))
@@ -816,10 +810,12 @@ void ast_mark_lock_failed(void *lock_addr)
 		lock_info->locks[lock_info->num_locks - 1].times_locked--;
 	}
 	pthread_mutex_unlock(&lock_info->lock);
+#endif /* ! LOW_MEMORY */
 }
 
 int ast_find_lock_info(void *lock_addr, char *filename, size_t filename_size, int *lineno, char *func, size_t func_size, char *mutex_name, size_t mutex_name_size)
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 	int i = 0;
 
@@ -847,10 +843,14 @@ int ast_find_lock_info(void *lock_addr, char *filename, size_t filename_size, in
 	pthread_mutex_unlock(&lock_info->lock);
 
 	return 0;
+#else /* if defined(LOW_MEMORY) */
+	return -1;
+#endif
 }
 
 void ast_suspend_lock_info(void *lock_addr)
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 	int i = 0;
 
@@ -874,10 +874,12 @@ void ast_suspend_lock_info(void *lock_addr)
 	lock_info->locks[i].suspended = 1;
 
 	pthread_mutex_unlock(&lock_info->lock);
+#endif /* ! LOW_MEMORY */
 }
 
 void ast_restore_lock_info(void *lock_addr)
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 	int i = 0;
 
@@ -900,15 +902,13 @@ void ast_restore_lock_info(void *lock_addr)
 	lock_info->locks[i].suspended = 0;
 
 	pthread_mutex_unlock(&lock_info->lock);
+#endif /* ! LOW_MEMORY */
 }
 
 
-#ifdef HAVE_BKTR
 void ast_remove_lock_info(void *lock_addr, struct ast_bt *bt)
-#else
-void ast_remove_lock_info(void *lock_addr)
-#endif
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 	int i = 0;
 
@@ -946,8 +946,10 @@ void ast_remove_lock_info(void *lock_addr)
 	lock_info->num_locks--;
 
 	pthread_mutex_unlock(&lock_info->lock);
+#endif /* ! LOW_MEMORY */
 }
 
+#if !defined(LOW_MEMORY)
 static const char *locktype2str(enum ast_lock_type type)
 {
 	switch (type) {
@@ -965,7 +967,7 @@ static const char *locktype2str(enum ast_lock_type type)
 #ifdef HAVE_BKTR
 static void append_backtrace_information(struct ast_str **str, struct ast_bt *bt)
 {
-	char **symbols;
+	struct ast_vector_string *symbols;
 	int num_frames;
 
 	if (!bt) {
@@ -979,11 +981,11 @@ static void append_backtrace_information(struct ast_str **str, struct ast_bt *bt
 	if ((symbols = ast_bt_get_symbols(bt->addresses, num_frames))) {
 		int frame_iterator;
 
-		for (frame_iterator = 0; frame_iterator < num_frames; ++frame_iterator) {
-			ast_str_append(str, 0, "\t%s\n", symbols[frame_iterator]);
+		for (frame_iterator = 1; frame_iterator < AST_VECTOR_SIZE(symbols); ++frame_iterator) {
+			ast_str_append(str, 0, "\t%s\n", AST_VECTOR_GET(symbols, frame_iterator));
 		}
 
-		ast_std_free(symbols);
+		ast_bt_free_symbols(symbols);
 	} else {
 		ast_str_append(str, 0, "\tCouldn't retrieve backtrace symbols\n");
 	}
@@ -1026,7 +1028,7 @@ static void append_lock_information(struct ast_str **str, struct thr_lock_info *
 	}
 	ast_reentrancy_unlock(lt);
 }
-
+#endif /* ! LOW_MEMORY */
 
 /*! This function can help you find highly temporal locks; locks that happen for a
     short time, but at unexpected times, usually at times that create a deadlock,
@@ -1049,6 +1051,7 @@ static void append_lock_information(struct ast_str **str, struct thr_lock_info *
 */
 void ast_log_show_lock(void *this_lock_addr)
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 	struct ast_str *str;
 
@@ -1075,11 +1078,13 @@ void ast_log_show_lock(void *this_lock_addr)
 	}
 	pthread_mutex_unlock(&lock_infos_lock.mutex);
 	ast_free(str);
+#endif /* ! LOW_MEMORY */
 }
 
 
 struct ast_str *ast_dump_locks(void)
 {
+#if !defined(LOW_MEMORY)
 	struct thr_lock_info *lock_info;
 	struct ast_str *str;
 
@@ -1146,8 +1151,12 @@ struct ast_str *ast_dump_locks(void)
 	               "\n");
 
 	return str;
+#else /* if defined(LOW_MEMORY) */
+	return NULL;
+#endif
 }
 
+#if !defined(LOW_MEMORY)
 static char *handle_show_locks(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
 	struct ast_str *str;
@@ -1181,9 +1190,10 @@ static char *handle_show_locks(struct ast_cli_entry *e, int cmd, struct ast_cli_
 static struct ast_cli_entry utils_cli[] = {
 	AST_CLI_DEFINE(handle_show_locks, "Show which locks are held by which thread"),
 };
-
+#endif /* ! LOW_MEMORY */
 #endif /* DEBUG_THREADS */
 
+#if !defined(LOW_MEMORY)
 /*
  * support for 'show threads'. The start routine is wrapped by
  * dummy_start(), so that ast_register_thread() and
@@ -1244,6 +1254,15 @@ static void *dummy_start(void *data)
 }
 
 #endif /* !LOW_MEMORY */
+
+int ast_background_stacksize(void)
+{
+#if !defined(LOW_MEMORY)
+	return AST_STACKSIZE;
+#else
+	return AST_STACKSIZE_LOW;
+#endif
+}
 
 int ast_pthread_create_stack(pthread_t *thread, pthread_attr_t *attr, void *(*start_routine)(void *),
 			     void *data, size_t stacksize, const char *file, const char *caller,
@@ -1436,74 +1455,6 @@ int ast_carefulwrite(int fd, char *s, int len, int timeoutms)
 	}
 
 	return res;
-}
-
-int ast_careful_fwrite(FILE *f, int fd, const char *src, size_t len, int timeoutms)
-{
-	struct timeval start = ast_tvnow();
-	int n = 0;
-	int elapsed = 0;
-
-	while (len) {
-		if (wait_for_output(fd, timeoutms - elapsed)) {
-			/* poll returned a fatal error, so bail out immediately. */
-			return -1;
-		}
-
-		/* Clear any errors from a previous write */
-		clearerr(f);
-
-		n = fwrite(src, 1, len, f);
-
-		if (ferror(f) && errno != EINTR && errno != EAGAIN) {
-			/* fatal error from fwrite() */
-			if (errno == EPIPE) {
-				ast_debug(1, "fwrite() failed due to reading end being closed: EPIPE\n");
-			} else if (!feof(f)) {
-				/* Don't spam the logs if it was just that the connection is closed. */
-				ast_log(LOG_ERROR, "fwrite() returned error: %s\n", strerror(errno));
-			}
-			n = -1;
-			break;
-		}
-
-		/* Update for data already written to the socket */
-		len -= n;
-		src += n;
-
-		elapsed = ast_tvdiff_ms(ast_tvnow(), start);
-		if (elapsed >= timeoutms) {
-			/* We've taken too long to write
-			 * This is only an error condition if we haven't finished writing. */
-			n = len ? -1 : 0;
-			break;
-		}
-	}
-
-	errno = 0;
-	while (fflush(f)) {
-		if (errno == EAGAIN || errno == EINTR) {
-			/* fflush() does not appear to reset errno if it flushes
-			 * and reaches EOF at the same time. It returns EOF with
-			 * the last seen value of errno, causing a possible loop.
-			 * Also usleep() to reduce CPU eating if it does loop */
-			errno = 0;
-			usleep(1);
-			continue;
-		}
-		if (errno && !feof(f)) {
-			if (errno == EPIPE) {
-				ast_debug(1, "fflush() failed due to reading end being closed: EPIPE\n");
-			} else {
-				/* Don't spam the logs if it was just that the connection is closed. */
-				ast_log(LOG_ERROR, "fflush() returned error: %s\n", strerror(errno));
-			}
-		}
-		n = -1;
-		break;
-	}
-
-	return n < 0 ? -1 : 0;
 }
 
 char *ast_strip_quoted(char *s, const char *beg_quotes, const char *end_quotes)
@@ -2035,18 +1986,6 @@ char *ast_to_camel_case_delim(const char *s, const char *delim)
 	return res;
 }
 
-AST_MUTEX_DEFINE_STATIC(fetchadd_m); /* used for all fetc&add ops */
-
-int ast_atomic_fetchadd_int_slow(volatile int *p, int v)
-{
-	int ret;
-	ast_mutex_lock(&fetchadd_m);
-	ret = *p;
-	*p += v;
-	ast_mutex_unlock(&fetchadd_m);
-	return ret;
-}
-
 /*! \brief
  * get values from config variables.
  */
@@ -2382,28 +2321,6 @@ int ast_parse_digest(const char *digest, struct ast_http_digest *d, int request,
 
 	return 0;
 }
-
-#ifndef __AST_DEBUG_MALLOC
-int _ast_asprintf(char **ret, const char *file, int lineno, const char *func, const char *fmt, ...)
-{
-	int res;
-	va_list ap;
-
-	va_start(ap, fmt);
-	res = vasprintf(ret, fmt, ap);
-	if (res < 0) {
-		/*
-		 * *ret is undefined so set to NULL to ensure it is
-		 * initialized to something useful.
-		 */
-		*ret = NULL;
-		MALLOC_FAILURE_MSG;
-	}
-	va_end(ap);
-
-	return res;
-}
-#endif
 
 int ast_get_tid(void)
 {

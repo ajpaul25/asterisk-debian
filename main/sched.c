@@ -30,8 +30,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #ifdef DEBUG_SCHEDULER
 #define DEBUG(a) a
 #else

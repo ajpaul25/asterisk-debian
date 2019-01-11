@@ -18,9 +18,9 @@
 	<support_level>extended</support_level>
  ***/
 
+/* Needed for net-snmp headers */
+#define ASTMM_LIBC ASTMM_IGNORE
 #include "asterisk.h"
-
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 /*
  * There is some collision collision between netsmp and asterisk names,

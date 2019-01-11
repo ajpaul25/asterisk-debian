@@ -64,7 +64,8 @@ static struct media_variant *media_variant_alloc(const char *variant_str)
 	size_t str_sz = strlen(variant_str) + 1;
 	struct media_variant *variant;
 
-	variant = ao2_alloc(sizeof(*variant) + str_sz, media_variant_destroy);
+	variant = ao2_alloc_options(sizeof(*variant) + str_sz, media_variant_destroy,
+		AO2_ALLOC_OPT_LOCK_NOLOCK);
 	if (!variant) {
 		return NULL;
 	}
@@ -110,15 +111,18 @@ static void media_info_destroy(void *obj)
 static struct media_info *media_info_alloc(const char *name)
 {
 	size_t name_sz = strlen(name) + 1;
-	struct media_info *info = ao2_alloc(sizeof(*info) + name_sz, media_info_destroy);
+	struct media_info *info;
 
+	info = ao2_alloc_options(sizeof(*info) + name_sz, media_info_destroy,
+		AO2_ALLOC_OPT_LOCK_NOLOCK);
 	if (!info) {
 		return NULL;
 	}
 
 	memcpy(info->name, name, name_sz);
 
-	info->variants = ao2_container_alloc(VARIANT_BUCKETS, media_variant_hash, media_variant_cmp);
+	info->variants = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0,
+		VARIANT_BUCKETS, media_variant_hash, NULL, media_variant_cmp);
 	if (!info->variants) {
 		ao2_ref(info, -1);
 
@@ -166,7 +170,8 @@ struct ast_media_index *ast_media_index_create(const char *base_dir)
 
 	memcpy(index->base_dir, base_dir, base_dir_sz);
 
-	index->index = ao2_container_alloc(INDEX_BUCKETS, media_info_hash, media_info_cmp);
+	index->index = ao2_container_alloc_hash(AO2_ALLOC_OPT_LOCK_MUTEX, 0, INDEX_BUCKETS,
+		media_info_hash, NULL, media_info_cmp);
 	if (!index->index) {
 		ao2_ref(index, -1);
 

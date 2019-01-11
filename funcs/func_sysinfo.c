@@ -31,8 +31,6 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
-
 #if defined(HAVE_SYSINFO)
 #include <sys/sysinfo.h>
 #endif
