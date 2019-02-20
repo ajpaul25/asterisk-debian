@@ -1,3 +1,9 @@
+asterisk (1:16.2.0~dfsg-1) unstable; urgency=medium
+
+  * New upstream version 16.2.0~dfsg
+
+ -- Bernhard Schmidt <berni@debian.org>  Wed, 20 Feb 2019 23:49:31 +0100
+
 asterisk (1:16.1.1~dfsg-1) unstable; urgency=medium
 
   Upload new major version to unstable
