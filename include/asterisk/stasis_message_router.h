@@ -55,8 +55,14 @@ struct stasis_message_router;
  *
  * \since 12
  */
+struct stasis_message_router *__stasis_message_router_create(
+	struct stasis_topic *topic, const char *file, int lineno, const char *func);
+#ifdef AST_DEVMODE
+#define stasis_message_router_create(topic) __stasis_message_router_create(topic, __FILE__, __LINE__, __PRETTY_FUNCTION__)
+#else
 struct stasis_message_router *stasis_message_router_create(
 	struct stasis_topic *topic);
+#endif
 
 /*!
  * \brief Create a new message router object.
@@ -71,8 +77,14 @@ struct stasis_message_router *stasis_message_router_create(
  *
  * \since 12.8.0
  */
+struct stasis_message_router *__stasis_message_router_create_pool(
+	struct stasis_topic *topic, const char *file, int lineno, const char *func);
+#ifdef AST_DEVMODE
+#define stasis_message_router_create_pool(topic) __stasis_message_router_create_pool(topic, __FILE__, __LINE__, __PRETTY_FUNCTION__)
+#else
 struct stasis_message_router *stasis_message_router_create_pool(
 	struct stasis_topic *topic);
+#endif
 
 /*!
  * \brief Unsubscribe the router from the upstream topic.
@@ -226,7 +238,7 @@ void stasis_message_router_remove_cache_update(
  * \brief Sets the default route of a router.
  *
  * \param router Router to set the default route of.
- * \param callback Callback to forard messages which otherwise have no home.
+ * \param callback Callback to forward messages which otherwise have no home.
  * \param data Data pointer to pass to \a callback.
  *
  * \retval 0 on success
@@ -241,5 +253,45 @@ void stasis_message_router_remove_cache_update(
 int stasis_message_router_set_default(struct stasis_message_router *router,
 				      stasis_subscription_cb callback,
 				      void *data);
+
+/*!
+ * \brief Sets the default route of a router with formatters.
+ *
+ * \param router Router to set the default route of.
+ * \param callback Callback to forward messages which otherwise have no home.
+ * \param data Data pointer to pass to \a callback.
+ * \param formatters A bitmap of \ref stasis_subscription_message_formatters we wish to receive.
+ *
+ * \since 13.26.0
+ * \since 16.3.0
+ *
+ * \note If formatters are specified then the message router will remain in a selective
+ * filtering state. Any explicit routes will receive messages of their message type and
+ * the default callback will only receive messages that have one of the given formatters.
+ * Explicit routes will not be filtered according to the given formatters.
+ */
+void stasis_message_router_set_formatters_default(struct stasis_message_router *router,
+	stasis_subscription_cb callback,
+	void *data,
+	enum stasis_subscription_message_formatters formatters);
+
+/*!
+ * \brief Indicate to a message router that we are interested in messages with one or more formatters.
+ *
+ * The formatters are passed on to the underlying subscription.
+ *
+ * \warning With direct subscriptions, adding a formatter filter is an OR operation
+ * with any message type filters.  In the current implementation of message router however,
+ * it's an AND operation.  Even when setting a default route, the callback will only get
+ * messages that have the formatters provides in this call.
+ *
+ * \param router Router to set the formatters of.
+ * \param formatters A bitmap of \ref stasis_subscription_message_formatters we wish to receive.
+ *
+ * \since 13.25.0
+ * \since 16.2.0
+ */
+void stasis_message_router_accept_formatters(struct stasis_message_router *router,
+	enum stasis_subscription_message_formatters formatters);
 
 #endif /* _ASTERISK_STASIS_MESSAGE_ROUTER_H */

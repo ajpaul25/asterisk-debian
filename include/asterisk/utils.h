@@ -786,10 +786,10 @@ char *ast_utils_which(const char *binary, char *fullpath, size_t fullpath_size);
 typedef void (^_raii_cleanup_block_t)(void);
 static inline void _raii_cleanup_block(_raii_cleanup_block_t *b) { (*b)(); }
 
-#define RAII_VAR(vartype, varname, initval, dtor)                                                                \
-    _raii_cleanup_block_t _raii_cleanup_ ## varname __attribute__((cleanup(_raii_cleanup_block),unused)) = NULL; \
-    __block vartype varname = initval;                                                                           \
-    _raii_cleanup_ ## varname = ^{ {(void)dtor(varname);} }
+#define RAII_VAR(vartype, varname, initval, dtor)                                                              \
+    __block vartype varname = initval;                                                                         \
+    _raii_cleanup_block_t _raii_cleanup_ ## varname __attribute__((cleanup(_raii_cleanup_block),unused)) =     \
+        ^{ {(void)dtor(varname);} };
 
 #elif defined(__GNUC__)
 
@@ -912,6 +912,40 @@ enum ast_fd_flag_operation {
 
 int __ast_fd_set_flags(int fd, int flags, enum ast_fd_flag_operation op,
 	const char *file, int lineno, const char *function);
+
+/*!
+ * \brief Create a non-blocking socket
+ * \since 13.25
+ *
+ * Wrapper around socket(2) that sets the O_NONBLOCK flag on the resulting
+ * socket.
+ *
+ * \details
+ * For parameter and return information, see the man page for
+ * socket(2).
+ */
+#ifdef HAVE_SOCK_NONBLOCK
+# define ast_socket_nonblock(domain, type, protocol) socket((domain), (type) | SOCK_NONBLOCK, (protocol))
+#else
+int ast_socket_nonblock(int domain, int type, int protocol);
+#endif
+
+/*!
+ * \brief Create a non-blocking pipe
+ * \since 13.25
+ *
+ * Wrapper around pipe(2) that sets the O_NONBLOCK flag on the resulting
+ * file descriptors.
+ *
+ * \details
+ * For parameter and return information, see the man page for
+ * pipe(2).
+ */
+#ifdef HAVE_PIPE2
+# define ast_pipe_nonblock(filedes) pipe2((filedes), O_NONBLOCK)
+#else
+int ast_pipe_nonblock(int filedes[2]);
+#endif
 
 /*!
  * \brief Set the current thread's user interface status.

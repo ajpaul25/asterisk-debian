@@ -2112,6 +2112,20 @@ UPDATE alembic_version SET version_num='1ac563b350a8' WHERE alembic_version.vers
 
 GO
 
+-- Running upgrade 1ac563b350a8 -> 0838f8db6a61
+
+ALTER TABLE ps_globals ADD send_contact_status_on_update_registration VARCHAR(5) NULL;
+
+GO
+
+ALTER TABLE ps_globals ADD CONSTRAINT ast_bool_values CHECK (send_contact_status_on_update_registration IN ('0', '1', 'off', 'on', 'false', 'true', 'no', 'yes'));
+
+GO
+
+UPDATE alembic_version SET version_num='0838f8db6a61' WHERE alembic_version.version_num = '1ac563b350a8';
+
+GO
+
 COMMIT;
 
 GO

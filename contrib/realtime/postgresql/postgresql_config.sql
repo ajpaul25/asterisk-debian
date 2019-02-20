@@ -1305,5 +1305,11 @@ ALTER TABLE ps_endpoints ADD COLUMN send_connected_line ast_bool_values;
 
 UPDATE alembic_version SET version_num='1ac563b350a8' WHERE alembic_version.version_num = '2bb1a85135ad';
 
+-- Running upgrade 1ac563b350a8 -> 0838f8db6a61
+
+ALTER TABLE ps_globals ADD COLUMN send_contact_status_on_update_registration ast_bool_values;
+
+UPDATE alembic_version SET version_num='0838f8db6a61' WHERE alembic_version.version_num = '1ac563b350a8';
+
 COMMIT;
 

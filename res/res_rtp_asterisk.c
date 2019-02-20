@@ -323,12 +323,10 @@ struct ast_rtp {
 	unsigned int themssrc;		/*!< Their SSRC */
 	unsigned int themssrc_valid;	/*!< True if their SSRC is available. */
 	unsigned int lastts;
-	unsigned int lastrxts;
 	unsigned int lastividtimestamp;
 	unsigned int lastovidtimestamp;
 	unsigned int lastitexttimestamp;
 	unsigned int lastotexttimestamp;
-	unsigned int lasteventseqn;
 	int lastrxseqno;                /*!< Last received sequence number, from the network */
 	int expectedrxseqno;		/*!< Next expected sequence number, from the network */
 	AST_VECTOR(, int) missing_seqno; /*!< A vector of sequence numbers we never received */
@@ -344,10 +342,6 @@ struct ast_rtp {
 	double rxtransit;               /*!< Relative transit time for previous packet */
 	struct ast_format *lasttxformat;
 	struct ast_format *lastrxformat;
-
-	int rtptimeout;			/*!< RTP timeout time (negative or zero means disabled, negative value means temporarily disabled) */
-	int rtpholdtimeout;		/*!< RTP timeout when on hold (negative or zero means disabled, negative value means temporarily disabled). */
-	int rtpkeepalive;		/*!< Send RTP comfort noice packets for keepalive */
 
 	/* DTMF Reception Variables */
 	char resp;                        /*!< The current digit being processed */
@@ -367,17 +361,11 @@ struct ast_rtp {
 	struct timeval rxcore;
 	struct timeval txcore;
 	double drxcore;                 /*!< The double representation of the first received packet */
-	struct timeval lastrx;          /*!< timeval when we last received a packet */
 	struct timeval dtmfmute;
 	struct ast_smoother *smoother;
-	int *ioid;
 	unsigned short seqno;		/*!< Sequence number, RFC 3550, page 13. */
-	unsigned short rxseqno;
 	struct ast_sched_context *sched;
-	struct io_context *io;
-	void *data;
 	struct ast_rtcp *rtcp;
-	struct ast_rtp *bridged;        /*!< Who we are Packet bridged to */
 	unsigned int asymmetric_codec;  /*!< Indicate if asymmetric send/receive codecs are allowed */
 
 	struct ast_rtp_instance *bundled; /*!< The RTP instance we are bundled to */
@@ -3112,21 +3100,18 @@ static double stddev_compute(double stddev, double sample, double normdev, doubl
 
 static int create_new_socket(const char *type, int af)
 {
-	int sock = socket(af, SOCK_DGRAM, 0);
+	int sock = ast_socket_nonblock(af, SOCK_DGRAM, 0);
 
 	if (sock < 0) {
-		if (!type) {
-			type = "RTP/RTCP";
-		}
 		ast_log(LOG_WARNING, "Unable to allocate %s socket: %s\n", type, strerror(errno));
-	} else {
-		ast_fd_set_flags(sock, O_NONBLOCK);
-#ifdef SO_NO_CHECK
-		if (nochecksums) {
-			setsockopt(sock, SOL_SOCKET, SO_NO_CHECK, &nochecksums, sizeof(nochecksums));
-		}
-#endif
+		return sock;
 	}
+
+#ifdef SO_NO_CHECK
+	if (nochecksums) {
+		setsockopt(sock, SOL_SOCKET, SO_NO_CHECK, &nochecksums, sizeof(nochecksums));
+	}
+#endif
 
 	return sock;
 }
@@ -6459,7 +6444,6 @@ static struct ast_frame *ast_rtp_interpret(struct ast_rtp_instance *instance, st
 			ast_codec_media_type2str(ast_format_get_type(rtp->f.subclass.format)));
 		return &ast_null_frame;
 	}
-	rtp->rxseqno = seqno;
 
 	if (rtp->dtmf_timeout && rtp->dtmf_timeout < timestamp) {
 		rtp->dtmf_timeout = 0;
@@ -6474,8 +6458,6 @@ static struct ast_frame *ast_rtp_interpret(struct ast_rtp_instance *instance, st
 			return AST_LIST_FIRST(&frames);
 		}
 	}
-
-	rtp->lastrxts = timestamp;
 
 	rtp->f.src = "RTP";
 	rtp->f.mallocd = 0;
@@ -6866,7 +6848,6 @@ static struct ast_frame *ast_rtp_read(struct ast_rtp_instance *instance, int rtc
 				ast_sockaddr_copy(&rtp->rtcp->them, &addr);
 				ast_sockaddr_set_port(&rtp->rtcp->them, ast_sockaddr_port(&addr) + 1);
 			}
-			rtp->rxseqno = 0;
 			ast_set_flag(rtp, FLAG_NAT_ACTIVE);
 			if (rtpdebug)
 				ast_debug(0, "RTP NAT: Got audio from other end. Now sending to address %s\n",
@@ -7388,7 +7369,9 @@ static void ast_rtp_remote_address_set(struct ast_rtp_instance *instance, struct
 		ast_rtp_instance_set_remote_address(mapping->instance, addr);
 	}
 
-	rtp->rxseqno = 0;
+	/* Need to reset the DTMF last sequence number and the timestamp of the last END packet */
+	rtp->last_seqno = 0;
+	rtp->last_end_timestamp = 0;
 
 	if (strictrtp && rtp->strict_rtp_state != STRICT_RTP_OPEN
 		&& !ast_sockaddr_isnull(addr) && ast_sockaddr_cmp(addr, &rtp->strict_rtp_address)) {
