@@ -205,7 +205,8 @@ static void router_dispatch(void *data,
 }
 
 static struct stasis_message_router *stasis_message_router_create_internal(
-	struct stasis_topic *topic, int use_thread_pool)
+	struct stasis_topic *topic, int use_thread_pool, const char *file, int lineno,
+	const char *func)
 {
 	int res;
 	struct stasis_message_router *router;
@@ -225,10 +226,11 @@ static struct stasis_message_router *stasis_message_router_create_internal(
 	}
 
 	if (use_thread_pool) {
-		router->subscription = stasis_subscribe_pool(topic, router_dispatch, router);
+		router->subscription = __stasis_subscribe_pool(topic, router_dispatch, router, file, lineno, func);
 	} else {
-		router->subscription = stasis_subscribe(topic, router_dispatch, router);
+		router->subscription = __stasis_subscribe(topic, router_dispatch, router, file, lineno, func);
 	}
+
 	if (!router->subscription) {
 		ao2_ref(router, -1);
 
@@ -241,16 +243,16 @@ static struct stasis_message_router *stasis_message_router_create_internal(
 	return router;
 }
 
-struct stasis_message_router *stasis_message_router_create(
-	struct stasis_topic *topic)
+struct stasis_message_router *__stasis_message_router_create(
+	struct stasis_topic *topic, const char *file, int lineno, const char *func)
 {
-	return stasis_message_router_create_internal(topic, 0);
+	return stasis_message_router_create_internal(topic, 0, file, lineno, func);
 }
 
-struct stasis_message_router *stasis_message_router_create_pool(
-	struct stasis_topic *topic)
+struct stasis_message_router *__stasis_message_router_create_pool(
+	struct stasis_topic *topic, const char *file, int lineno, const char *func)
 {
-	return stasis_message_router_create_internal(topic, 1);
+	return stasis_message_router_create_internal(topic, 1, file, lineno, func);
 }
 
 void stasis_message_router_unsubscribe(struct stasis_message_router *router)
@@ -386,16 +388,61 @@ int stasis_message_router_set_default(struct stasis_message_router *router,
 	stasis_subscription_cb callback,
 	void *data)
 {
+	stasis_message_router_set_formatters_default(router, callback, data, STASIS_SUBSCRIPTION_FORMATTER_NONE);
+
+	/* While this implementation can never fail, it used to be able to */
+	return 0;
+}
+
+void stasis_message_router_set_formatters_default(struct stasis_message_router *router,
+	stasis_subscription_cb callback,
+	void *data,
+	enum stasis_subscription_message_formatters formatters)
+{
 	ast_assert(router != NULL);
 	ast_assert(callback != NULL);
+
+	stasis_subscription_accept_formatters(router->subscription, formatters);
 
 	ao2_lock(router);
 	router->default_route.callback = callback;
 	router->default_route.data = data;
 	ao2_unlock(router);
 
-	stasis_subscription_set_filter(router->subscription, STASIS_SUBSCRIPTION_FILTER_FORCED_NONE);
+	if (formatters == STASIS_SUBSCRIPTION_FORMATTER_NONE) {
+		/* Formatters govern what messages the default callback get, so it is only if none is
+		 * specified that we accept all messages regardless.
+		 */
+		stasis_subscription_set_filter(router->subscription, STASIS_SUBSCRIPTION_FILTER_FORCED_NONE);
+	}
+}
 
-	/* While this implementation can never fail, it used to be able to */
-	return 0;
+void stasis_message_router_accept_formatters(struct stasis_message_router *router,
+	enum stasis_subscription_message_formatters formatters)
+{
+	ast_assert(router != NULL);
+
+	stasis_subscription_accept_formatters(router->subscription, formatters);
+
+	return;
+}
+
+#ifdef AST_DEVMODE
+#undef stasis_message_router_create
+struct stasis_message_router *stasis_message_router_create(
+	struct stasis_topic *topic);
+#undef stasis_message_router_create_pool
+struct stasis_message_router *stasis_message_router_create_pool(
+	struct stasis_topic *topic);
+#endif
+struct stasis_message_router *stasis_message_router_create(
+	struct stasis_topic *topic)
+{
+	return stasis_message_router_create_internal(topic, 0, __FILE__, __LINE__, __PRETTY_FUNCTION__);
+}
+
+struct stasis_message_router *stasis_message_router_create_pool(
+	struct stasis_topic *topic)
+{
+	return stasis_message_router_create_internal(topic, 1, __FILE__, __LINE__, __PRETTY_FUNCTION__);
 }

@@ -5260,7 +5260,7 @@ int ast_write_stream(struct ast_channel *chan, int stream_num, struct ast_frame 
 				if (jump >= 0) {
 					jump = calc_monitor_jump((ast_channel_insmpl(chan) - ast_channel_outsmpl(chan)),
 					                         ast_format_get_sample_rate(f->subclass.format),
-					                         ast_format_get_sample_rate(ast_channel_monitor(chan)->read_stream->fmt->format));
+					                         ast_format_get_sample_rate(ast_channel_monitor(chan)->write_stream->fmt->format));
 					if (ast_seekstream(ast_channel_monitor(chan)->write_stream, jump, SEEK_FORCECUR) == -1) {
 						ast_log(LOG_WARNING, "Failed to perform seek in monitoring write stream, synchronization between the files may be broken\n");
 					}
@@ -5271,7 +5271,7 @@ int ast_write_stream(struct ast_channel *chan, int stream_num, struct ast_frame 
 #else
 				int jump = calc_monitor_jump((ast_channel_insmpl(chan) - ast_channel_outsmpl(chan)),
 				                             ast_format_get_sample_rate(f->subclass.format),
-				                             ast_format_get_sample_rate(ast_channel_monitor(chan)->read_stream->fmt->format));
+				                             ast_format_get_sample_rate(ast_channel_monitor(chan)->write_stream->fmt->format));
 				if (jump - MONITOR_DELAY >= 0) {
 					if (ast_seekstream(ast_channel_monitor(chan)->write_stream, jump - cur->samples, SEEK_FORCECUR) == -1) {
 						ast_log(LOG_WARNING, "Failed to perform seek in monitoring write stream, synchronization between the files may be broken\n");
@@ -6818,6 +6818,12 @@ static void channel_do_masquerade(struct ast_channel *original, struct ast_chann
 
 	/* Make sure the Stasis topic on the channel is updated appropriately */
 	ast_channel_internal_swap_topics(clonechan, original);
+
+	/* Swap endpoint forward and endpoint cache forward details of the channels,
+	 * so channel created with endpoint exchanges its state with other channel
+	 * for proper endpoint cleanup.
+	 */
+	ast_channel_internal_swap_endpoint_forward_and_endpoint_cache_forward(clonechan, original);
 
 	/* Swap channel names. This uses ast_channel_name_set directly, so we
 	 * don't get any spurious rename events.

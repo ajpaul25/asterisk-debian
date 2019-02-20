@@ -318,6 +318,8 @@ struct contact_transport_monitor {
 	 * \note Stored after aor_name in space reserved when struct allocated.
 	 */
 	char *contact_name;
+	/*! Indicates that the monitor is in the process of removing a contact */
+	int removing;
 	/*! AOR name the contact is associated */
 	char aor_name[0];
 };
@@ -339,11 +341,15 @@ static int register_contact_transport_remove_cb(void *data)
 
 	aor = ast_sip_location_retrieve_aor(monitor->aor_name);
 	if (!aor) {
+		ao2_lock(monitor);
+		monitor->removing = 0;
+		ao2_unlock(monitor);
 		ao2_ref(monitor, -1);
 		return 0;
 	}
 
 	ao2_lock(aor);
+
 	contact = ast_sip_location_retrieve_contact(monitor->contact_name);
 	if (contact) {
 		ast_sip_location_delete_contact(contact);
@@ -380,6 +386,20 @@ static void register_contact_transport_shutdown_cb(void *data)
 	struct contact_transport_monitor *monitor = data;
 
 	/*
+	 * It's possible for this shutdown handler to get called multiple times for the
+	 * same monitor from different threads. Only one of the calls needs to do the
+	 * actual removing of the contact, so if one is currently removing then any
+	 * subsequent calls can skip.
+	 */
+	ao2_lock(monitor);
+	if (monitor->removing) {
+		ao2_unlock(monitor);
+		return;
+	}
+
+	monitor->removing = 1;
+
+	/*
 	 * Push off to a default serializer.  This is in case sorcery
 	 * does database accesses for contacts.  Database accesses may
 	 * not be on this machine.  We don't want to tie up the pjsip
@@ -387,8 +407,11 @@ static void register_contact_transport_shutdown_cb(void *data)
 	 */
 	ao2_ref(monitor, +1);
 	if (ast_sip_push_task(NULL, register_contact_transport_remove_cb, monitor)) {
+		monitor->removing = 0;
 		ao2_ref(monitor, -1);
 	}
+
+	ao2_unlock(monitor);
 }
 
 AST_VECTOR(excess_contact_vector, struct ast_sip_contact *);
@@ -699,8 +722,8 @@ static void register_aor_core(pjsip_rx_data *rdata,
 				 * the contact won't be valid anymore if that happens.
 				 */
 				contact_name = ast_sorcery_object_get_id(contact);
-				monitor = ao2_alloc_options(sizeof(*monitor) + 2 + strlen(aor_name)
-					+ strlen(contact_name), NULL, AO2_ALLOC_OPT_LOCK_NOLOCK);
+				monitor = ao2_alloc(sizeof(*monitor) + 2 + strlen(aor_name)
+					+ strlen(contact_name), NULL);
 				if (monitor) {
 					strcpy(monitor->aor_name, aor_name);/* Safe */
 					monitor->contact_name = monitor->aor_name + strlen(aor_name) + 1;

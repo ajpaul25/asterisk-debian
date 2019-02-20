@@ -23,6 +23,7 @@
 
 #include "asterisk/res_pjsip.h"
 #include "include/res_pjsip_private.h"
+#include "asterisk/pbx.h"
 #include "asterisk/sorcery.h"
 #include "asterisk/taskprocessor.h"
 #include "asterisk/ast_version.h"
@@ -49,6 +50,7 @@
 #define DEFAULT_MWI_DISABLE_INITIAL_UNSOLICITED 0
 #define DEFAULT_IGNORE_URI_USER_OPTIONS 0
 #define DEFAULT_USE_CALLERID_CONTACT 0
+#define DEFAULT_SEND_CONTACT_STATUS_ON_UPDATE_REGISTRATION 0
 
 /*!
  * \brief Cached global config object
@@ -106,6 +108,8 @@ struct global_config {
 	unsigned int ignore_uri_user_options;
 	/*! Nonzero if CALLERID(num) is to be used as the default contact username instead of default_from_user */
 	unsigned int use_callerid_contact;
+	/*! Nonzero if need to send AMI ContactStatus event when a contact is updated */
+	unsigned int send_contact_status_on_update_registration;
 };
 
 static void global_destructor(void *obj)
@@ -126,6 +130,46 @@ static void *global_alloc(const char *name)
 	}
 
 	return cfg;
+}
+
+/*
+ * There is ever only one global section, so we can use a single global
+ * value here to track the regcontext through reloads.
+ */
+static char *previous_regcontext = NULL;
+
+static int check_regcontext(const struct global_config *cfg)
+{
+	char *current = NULL;
+
+	if (previous_regcontext && !strcmp(previous_regcontext, cfg->regcontext)) {
+		/* Nothing changed so nothing to do */
+		return 0;
+	}
+
+	if (!ast_strlen_zero(cfg->regcontext)) {
+		current = ast_strdup(cfg->regcontext);
+		if (!current) {
+			return -1;
+		}
+
+		if (ast_sip_persistent_endpoint_add_to_regcontext(cfg->regcontext)) {
+			ast_free(current);
+			return -1;
+		}
+	}
+
+	if (!ast_strlen_zero(previous_regcontext)) {
+		ast_context_destroy_by_name(previous_regcontext, "PJSIP");
+		ast_free(previous_regcontext);
+		previous_regcontext = NULL;
+	}
+
+	if (current) {
+		previous_regcontext = current;
+	}
+
+	return 0;
 }
 
 static int global_apply(const struct ast_sorcery *sorcery, void *obj)
@@ -150,6 +194,10 @@ static int global_apply(const struct ast_sorcery *sorcery, void *obj)
 	ast_sip_add_global_request_header("Max-Forwards", max_forwards, 1);
 	ast_sip_add_global_request_header("User-Agent", cfg->useragent, 1);
 	ast_sip_add_global_response_header("Server", cfg->useragent, 1);
+
+	if (check_regcontext(cfg)) {
+		return -1;
+	}
 
 	ao2_t_global_obj_replace_unref(global_cfg, cfg, "Applying global settings");
 	return 0;
@@ -420,6 +468,21 @@ unsigned int ast_sip_get_use_callerid_contact(void)
 	return use_callerid_contact;
 }
 
+unsigned int ast_sip_get_send_contact_status_on_update_registration(void)
+{
+	unsigned int send_contact_status_on_update_registration;
+	struct global_config *cfg;
+
+	cfg = get_global_cfg();
+	if (!cfg) {
+		return DEFAULT_SEND_CONTACT_STATUS_ON_UPDATE_REGISTRATION;
+	}
+
+	send_contact_status_on_update_registration = cfg->send_contact_status_on_update_registration;
+	ao2_ref(cfg, -1);
+	return send_contact_status_on_update_registration;
+}
+
 /*!
  * \internal
  * \brief Observer to set default global object if none exist.
@@ -497,10 +560,16 @@ int ast_sip_destroy_sorcery_global(void)
 
 	ast_sorcery_instance_observer_remove(sorcery, &observer_callbacks_global);
 
+	if (previous_regcontext) {
+		ast_context_destroy_by_name(previous_regcontext, "PJSIP");
+		ast_free(previous_regcontext);
+	}
+
 	ao2_t_global_obj_release(global_cfg, "Module is unloading");
 
 	return 0;
 }
+
 
 int ast_sip_initialize_sorcery_global(void)
 {
@@ -574,6 +643,9 @@ int ast_sip_initialize_sorcery_global(void)
 	ast_sorcery_object_field_register(sorcery, "global", "use_callerid_contact",
 		DEFAULT_USE_CALLERID_CONTACT ? "yes" : "no",
 		OPT_YESNO_T, 1, FLDSET(struct global_config, use_callerid_contact));
+	ast_sorcery_object_field_register(sorcery, "global", "send_contact_status_on_update_registration",
+		DEFAULT_SEND_CONTACT_STATUS_ON_UPDATE_REGISTRATION ? "yes" : "no",
+		OPT_YESNO_T, 1, FLDSET(struct global_config, send_contact_status_on_update_registration));
 
 	if (ast_sorcery_instance_observer_add(sorcery, &observer_callbacks_global)) {
 		return -1;

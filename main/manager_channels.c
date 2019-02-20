@@ -988,11 +988,11 @@ static void channel_hangup_handler_cb(void *data, struct stasis_subscription *su
 		return;
 	}
 
-	if (!strcmp(action, "type")) {
+	if (!strcmp(action, "run")) {
 		event = "HangupHandlerRun";
-	} else if (!strcmp(action, "type")) {
+	} else if (!strcmp(action, "pop")) {
 		event = "HangupHandlerPop";
-	} else if (!strcmp(action, "type")) {
+	} else if (!strcmp(action, "push")) {
 		event = "HangupHandlerPush";
 	} else {
 		return;
@@ -1272,6 +1272,10 @@ int manager_channels_init(void)
 
 	ast_register_cleanup(manager_channels_shutdown);
 
+	/* The snapshot type has a special handler as it can result in multiple
+	 * manager events being queued due to aspects of the snapshot itself
+	 * changing.
+	 */
 	ret |= stasis_message_router_add_cache_update(message_router,
 		ast_channel_snapshot_type(), channel_snapshot_update, NULL);
 
