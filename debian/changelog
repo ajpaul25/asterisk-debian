@@ -1,3 +1,12 @@
+asterisk (1:16.2.1~dfsg-1) unstable; urgency=medium
+
+  * New upstream version 16.2.1~dfsg
+    - CVE-2019-7251 / AST-2019-001 (Closes: #923690)
+      Remote crash vulnerability with SDP protocol violation
+  * Bump dependency on libjansson-dev to >= 2.11 (required by upstream)
+
+ -- Bernhard Schmidt <berni@debian.org>  Thu, 07 Mar 2019 23:13:24 +0100
+
 asterisk (1:16.2.0~dfsg-1) unstable; urgency=medium
 
   * New upstream version 16.2.0~dfsg
