@@ -31,7 +31,7 @@ Build-Depends:
  libical-dev,
  libiksemel-dev,
  libjack-dev,
- libjansson-dev,
+ libjansson-dev (>= 2.11),
  libldap-dev,
  liblua5.1-0-dev,
  libncurses-dev,
