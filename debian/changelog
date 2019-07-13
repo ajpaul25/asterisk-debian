@@ -1,3 +1,12 @@
+asterisk (1:16.2.1~dfsg-2) unstable; urgency=high
+
+  * AST-2019-002 / CVE-2019-12827
+    Buffer overflow in res_pjsip_messaging (Closes: #931980)
+  * AST-2019-003 / CVE-2019-13161
+    Remote Crash Vulnerability in chan_sip (Closes: #931981)
+
+ -- Bernhard Schmidt <berni@debian.org>  Sat, 13 Jul 2019 23:47:36 +0200
+
 asterisk (1:16.2.1~dfsg-1) unstable; urgency=medium
 
   * New upstream version 16.2.1~dfsg
