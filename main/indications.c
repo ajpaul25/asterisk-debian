@@ -764,9 +764,11 @@ static char *handle_cli_indication_remove(struct ast_cli_entry *e, int cmd, stru
 	case CLI_GENERATE:
 		if (a->pos == 2) {
 			return complete_country(a);
-		} else if (a->pos == 3) {
+		}
+		if (a->pos == 3) {
 			return complete_indications(a);
 		}
+		return NULL;
 	}
 
 	if (a->argc != 3 && a->argc != 4) {
@@ -902,11 +904,11 @@ static void store_tone_zone_ring_cadence(struct ast_tone_zone *zone, const char 
 	ast_copy_string(buf, val, sizeof(buf));
 
 	while ((ring = strsep(&c, ","))) {
-		int *tmp, val;
+		int *tmp, value;
 
 		ring = ast_strip(ring);
 
-		if (!isdigit(ring[0]) || (val = atoi(ring)) == -1) {
+		if (!isdigit(ring[0]) || (value = atoi(ring)) == -1) {
 			ast_log(LOG_WARNING, "Invalid ringcadence given '%s'.\n", ring);
 			continue;
 		}
@@ -916,7 +918,7 @@ static void store_tone_zone_ring_cadence(struct ast_tone_zone *zone, const char 
 		}
 
 		zone->ringcadence = tmp;
-		tmp[zone->nrringcadence] = val;
+		tmp[zone->nrringcadence] = value;
 		zone->nrringcadence++;
 	}
 }

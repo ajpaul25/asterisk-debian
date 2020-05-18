@@ -111,8 +111,9 @@ static struct ast_json *playback_to_json(struct stasis_message *message,
 		return NULL;
 	}
 
-	return ast_json_pack("{s: s, s: O}",
+	return ast_json_pack("{s: s, s: o?, s: O}",
 		"type", type,
+		"timestamp", ast_json_timeval(*stasis_message_timestamp(message), NULL),
 		"playback", blob);
 }
 
@@ -286,6 +287,7 @@ static void play_on_channel(struct stasis_app_playback *playback,
 {
 	int res;
 	long offsetms;
+	size_t index;
 
 	/* Even though these local variables look fairly pointless, they avoid
 	 * having a bunch of NULL's passed directly into
@@ -304,7 +306,8 @@ static void play_on_channel(struct stasis_app_playback *playback,
 
 	offsetms = playback->offsetms;
 
-	for (; playback->media_index < AST_VECTOR_SIZE(&playback->medias); playback->media_index++) {
+	for (index = 0; index < AST_VECTOR_SIZE(&playback->medias); index++) {
+		playback->media_index = index;
 
 		/* Set the current media to play */
 		ast_string_field_set(playback, media, AST_VECTOR_GET(&playback->medias, playback->media_index));

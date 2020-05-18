@@ -226,6 +226,9 @@
 					<enum name="t38timeout">
 						<para>R/W The timeout used for T.38 negotiation.</para>
 					</enum>
+					<enum name="negotiate_both">
+						<para>R/W Upon v21 detection allow gateway to send negotiation requests to both T.38 endpoints, and do not wait on the "other" side to initiate (yes|no)</para>
+					</enum>
 				</enumlist>
 			</parameter>
 		</syntax>
@@ -722,6 +725,7 @@ static struct ast_fax_session_details *session_details_new(void)
 	d->gateway_id = -1;
 	d->faxdetect_id = -1;
 	d->gateway_timeout = 0;
+	d->negotiate_both = 0;
 
 	return d;
 }
@@ -807,17 +811,17 @@ unsigned int ast_fax_minrate(void)
 
 static int update_modem_bits(enum ast_fax_modems *bits, const char *value)
 {
-	char *m[5], *tok, *v = (char *)value;
+	char *m[5], *tok, *v = (char *) value, *rest;
 	int i = 0, j;
 
 	if (!strchr(v, ',')) {
 		m[i++] = v;
 		m[i] = NULL;
 	} else {
-		tok = strtok(v, ", ");
+		tok = strtok_r(v, ", ", &rest);
 		while (tok && i < ARRAY_LEN(m) - 1) {
 			m[i++] = tok;
-			tok = strtok(NULL, ", ");
+			tok = strtok_r(NULL, ", ", &rest);
 		}
 		m[i] = NULL;
 	}
@@ -1106,6 +1110,7 @@ static void destroy_session(void *session)
 			s->details->caps &= ~AST_FAX_TECH_GATEWAY;
 		}
 		ao2_ref(s->details, -1);
+		s->details = NULL;
 	}
 
 	if (s->debug_info) {
@@ -2915,9 +2920,13 @@ static int fax_gateway_start(struct fax_gateway *gateway, struct ast_fax_session
 	int start_res;
 
 	/* if the fax gateway is already started then do nothing */
-	if (gateway->s && gateway->s->state != AST_FAX_STATE_RESERVED) {
+	if (gateway->s &&
+		gateway->s->state != AST_FAX_STATE_RESERVED && gateway->s->state != AST_FAX_STATE_INACTIVE) {
 		return 0;
 	}
+
+	/* if we start gateway we don't need v21 detection sessions any more */
+	destroy_v21_sessions(gateway);
 
 	/* create the FAX session */
 	if (!(s = fax_session_new(details, chan, gateway->s, gateway->token))) {
@@ -2960,7 +2969,7 @@ static int fax_gateway_start(struct fax_gateway *gateway, struct ast_fax_session
 }
 
 /*! \pre chan is locked on entry */
-static struct ast_frame *fax_gateway_request_t38(struct fax_gateway *gateway, struct ast_channel *chan, struct ast_frame *f)
+static struct ast_frame *fax_gateway_request_t38(struct fax_gateway *gateway, struct ast_channel *chan)
 {
 	struct ast_frame *fp;
 	struct ast_control_t38_parameters t38_parameters = {
@@ -2979,7 +2988,7 @@ static struct ast_frame *fax_gateway_request_t38(struct fax_gateway *gateway, st
 	if (!details) {
 		ast_log(LOG_ERROR, "no FAX session details found on chan %s for T.38 gateway session, odd\n", ast_channel_name(chan));
 		ast_framehook_detach(chan, gateway->framehook);
-		return f;
+		return NULL;
 	}
 
 	t38_parameters_fax_to_ast(&t38_parameters, &details->our_t38_parameters);
@@ -2987,7 +2996,7 @@ static struct ast_frame *fax_gateway_request_t38(struct fax_gateway *gateway, st
 
 	if (!(fp = ast_frisolate(&control_frame))) {
 		ast_log(LOG_ERROR, "error generating T.38 request control frame on chan %s for T.38 gateway session\n", ast_channel_name(chan));
-		return f;
+		return NULL;
 	}
 
 	gateway->t38_state = T38_STATE_NEGOTIATING;
@@ -3016,17 +3025,56 @@ static struct ast_frame *fax_gateway_detect_v21(struct fax_gateway *gateway, str
 
 	if (gateway->detected_v21) {
 		enum ast_t38_state state_other;
+		enum ast_t38_state state_active;
+		struct ast_frame *fp;
+		struct ast_fax_session_details *details;
+		int negotiate_both = 0;
+
+		/*
+		 * The default behavior is to wait for the active endpoint to initiate negotiation.
+		 * Find out if this has been overridden. If so, instead of waiting have Asterisk
+		 * initiate the negotiation requests out to both endpoints.
+		 */
+		details = find_or_create_details(active);
+		if (details) {
+			negotiate_both = details->negotiate_both;
+			ao2_ref(details, -1);
+		} else {
+			ast_log(LOG_WARNING, "Detect v21 - no session details for channel '%s'\n",
+					ast_channel_name(chan));
+		}
 
 		destroy_v21_sessions(gateway);
 
 		ast_channel_unlock(chan);
+		state_active = ast_channel_get_t38_state(active);
 		state_other = ast_channel_get_t38_state(other);
 		ast_channel_lock(chan);
-		if (state_other == T38_STATE_UNKNOWN) {
-			ast_debug(1, "detected v21 preamble from %s\n", ast_channel_name(active));
-			return fax_gateway_request_t38(gateway, chan, f);
+
+		ast_debug(1, "detected v21 preamble from %s\n", ast_channel_name(active));
+
+		if (state_active == T38_STATE_UNKNOWN || state_other == T38_STATE_UNKNOWN) {
+			if (!(fp = fax_gateway_request_t38(gateway, chan))) {
+				return f;
+			}
+			/* May be called endpoint is improperly configured to rely on the calling endpoint
+			 * to initiate T.38 re-INVITEs, send T.38 negotiation request to called endpoint */
+			if (negotiate_both && state_active == T38_STATE_UNKNOWN) {
+				ast_debug(1, "sending T.38 negotiation request to %s\n", ast_channel_name(active));
+				if (active == chan) {
+					ast_channel_unlock(chan);
+				}
+				ast_write(active, fp);
+				if (active == chan) {
+					ast_channel_lock(chan);
+				}
+			}
+			if (state_other == T38_STATE_UNKNOWN) {
+				ast_debug(1, "sending T.38 negotiation request to %s\n", ast_channel_name(other));
+				return fp;
+			}
 		} else {
-			ast_debug(1, "detected v21 preamble on %s, but %s does not support T.38 for T.38 gateway session\n", ast_channel_name(active), ast_channel_name(other));
+			ast_debug(1, "neither %s nor %s support T.38 for T.38 gateway session\n", ast_channel_name(active), ast_channel_name(other));
 		}
 	}
 
@@ -3188,7 +3236,7 @@ static struct ast_frame *fax_gateway_detect_t38(struct fax_gateway *gateway, str
 		ast_channel_lock(chan);
 		if (state_other == T38_STATE_UNKNOWN) {
 			gateway->t38_state = T38_STATE_UNAVAILABLE;
-		} else {
+		} else if (state_other != T38_STATE_NEGOTIATING) {
 			ast_framehook_detach(chan, details->gateway_id);
 			details->gateway_id = -1;
 
@@ -3510,6 +3558,12 @@ static struct ast_frame *fax_gateway_framehook(struct ast_channel *chan, struct 
 	/* in gateway mode, gateway some packets */
 	if (gateway->t38_state == T38_STATE_NEGOTIATED) {
 		struct ast_trans_pvt *readtrans;
+
+		if (!gateway->s || !gateway->s->tech_pvt) {
+			ast_log(LOG_ERROR, "no FAX session on chan %s for T.38 gateway session, odd", ast_channel_name(chan));
+			return f;
+		}
+
 		/* framehooks are called in __ast_read() before frame format
 		 * translation is done, so we need to translate here */
 		if ((f->frametype == AST_FRAME_VOICE) && (ast_format_cmp(f->subclass.format, ast_format_slin) != AST_FORMAT_CMP_EQUAL)
@@ -4068,6 +4122,7 @@ static char *cli_fax_show_session(struct ast_cli_entry *e, int cmd, struct ast_c
 	ast_cli(a->fd, "\nFAX Session Details:\n--------------------\n\n");
 	s = ao2_find(faxregistry.container, &tmp, OBJ_POINTER);
 	if (s) {
+		ast_cli(a->fd, "%-22s : %s\n", "channel", s->channame);
 		s->tech->cli_show_session(s, a->fd);
 		ao2_ref(s, -1);
 	}
@@ -4225,7 +4280,7 @@ static char *cli_fax_show_sessions(struct ast_cli_entry *e, int cmd, struct ast_
 	}
 
 	ast_cli(a->fd, "\nCurrent FAX Sessions:\n\n");
-	ast_cli(a->fd, "%-20.20s %-10.10s %-10.10s %-5.5s %-10.10s %-15.15s %-30.30s\n",
+	ast_cli(a->fd, "%-30.30s %-10.10s %-10.10s %-5.5s %-10.10s %-15.15s %-30.30s\n",
 		"Channel", "Tech", "FAXID", "Type", "Operation", "State", "File(s)");
 	i = ao2_iterator_init(faxregistry.container, 0);
 	while ((s = ao2_iterator_next(&i))) {
@@ -4233,7 +4288,7 @@ static char *cli_fax_show_sessions(struct ast_cli_entry *e, int cmd, struct ast_
 
 		filenames = generate_filenames_string(s->details, "", ", ");
 
-		ast_cli(a->fd, "%-20.20s %-10.10s %-10u %-5.5s %-10.10s %-15.15s %-30s\n",
+		ast_cli(a->fd, "%-30.30s %-10.10s %-10u %-5.5s %-10.10s %-15.15s %-30s\n",
 			s->channame, s->tech->type, s->id,
 			fax_session_type(s),
 			ast_fax_session_operation_str(s),
@@ -4522,6 +4577,8 @@ static int acf_faxopt_read(struct ast_channel *chan, const char *cmd, char *data
 		ast_fax_modem_to_str(details->modems, buf, len);
 	} else if (!strcasecmp(data, "t38timeout")) {
 		snprintf(buf, len, "%u", details->t38timeout);
+	} else if (!strcasecmp(data, "negotiate_both")) {
+		ast_copy_string(buf, details->negotiate_both != -1 ? "yes" : "no", len);
 	} else {
 		ast_log(LOG_WARNING, "channel '%s' can't read FAXOPT(%s) because it is unhandled!\n", ast_channel_name(chan), data);
 		res = -1;
@@ -4660,6 +4717,8 @@ static int acf_faxopt_write(struct ast_channel *chan, const char *cmd, char *dat
 		}
 	} else if ((!strcasecmp(data, "modem")) || (!strcasecmp(data, "modems"))) {
 		update_modem_bits(&details->modems, value);
+	} else if (!strcasecmp(data, "negotiate_both")) {
+		details->negotiate_both = ast_true(ast_skip_blanks(value));
 	} else {
 		ast_log(LOG_WARNING, "channel '%s' set FAXOPT(%s) to '%s' is unhandled!\n", ast_channel_name(chan), data, value);
 		res = -1;

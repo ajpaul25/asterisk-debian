@@ -129,6 +129,10 @@ static int registrar_find_contact(void *obj, void *arg, int flags)
 	}
 
 	contact_uri = pjsip_parse_uri(details->pool, (char*)contact->uri, strlen(contact->uri), 0);
+	if (!contact_uri) {
+		ast_log(LOG_WARNING, "Unable to parse contact URI from '%s'.\n", contact->uri);
+		return 0;
+	}
 
 	return (pjsip_uri_cmp(PJSIP_URI_IN_CONTACT_HDR, details->uri, contact_uri) == PJ_SUCCESS) ? CMP_MATCH : 0;
 }
@@ -197,30 +201,22 @@ static int registrar_validate_contacts(const pjsip_rx_data *rdata, pj_pool_t *po
 	return 0;
 }
 
+enum contact_delete_type {
+	CONTACT_DELETE_ERROR,
+	CONTACT_DELETE_EXISTING,
+	CONTACT_DELETE_EXPIRE,
+	CONTACT_DELETE_REQUEST,
+	CONTACT_DELETE_SHUTDOWN,
+};
+
+static int registrar_contact_delete(enum contact_delete_type type, pjsip_transport *transport,
+	struct ast_sip_contact *contact, const char *aor_name);
+
 /*! \brief Internal function used to delete a contact from an AOR */
 static int registrar_delete_contact(void *obj, void *arg, int flags)
 {
-	struct ast_sip_contact *contact = obj;
-	const char *aor_name = arg;
-
-	/* Permanent contacts can't be deleted */
-	if (ast_tvzero(contact->expiration_time)) {
-		return 0;
-	}
-
-	ast_sip_location_delete_contact(contact);
-	if (!ast_strlen_zero(aor_name)) {
-		ast_verb(3, "Removed contact '%s' from AOR '%s' due to request\n", contact->uri, aor_name);
-		ast_test_suite_event_notify("AOR_CONTACT_REMOVED",
-				"Contact: %s\r\n"
-				"AOR: %s\r\n"
-				"UserAgent: %s",
-				contact->uri,
-				aor_name,
-				contact->user_agent);
-	}
-
-	return CMP_MATCH;
+	return registrar_contact_delete(
+		CONTACT_DELETE_REQUEST, NULL, obj, arg) ? 0 : CMP_MATCH;
 }
 
 /*! \brief Internal function which adds a contact to a response */
@@ -228,14 +224,21 @@ static int registrar_add_contact(void *obj, void *arg, int flags)
 {
 	struct ast_sip_contact *contact = obj;
 	pjsip_tx_data *tdata = arg;
-	pjsip_contact_hdr *hdr = pjsip_contact_hdr_create(tdata->pool);
 	pj_str_t uri;
+	pjsip_uri *parsed;
 
 	pj_strdup2_with_null(tdata->pool, &uri, contact->uri);
-	hdr->uri = pjsip_parse_uri(tdata->pool, uri.ptr, uri.slen, PJSIP_PARSE_URI_AS_NAMEADDR);
-	hdr->expires = ast_tvdiff_ms(contact->expiration_time, ast_tvnow()) / 1000;
+	parsed = pjsip_parse_uri(tdata->pool, uri.ptr, uri.slen, PJSIP_PARSE_URI_AS_NAMEADDR);
 
-	pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)hdr);
+	if (parsed && (PJSIP_URI_SCHEME_IS_SIP(parsed) || PJSIP_URI_SCHEME_IS_SIPS(parsed))) {
+		pjsip_contact_hdr *hdr = pjsip_contact_hdr_create(tdata->pool);
+		hdr->uri = parsed;
+		hdr->expires = ast_tvdiff_ms(contact->expiration_time, ast_tvnow()) / 1000;
+		pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr *) hdr);
+	} else {
+		ast_log(LOG_WARNING, "Skipping invalid Contact URI \"%.*s\" for AOR %s\n",
+			(int) uri.slen, uri.ptr, contact->aor);
+	}
 
 	return 0;
 }
@@ -352,16 +355,7 @@ static int register_contact_transport_remove_cb(void *data)
 
 	contact = ast_sip_location_retrieve_contact(monitor->contact_name);
 	if (contact) {
-		ast_sip_location_delete_contact(contact);
-		ast_verb(3, "Removed contact '%s' from AOR '%s' due to transport shutdown\n",
-			contact->uri, monitor->aor_name);
-		ast_test_suite_event_notify("AOR_CONTACT_REMOVED",
-			"Contact: %s\r\n"
-			"AOR: %s\r\n"
-			"UserAgent: %s",
-			contact->uri,
-			monitor->aor_name,
-			contact->user_agent);
+		registrar_contact_delete(CONTACT_DELETE_SHUTDOWN, NULL, contact, monitor->aor_name);
 		ao2_ref(contact, -1);
 	}
 	ao2_unlock(aor);
@@ -412,6 +406,81 @@ static void register_contact_transport_shutdown_cb(void *data)
 	}
 
 	ao2_unlock(monitor);
+}
+
+
+static int registrar_contact_delete(enum contact_delete_type type, pjsip_transport *transport,
+	struct ast_sip_contact *contact, const char *aor_name)
+{
+	int aor_size;
+
+	/* Permanent contacts can't be deleted */
+	if (ast_tvzero(contact->expiration_time)) {
+		return -1;
+	}
+
+	aor_size = aor_name ? strlen(aor_name) : 0;
+	if (contact->prune_on_boot && type != CONTACT_DELETE_SHUTDOWN && aor_size) {
+		const char *contact_name = ast_sorcery_object_get_id(contact);
+		struct contact_transport_monitor *monitor = ast_alloca(
+			sizeof(*monitor) + 2 + aor_size + strlen(contact_name));
+
+		strcpy(monitor->aor_name, aor_name); /* Safe */
+		monitor->contact_name = monitor->aor_name + aor_size + 1;
+		strcpy(monitor->contact_name, contact_name); /* Safe */
+
+		if (transport) {
+			ast_sip_transport_monitor_unregister(transport,
+				register_contact_transport_shutdown_cb,	monitor,
+				contact_transport_monitor_matcher);
+		} else {
+			/*
+			 * If a specific transport is not supplied then unregister the matching
+			 * monitor from all reliable transports.
+			 */
+			ast_sip_transport_monitor_unregister_all(register_contact_transport_shutdown_cb,
+				monitor, contact_transport_monitor_matcher);
+		}
+	}
+
+	ast_sip_location_delete_contact(contact);
+
+	if (aor_size) {
+		if (VERBOSITY_ATLEAST(3)) {
+			const char *reason = "none";
+
+			switch (type) {
+			case CONTACT_DELETE_ERROR:
+				reason = "registration failure";
+				break;
+			case CONTACT_DELETE_EXISTING:
+				reason = "remove existing";
+				break;
+			case CONTACT_DELETE_EXPIRE:
+				reason = "expiration";
+				break;
+			case CONTACT_DELETE_REQUEST:
+				reason = "request";
+				break;
+			case CONTACT_DELETE_SHUTDOWN:
+				reason = "shutdown";
+				break;
+			}
+
+			ast_verb(3, "Removed contact '%s' from AOR '%s' due to %s\n",
+					 contact->uri, aor_name, reason);
+		}
+
+		ast_test_suite_event_notify("AOR_CONTACT_REMOVED",
+				"Contact: %s\r\n"
+				"AOR: %s\r\n"
+				"UserAgent: %s",
+				contact->uri,
+				aor_name,
+				contact->user_agent);
+	}
+
+	return 0;
 }
 
 AST_VECTOR(excess_contact_vector, struct ast_sip_contact *);
@@ -490,16 +559,7 @@ static void remove_excess_contacts(struct ao2_container *contacts, struct ao2_co
 
 		contact = AST_VECTOR_GET(&contact_vec, to_remove);
 
-		ast_sip_location_delete_contact(contact);
-		ast_verb(3, "Removed contact '%s' from AOR '%s' due to remove_existing\n",
-			contact->uri, contact->aor);
-		ast_test_suite_event_notify("AOR_CONTACT_REMOVED",
-			"Contact: %s\r\n"
-			"AOR: %s\r\n"
-			"UserAgent: %s",
-			contact->uri,
-			contact->aor,
-			contact->user_agent);
+		registrar_contact_delete(CONTACT_DELETE_EXISTING, NULL, contact, contact->aor);
 
 		ao2_unlink(response_contacts, contact);
 	}
@@ -729,8 +789,8 @@ static void register_aor_core(pjsip_rx_data *rdata,
 					monitor->contact_name = monitor->aor_name + strlen(aor_name) + 1;
 					strcpy(monitor->contact_name, contact_name);/* Safe */
 
-					ast_sip_transport_monitor_register(rdata->tp_info.transport,
-						register_contact_transport_shutdown_cb, monitor);
+					ast_sip_transport_monitor_register_replace(rdata->tp_info.transport,
+						register_contact_transport_shutdown_cb, monitor, contact_transport_monitor_matcher);
 					ao2_ref(monitor, -1);
 				}
 			}
@@ -774,7 +834,8 @@ static void register_aor_core(pjsip_rx_data *rdata,
 			if (ast_sip_location_update_contact(contact_update)) {
 				ast_log(LOG_ERROR, "Failed to update contact '%s' expiration time to %d seconds.\n",
 					contact->uri, expiration);
-				ast_sip_location_delete_contact(contact);
+				registrar_contact_delete(CONTACT_DELETE_ERROR, rdata->tp_info.transport,
+					contact, aor_name);
 				continue;
 			}
 			ast_debug(3, "Refreshed contact '%s' on AOR '%s' with new expiration of %d seconds\n",
@@ -791,31 +852,8 @@ static void register_aor_core(pjsip_rx_data *rdata,
 			ao2_link(contacts, contact_update);
 			ao2_cleanup(contact_update);
 		} else {
-			if (contact->prune_on_boot) {
-				struct contact_transport_monitor *monitor;
-				const char *contact_name =
-					ast_sorcery_object_get_id(contact);
-
-				monitor = ast_alloca(sizeof(*monitor) + 2 + strlen(aor_name)
-					+ strlen(contact_name));
-				strcpy(monitor->aor_name, aor_name);/* Safe */
-				monitor->contact_name = monitor->aor_name + strlen(aor_name) + 1;
-				strcpy(monitor->contact_name, contact_name);/* Safe */
-
-				ast_sip_transport_monitor_unregister(rdata->tp_info.transport,
-					register_contact_transport_shutdown_cb, monitor, contact_transport_monitor_matcher);
-			}
-
-			/* We want to report the user agent that was actually in the removed contact */
-			ast_sip_location_delete_contact(contact);
-			ast_verb(3, "Removed contact '%s' from AOR '%s' due to request\n", contact_uri, aor_name);
-			ast_test_suite_event_notify("AOR_CONTACT_REMOVED",
-					"Contact: %s\r\n"
-					"AOR: %s\r\n"
-					"UserAgent: %s",
-					contact_uri,
-					aor_name,
-					contact->user_agent);
+			registrar_contact_delete(CONTACT_DELETE_REQUEST, rdata->tp_info.transport,
+					contact, aor_name);
 		}
 	}
 
@@ -911,13 +949,20 @@ static int match_aor(const char *aor_name, const char *id)
 	return 0;
 }
 
-static char *find_aor_name(const char *username, const char *domain, const char *aors)
+static char *find_aor_name(const pj_str_t *pj_username, const pj_str_t *pj_domain, const char *aors)
 {
 	char *configured_aors;
 	char *aors_buf;
 	char *aor_name;
 	char *id_domain;
+	char *username, *domain;
 	struct ast_sip_domain_alias *alias;
+
+	/* Turn these into C style strings for convenience */
+	username = ast_alloca(pj_strlen(pj_username) + 1);
+	ast_copy_pj_str(username, pj_username, pj_strlen(pj_username) + 1);
+	domain = ast_alloca(pj_strlen(pj_domain) + 1);
+	ast_copy_pj_str(domain, pj_domain, pj_strlen(pj_domain) + 1);
 
 	id_domain = ast_alloca(strlen(username) + strlen(domain) + 2);
 	sprintf(id_domain, "%s@%s", username, domain);
@@ -937,7 +982,7 @@ static char *find_aor_name(const char *username, const char *domain, const char 
 	if (alias) {
 		char *id_domain_alias = ast_alloca(strlen(username) + strlen(alias->domain) + 2);
 
-		sprintf(id_domain, "%s@%s", username, alias->domain);
+		sprintf(id_domain_alias, "%s@%s", username, alias->domain);
 		ao2_cleanup(alias);
 
 		configured_aors = strcpy(aors_buf, aors);/* Safe */
@@ -968,11 +1013,10 @@ static struct ast_sip_aor *find_registrar_aor(struct pjsip_rx_data *rdata, struc
 {
 	struct ast_sip_aor *aor = NULL;
 	char *aor_name = NULL;
-	char *domain_name;
-	char *username = NULL;
 	int i;
 
 	for (i = 0; i < AST_VECTOR_SIZE(&endpoint->ident_method_order); ++i) {
+		pj_str_t username;
 		pjsip_sip_uri *uri;
 		pjsip_authorization_hdr *header = NULL;
 
@@ -980,18 +1024,22 @@ static struct ast_sip_aor *find_registrar_aor(struct pjsip_rx_data *rdata, struc
 		case AST_SIP_ENDPOINT_IDENTIFY_BY_USERNAME:
 			uri = pjsip_uri_get_uri(rdata->msg_info.to->uri);
 
-			domain_name = ast_alloca(uri->host.slen + 1);
-			ast_copy_pj_str(domain_name, &uri->host, uri->host.slen + 1);
-			username = ast_alloca(uri->user.slen + 1);
-			ast_copy_pj_str(username, &uri->user, uri->user.slen + 1);
+			pj_strassign(&username, &uri->user);
 
 			/*
 			 * We may want to match without any user options getting
 			 * in the way.
+			 *
+			 * Logic adapted from AST_SIP_USER_OPTIONS_TRUNCATE_CHECK for pj_str_t.
 			 */
-			AST_SIP_USER_OPTIONS_TRUNCATE_CHECK(username);
+			if (ast_sip_get_ignore_uri_user_options()) {
+				pj_ssize_t semi = pj_strcspn2(&username, ";");
+				if (semi < pj_strlen(&username)) {
+					username.slen = semi;
+				}
+			}
 
-			aor_name = find_aor_name(username, domain_name, endpoint->aors);
+			aor_name = find_aor_name(&username, &uri->host, endpoint->aors);
 			if (aor_name) {
 				ast_debug(3, "Matched aor '%s' by To username\n", aor_name);
 			}
@@ -1000,12 +1048,8 @@ static struct ast_sip_aor *find_registrar_aor(struct pjsip_rx_data *rdata, struc
 			while ((header = pjsip_msg_find_hdr(rdata->msg_info.msg, PJSIP_H_AUTHORIZATION,
 				header ? header->next : NULL))) {
 				if (header && !pj_stricmp2(&header->scheme, "digest")) {
-					username = ast_alloca(header->credential.digest.username.slen + 1);
-					ast_copy_pj_str(username, &header->credential.digest.username, header->credential.digest.username.slen + 1);
-					domain_name = ast_alloca(header->credential.digest.realm.slen + 1);
-					ast_copy_pj_str(domain_name, &header->credential.digest.realm, header->credential.digest.realm.slen + 1);
-
-					aor_name = find_aor_name(username, domain_name, endpoint->aors);
+					aor_name = find_aor_name(&header->credential.digest.username,
+						&header->credential.digest.realm, endpoint->aors);
 					if (aor_name) {
 						ast_debug(3, "Matched aor '%s' by Authentication username\n", aor_name);
 						break;
@@ -1027,7 +1071,7 @@ static struct ast_sip_aor *find_registrar_aor(struct pjsip_rx_data *rdata, struc
 		pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(), rdata, 404, NULL, NULL, NULL);
 		ast_sip_report_req_no_support(endpoint, rdata, "registrar_requested_aor_not_found");
 		ast_log(LOG_WARNING, "AOR '%s' not found for endpoint '%s'\n",
-			username ?: "", ast_sorcery_object_get_id(endpoint));
+			aor_name ?: "", ast_sorcery_object_get_id(endpoint));
 	}
 	ast_free(aor_name);
 	return aor;
@@ -1212,20 +1256,7 @@ static int expire_contact(void *obj, void *arg, int flags)
 	 */
 	ao2_lock(lock);
 	if (ast_tvdiff_ms(ast_tvnow(), contact->expiration_time) > 0) {
-		if (contact->prune_on_boot) {
-			struct contact_transport_monitor *monitor;
-			const char *contact_name = ast_sorcery_object_get_id(contact);
-
-			monitor = ast_alloca(sizeof(*monitor) + 2 + strlen(contact->aor)
-				+ strlen(contact_name));
-			strcpy(monitor->aor_name, contact->aor);/* Safe */
-			monitor->contact_name = monitor->aor_name + strlen(contact->aor) + 1;
-			strcpy(monitor->contact_name, contact_name);/* Safe */
-
-			ast_sip_transport_monitor_unregister_all(register_contact_transport_shutdown_cb,
-				monitor, contact_transport_monitor_matcher);
-		}
-		ast_sip_location_delete_contact(contact);
+		registrar_contact_delete(CONTACT_DELETE_EXPIRE, NULL, contact, contact->aor);
 	}
 	ao2_unlock(lock);
 	ast_named_lock_put(lock);

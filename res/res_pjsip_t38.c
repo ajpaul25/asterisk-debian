@@ -203,7 +203,6 @@ static int t38_automatic_reject(void *obj)
 {
 	RAII_VAR(struct ast_sip_session *, session, obj, ao2_cleanup);
 	RAII_VAR(struct ast_datastore *, datastore, ast_sip_session_get_datastore(session, "t38"), ao2_cleanup);
-	struct ast_sip_session_media *session_media;
 
 	if (!datastore) {
 		return 0;
@@ -212,8 +211,7 @@ static int t38_automatic_reject(void *obj)
 	ast_debug(2, "Automatically rejecting T.38 request on channel '%s'\n",
 		session->channel ? ast_channel_name(session->channel) : "<gone>");
 
-	session_media = session->pending_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
-	t38_change_state(session, session_media, datastore->data, T38_REJECTED);
+	t38_change_state(session, NULL, datastore->data, T38_REJECTED);
 	ast_sip_session_resume_reinvite(session);
 
 	return 0;
@@ -322,27 +320,36 @@ static int t38_reinvite_response_cb(struct ast_sip_session *session, pjsip_rx_da
 		int index;
 
 		session_media = session->active_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
-		t38_change_state(session, session_media, state, T38_ENABLED);
+		if (!session_media) {
+			ast_log(LOG_WARNING, "Received %d response to T.38 re-invite on '%s' but no active session media\n",
+					status.code, session->channel ? ast_channel_name(session->channel) : "unknown channel");
+		} else {
+			t38_change_state(session, session_media, state, T38_ENABLED);
 
-		/* Stop all the streams in the stored away active state, they'll go back to being active once
-		 * we reinvite back.
-		 */
-		for (index = 0; index < AST_VECTOR_SIZE(&state->media_state->sessions); ++index) {
-			struct ast_sip_session_media *session_media = AST_VECTOR_GET(&state->media_state->sessions, index);
+			/* Stop all the streams in the stored away active state, they'll go back to being active once
+			 * we reinvite back.
+			 */
+			for (index = 0; index < AST_VECTOR_SIZE(&state->media_state->sessions); ++index) {
+				struct ast_sip_session_media *session_media = AST_VECTOR_GET(&state->media_state->sessions, index);
 
-			if (session_media && session_media->handler && session_media->handler->stream_stop) {
-				session_media->handler->stream_stop(session_media);
+				if (session_media && session_media->handler && session_media->handler->stream_stop) {
+					session_media->handler->stream_stop(session_media);
+				}
 			}
+
+			return 0;
 		}
 	} else {
 		session_media = session->pending_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
-		t38_change_state(session, session_media, state, T38_REJECTED);
-
-		/* Abort this attempt at switching to T.38 by resetting the pending state and freeing our stored away active state */
-		ast_sip_session_media_state_free(state->media_state);
-		state->media_state = NULL;
-		ast_sip_session_media_state_reset(session->pending_media_state);
 	}
+
+	/* If no session_media then response contained a declined stream, so disable */
+	t38_change_state(session, NULL, state, session_media ? T38_REJECTED : T38_DISABLED);
+
+	/* Abort this attempt at switching to T.38 by resetting the pending state and freeing our stored away active state */
+	ast_sip_session_media_state_free(state->media_state);
+	state->media_state = NULL;
+	ast_sip_session_media_state_reset(session->pending_media_state);
 
 	return 0;
 }
@@ -426,12 +433,10 @@ static int t38_interpret_parameters(void *obj)
 		/* Negotiation can not take place without a valid max_ifp value. */
 		if (!parameters->max_ifp) {
 			if (data->session->t38state == T38_PEER_REINVITE) {
-				session_media = data->session->pending_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
-				t38_change_state(data->session, session_media, state, T38_REJECTED);
+				t38_change_state(data->session, NULL, state, T38_REJECTED);
 				ast_sip_session_resume_reinvite(data->session);
 			} else if (data->session->t38state == T38_ENABLED) {
-				session_media = data->session->active_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
-				t38_change_state(data->session, session_media, state, T38_DISABLED);
+				t38_change_state(data->session, NULL, state, T38_DISABLED);
 				ast_sip_session_refresh(data->session, NULL, NULL, NULL,
 					AST_SIP_SESSION_REFRESH_METHOD_INVITE, 1, state->media_state);
 				state->media_state = NULL;
@@ -454,6 +459,11 @@ static int t38_interpret_parameters(void *obj)
 			state->our_parms.version = MIN(state->our_parms.version, state->their_parms.version);
 			state->our_parms.rate_management = state->their_parms.rate_management;
 			session_media = data->session->pending_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
+			if (!session_media) {
+				ast_log(LOG_ERROR, "Failed to negotiate parameters for reinvite on channel '%s' (No pending session media).\n",
+					data->session->channel ? ast_channel_name(data->session->channel) : "unknown channel");
+				break;
+			}
 			ast_udptl_set_local_max_ifp(session_media->udptl, state->our_parms.max_ifp);
 			t38_change_state(data->session, session_media, state, T38_ENABLED);
 			ast_sip_session_resume_reinvite(data->session);
@@ -468,8 +478,13 @@ static int t38_interpret_parameters(void *obj)
 			}
 			state->our_parms = *parameters;
 			session_media = media_state->default_session[AST_MEDIA_TYPE_IMAGE];
+			if (!session_media) {
+				ast_log(LOG_ERROR, "Failed to negotiate parameters on channel '%s' (No default session media).\n",
+					data->session->channel ? ast_channel_name(data->session->channel) : "unknown channel");
+				break;
+			}
 			ast_udptl_set_local_max_ifp(session_media->udptl, state->our_parms.max_ifp);
-			t38_change_state(data->session, session_media, state, T38_LOCAL_REINVITE);
+			t38_change_state(data->session, NULL, state, T38_LOCAL_REINVITE);
 			ast_sip_session_refresh(data->session, NULL, t38_reinvite_sdp_cb, t38_reinvite_response_cb,
 				AST_SIP_SESSION_REFRESH_METHOD_INVITE, 1, media_state);
 		}
@@ -478,12 +493,10 @@ static int t38_interpret_parameters(void *obj)
 	case AST_T38_REFUSED:
 	case AST_T38_REQUEST_TERMINATE:         /* Shutdown T38 */
 		if (data->session->t38state == T38_PEER_REINVITE) {
-			session_media = data->session->pending_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
-			t38_change_state(data->session, session_media, state, T38_REJECTED);
+			t38_change_state(data->session, NULL, state, T38_REJECTED);
 			ast_sip_session_resume_reinvite(data->session);
 		} else if (data->session->t38state == T38_ENABLED) {
-			session_media = data->session->active_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
-			t38_change_state(data->session, session_media, state, T38_DISABLED);
+			t38_change_state(data->session, NULL, state, T38_DISABLED);
 			ast_sip_session_refresh(data->session, NULL, NULL, NULL, AST_SIP_SESSION_REFRESH_METHOD_INVITE, 1, state->media_state);
 			state->media_state = NULL;
 		}
@@ -493,6 +506,11 @@ static int t38_interpret_parameters(void *obj)
 
 		if (data->session->t38state == T38_PEER_REINVITE) {
 			session_media = data->session->pending_media_state->default_session[AST_MEDIA_TYPE_IMAGE];
+			if (!session_media) {
+				ast_log(LOG_ERROR, "Failed to request parameters for reinvite on channel '%s' (No pending session media).\n",
+					data->session->channel ? ast_channel_name(data->session->channel) : "unknown channel");
+				break;
+			}
 			parameters.max_ifp = ast_udptl_get_far_max_ifp(session_media->udptl);
 			parameters.request_response = AST_T38_REQUEST_NEGOTIATE;
 			ast_queue_control_data(data->session->channel, AST_CONTROL_T38_PARAMETERS, &parameters, sizeof(parameters));
@@ -519,13 +537,13 @@ static struct ast_frame *t38_framehook(struct ast_channel *chan, struct ast_fram
 	if (f->frametype == AST_FRAME_CONTROL
 		&& f->subclass.integer == AST_CONTROL_T38_PARAMETERS) {
 		if (channel->session->endpoint->media.t38.enabled) {
-			struct t38_parameters_task_data *data;
+			struct t38_parameters_task_data *task_data;
 
-			data = t38_parameters_task_data_alloc(channel->session, f);
-			if (data
+			task_data = t38_parameters_task_data_alloc(channel->session, f);
+			if (task_data
 				&& ast_sip_push_task(channel->session->serializer,
-					t38_interpret_parameters, data)) {
-				ao2_ref(data, -1);
+					t38_interpret_parameters, task_data)) {
+				ao2_ref(task_data, -1);
 			}
 		} else {
 			static const struct ast_control_t38_parameters rsp_refused = {
@@ -722,12 +740,32 @@ static void t38_interpret_sdp(struct t38_state *state, struct ast_sip_session *s
 				state->their_parms.rate_management = AST_T38_RATE_MANAGEMENT_TRANSFERRED_TCF;
 			}
 		} else if (!pj_stricmp2(&attr->name, "t38faxudpec")) {
-			if (!pj_stricmp2(&attr->value, "t38UDPRedundancy")) {
-				ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_REDUNDANCY);
-			} else if (!pj_stricmp2(&attr->value, "t38UDPFEC")) {
-				ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_FEC);
+			if (session->t38state == T38_LOCAL_REINVITE) {
+				if (session->endpoint->media.t38.error_correction == UDPTL_ERROR_CORRECTION_FEC) {
+					if (!pj_stricmp2(&attr->value, "t38UDPFEC")) {
+						ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_FEC);
+					} else if (!pj_stricmp2(&attr->value, "t38UDPRedundancy")) {
+						ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_REDUNDANCY);
+					} else {
+						ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_NONE);
+					}
+				} else if (session->endpoint->media.t38.error_correction == UDPTL_ERROR_CORRECTION_REDUNDANCY) {
+					if (!pj_stricmp2(&attr->value, "t38UDPRedundancy")) {
+						ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_REDUNDANCY);
+					} else {
+						ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_NONE);
+					}
+				} else {
+					ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_NONE);
+				}
 			} else {
-				ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_NONE);
+				if (!pj_stricmp2(&attr->value, "t38UDPRedundancy")) {
+					ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_REDUNDANCY);
+				} else if (!pj_stricmp2(&attr->value, "t38UDPFEC")) {
+					ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_FEC);
+				} else {
+					ast_udptl_set_error_correction_scheme(session_media->udptl, UDPTL_ERROR_CORRECTION_NONE);
+				}
 			}
 		}
 
@@ -788,7 +826,7 @@ static int negotiate_incoming_sdp_stream(struct ast_sip_session *session,
 
 	if ((session->t38state == T38_REJECTED) || (session->t38state == T38_DISABLED)) {
 		ast_debug(3, "Declining; T.38 state is rejected or declined\n");
-		t38_change_state(session, session_media, state, T38_DISABLED);
+		t38_change_state(session, NULL, state, T38_DISABLED);
 		return 0;
 	}
 

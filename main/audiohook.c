@@ -338,6 +338,17 @@ static struct ast_frame *audiohook_read_frame_both(struct ast_audiohook *audioho
 
 	frame.subclass.format = ast_format_cache_get_slin_by_rate(audiohook->hook_internal_samp_rate);
 
+	/* Should we substitute silence if one side lacks audio? */
+	if ((ast_test_flag(audiohook, AST_AUDIOHOOK_SUBSTITUTE_SILENCE))) {
+		if (read_reference && !read_buf && write_buf) {
+			read_buf = buf1;
+			memset(buf1, 0, sizeof(buf1));
+		} else if (write_reference && read_buf && !write_buf) {
+			write_buf = buf2;
+			memset(buf2, 0, sizeof(buf2));
+		}
+	}
+
 	/* Basically we figure out which buffer to use... and if mixing can be done here */
 	if (read_buf && read_reference) {
 		frame.data.ptr = read_buf;
@@ -490,6 +501,15 @@ static void audiohook_list_set_samplerate_compatibility(struct ast_audiohook_lis
 int ast_audiohook_attach(struct ast_channel *chan, struct ast_audiohook *audiohook)
 {
 	ast_channel_lock(chan);
+
+	/* Don't allow an audiohook to be attached to a channel that is already hung up.
+	 * The hang up process is what actually notifies the audiohook that it should
+	 * stop.
+	 */
+	if (ast_test_flag(ast_channel_flags(chan), AST_FLAG_ZOMBIE)) {
+		ast_channel_unlock(chan);
+		return -1;
+	}
 
 	if (!ast_channel_audiohooks(chan)) {
 		struct ast_audiohook_list *ahlist;

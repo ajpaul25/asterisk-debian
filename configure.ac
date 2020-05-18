@@ -230,6 +230,8 @@ then
    AC_CHECK_TOOL(CXX, g++, :)
    AC_CHECK_TOOL(LD, ld, :)
    AC_CHECK_TOOL(RANLIB, ranlib, :)
+   CROSS_COMPILING=1
+   AC_SUBST(CROSS_COMPILING)
 fi
 
 # Checks for programs.
@@ -261,9 +263,8 @@ AC_PATH_PROG([CAT], [cat], :)
 AC_PATH_PROG([CUT], [cut], :)
 AC_PATH_PROG([FLEX], [flex], :)
 AC_PATH_PROG([GREP], [grep], :)
-AC_PATH_PROG([PYTHON], [python], :)
+AC_PATH_PROGS([PYTHON], [python2.7 python2 python python3], :)
 AC_PATH_PROG([FIND], [find], :)
-AC_PATH_PROG([COMPRESS], [compress], :)
 AC_PATH_PROG([BASENAME], [basename], :)
 AC_PATH_PROG([DIRNAME], [dirname], :)
 AC_PATH_PROG([SHELL], [sh], :)
@@ -272,9 +273,6 @@ AC_PATH_PROG([DOXYGEN], [doxygen], :)
 AC_PATH_PROG([DOT], [dot], :)
 AC_PATH_PROG([WGET], [wget], :)
 AC_PATH_PROG([CURL], [curl], :)
-AC_PATH_PROG([RUBBER], [rubber], :)
-AC_PATH_PROG([CATDVI], [catdvi], :)
-AC_PATH_PROG([KPATHSEA], [kpsewhich], :)
 AC_PATH_PROG([XMLLINT], [xmllint], :)
 AC_PATH_PROGS([XMLSTARLET], [xmlstarlet xml], :)
 AC_PATH_PROG([BASH], [bash], :)
@@ -480,6 +478,7 @@ AST_EXT_LIB_SETUP_OPTIONAL([COROSYNC_CFG_STATE_TRACK], [A callback only in coros
 AST_EXT_LIB_SETUP([CRYPT], [password and data encryption], [crypt])
 AST_EXT_LIB_SETUP([CRYPTO], [OpenSSL Cryptography], [crypto])
 AST_EXT_LIB_SETUP_OPTIONAL([OPENSSL_SRTP], [OpenSSL SRTP Extension Support], [CRYPTO], [crypto])
+AST_EXT_LIB_SETUP_OPTIONAL([OPENSSL_BIO_METHOD], [OpenSSL BIO Method Support], [CRYPTO], [crypto])
 AST_EXT_LIB_SETUP([DAHDI], [DAHDI], [dahdi])
 AST_EXT_LIB_SETUP([FFMPEG], [Ffmpeg and avcodec], [avcodec])
 AST_EXT_LIB_SETUP([GSM], [External GSM], [gsm], [, use 'internal' GSM otherwise])
@@ -725,6 +724,20 @@ if test "${DISABLE_XMLDOC}" != "yes"; then
         AST_EXT_LIB_CHECK([LIBXSLT], [xslt], [xsltLoadStylesheetPI], [libxslt/xsltInternals.h], [${LIBXML2_LIB}], [${LIBXML2_INCLUDE}])
         AST_EXT_LIB_CHECK([LIBXSLT_CLEANUP], [xslt], [xsltCleanupGlobals], [libxslt/xsltInternals.h], [${LIBXML2_LIB}], [${LIBXML2_INCLUDE}])
 
+fi
+
+AC_ARG_ENABLE([permanent-dlopen],
+	[AS_HELP_STRING([--enable-permanent-dlopen],
+		[Enable when your libc has a permanent dlopen like musl])],
+	[case "${enableval}" in
+		y|ye|yes) PERMANENT_DLOPEN=yes ;;
+		n|no)  PERMANENT_DLOPEN=no ;;
+		*) AC_MSG_ERROR(bad value ${enableval} for --enable-permanent-dlopen)  ;;
+	esac], [PERMANENT_DLOPEN=no])
+
+AC_SUBST([PERMANENT_DLOPEN])
+if test "${PERMANENT_DLOPEN}" == "yes"; then
+	AC_DEFINE([HAVE_PERMANENT_DLOPEN], 1, [Define to support libc with permanent dlopen.])
 fi
 
 # some embedded systems omit internationalization (locale) support
@@ -1660,7 +1673,7 @@ if test "${USE_IMAP_TK}" != "no"; then
 	saved_libs="${LIBS}"
 	switch_to_system_on_failure="no"
 	if test "${IMAP_TK_DIR}" = ""; then
-		IMAP_TK_DIR=`pwd`"/../imap-2004g"
+		IMAP_TK_DIR="`pwd`/../imap-2004g"
 		switch_to_system_on_failure="yes"
 	fi
 	if test "${IMAP_TK_DIR}" != "system"; then
@@ -2262,7 +2275,27 @@ if test "${PBX_MISDN}" = 1; then
    AC_CHECK_MEMBER([Q931_info_t.redirect_dn], [], [PBX_MISDN=0], [#include <mISDNuser/mISDNlib.h>])
 fi
 
+
 AST_EXT_TOOL_CHECK([MYSQLCLIENT], [mysql_config])
+
+if test "${PBX_MYSQLCLIENT}" = 1; then
+   AC_MSG_CHECKING(for MySQL client bool support)
+   AC_LINK_IFELSE(
+           [AC_LANG_PROGRAM([#include <mysql/mysql.h>],
+                   [bool test = 1;])],
+           AC_MSG_RESULT(yes)
+           AC_DEFINE(HAVE_MYSQLCLIENT_BOOL, 1, [Define to 1 if mysql/mysql.h has bool defined.]),
+           AC_MSG_RESULT(no)
+   )
+   AC_MSG_CHECKING(for MySQL client my_bool support)
+   AC_LINK_IFELSE(
+           [AC_LANG_PROGRAM([#include <mysql/mysql.h>],
+                   [my_bool test = 1;])],
+           AC_MSG_RESULT(yes)
+           AC_DEFINE(HAVE_MYSQLCLIENT_MY_BOOL, 1, [Define to 1 if mysql/mysql.h has my_bool defined.]),
+           AC_MSG_RESULT(no)
+   )
+fi
 
 AST_EXT_LIB_CHECK([NBS], [nbs], [nbs_connect], [nbs.h])
 
@@ -2374,42 +2407,76 @@ fi
 if test "$USE_PJPROJECT" != "no" ; then
    if test "$PJPROJECT_BUNDLED" = "no" ; then
       AST_PKG_CONFIG_CHECK([PJPROJECT], [libpjproject])
+      if test "x$PBX_PJPROJECT" = "x1" ; then
+         AST_EXT_LIB_CHECK([PJSIP_DLG_CREATE_UAS_AND_INC_LOCK], [pjsip], [pjsip_dlg_create_uas_and_inc_lock], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+         AST_EXT_LIB_CHECK([PJ_TRANSACTION_GRP_LOCK], [pjsip], [pjsip_tsx_create_uac2], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
 
-      AST_EXT_LIB_CHECK([PJSIP_DLG_CREATE_UAS_AND_INC_LOCK], [pjsip], [pjsip_dlg_create_uas_and_inc_lock], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
-      AST_EXT_LIB_CHECK([PJ_TRANSACTION_GRP_LOCK], [pjsip], [pjsip_tsx_create_uac2], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+         saved_cppflags="${CPPFLAGS}"
+         saved_libs="${LIBS}"
+         CPPFLAGS="${CPPFLAGS} ${PJPROJECT_CFLAGS}"
+         LIBS="${LIBS} ${PJPROJECT_LIB}"
+         AST_C_COMPILE_CHECK([PJSIP_REPLACE_MEDIA_STREAM], [pjmedia_mod_offer_flag flag = PJMEDIA_SDP_NEG_ALLOW_MEDIA_CHANGE], [pjmedia.h])
+         LIBS="${saved_libs}"
+         CPPFLAGS="${saved_cppflags}"
 
-      saved_cppflags="${CPPFLAGS}"
-      saved_libs="${LIBS}"
-      CPPFLAGS="${CPPFLAGS} ${PJPROJECT_CFLAGS}"
-      LIBS="${LIBS} ${PJPROJECT_LIB}"
-      AST_C_COMPILE_CHECK([PJSIP_REPLACE_MEDIA_STREAM], [pjmedia_mod_offer_flag flag = PJMEDIA_SDP_NEG_ALLOW_MEDIA_CHANGE], [pjmedia.h])
-      LIBS="${saved_libs}"
-      CPPFLAGS="${saved_cppflags}"
+         AST_EXT_LIB_CHECK([PJSIP_GET_DEST_INFO], [pjsip], [pjsip_get_dest_info], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+         AST_EXT_LIB_CHECK([PJ_SSL_CERT_LOAD_FROM_FILES2], [pj], [pj_ssl_cert_load_from_files2], [pjlib.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+         AST_EXT_LIB_CHECK([PJSIP_EXTERNAL_RESOLVER], [pjsip], [pjsip_endpt_set_ext_resolver], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
 
-      AST_EXT_LIB_CHECK([PJSIP_GET_DEST_INFO], [pjsip], [pjsip_get_dest_info], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
-      AST_EXT_LIB_CHECK([PJ_SSL_CERT_LOAD_FROM_FILES2], [pj], [pj_ssl_cert_load_from_files2], [pjlib.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
-      AST_EXT_LIB_CHECK([PJSIP_EXTERNAL_RESOLVER], [pjsip], [pjsip_endpt_set_ext_resolver], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+         saved_cppflags="${CPPFLAGS}"
+         saved_libs="${LIBS}"
+         CPPFLAGS="${CPPFLAGS} ${PJPROJECT_CFLAGS}"
+         LIBS="${LIBS} ${PJPROJECT_LIB}"
+         AST_C_COMPILE_CHECK([PJSIP_TLS_TRANSPORT_PROTO], [struct pjsip_tls_setting setting; int proto; proto = setting.proto;], [pjsip.h])
+         AST_C_COMPILE_CHECK([PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS], [pjsip_cfg()->endpt.accept_multiple_sdp_answers = 0;], [pjsip.h])
+         AST_C_COMPILE_CHECK([PJSIP_ENDPOINT_COMPACT_FORM], [pjsip_cfg()->endpt.use_compact_form = PJ_TRUE;], [pjsip.h])
+         AC_MSG_CHECKING(for pjproject on_valid_pair callback)
+         AC_LINK_IFELSE(
+            [AC_LANG_PROGRAM(
+               [#include <pjsip.h>
+               #include <pjsip_ua.h>
+               #include <pjnath.h>
+               void on_valid_pair(pj_ice_sess *ice) {}
+               void on_ice_complete(pj_ice_sess *ice, pj_status_t status) {}
+               void on_rx_data(pj_ice_sess *ice, unsigned comp_id, unsigned transport_id, void *pkt, pj_size_t size, const pj_sockaddr_t *src_addr, unsigned src_addr_len) {}
+               pj_status_t on_tx_pkt(pj_ice_sess *ice, unsigned comp_id, unsigned transport_id, const void *pkt, pj_size_t size, const pj_sockaddr_t *dst_addr, unsigned dst_addr_len) {}],
+               [pj_ice_sess_cb ice_sess_cb = {
+                  .on_valid_pair = on_valid_pair,
+                  .on_ice_complete = on_ice_complete,
+                  .on_rx_data = on_rx_data,
+                  .on_tx_pkt = on_tx_pkt,
+               };])],
+            AC_MSG_RESULT(yes)
+            AC_DEFINE(HAVE_PJPROJECT_ON_VALID_ICE_PAIR_CALLBACK, 1, [Define to 1 if on_valid_pair callback is present.]),
+            AC_MSG_RESULT(no)
+         )
+         LIBS="${saved_libs}"
+         CPPFLAGS="${saved_cppflags}"
 
-      saved_cppflags="${CPPFLAGS}"
-      saved_libs="${LIBS}"
-      CPPFLAGS="${CPPFLAGS} ${PJPROJECT_CFLAGS}"
-      LIBS="${LIBS} ${PJPROJECT_LIB}"
-      AST_C_COMPILE_CHECK([PJSIP_TLS_TRANSPORT_PROTO], [struct pjsip_tls_setting setting; int proto; proto = setting.proto;], [pjsip.h])
-      AST_C_COMPILE_CHECK([PJSIP_INV_ACCEPT_MULTIPLE_SDP_ANSWERS], [pjsip_cfg()->endpt.accept_multiple_sdp_answers = 0;], [pjsip.h])
-      AST_C_COMPILE_CHECK([PJSIP_ENDPOINT_COMPACT_FORM], [pjsip_cfg()->endpt.use_compact_form = PJ_TRUE;], [pjsip.h])
-      LIBS="${saved_libs}"
-      CPPFLAGS="${saved_cppflags}"
+         AST_EXT_LIB_CHECK([PJSIP_EVSUB_GRP_LOCK], [pjsip], [pjsip_evsub_add_ref], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+         AST_EXT_LIB_CHECK([PJSIP_INV_SESSION_REF], [pjsip], [pjsip_inv_add_ref], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+         AST_EXT_LIB_CHECK([PJSIP_AUTH_CLT_DEINIT], [pjsip], [pjsip_auth_clt_deinit], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+         AST_EXT_LIB_CHECK([PJSIP_TSX_LAYER_FIND_TSX2], [pjsip], [pjsip_tsx_layer_find_tsx2], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+      fi
+   fi
 
-      AST_EXT_LIB_CHECK([PJSIP_EVSUB_GRP_LOCK], [pjsip], [pjsip_evsub_add_ref], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
-      AST_EXT_LIB_CHECK([PJSIP_INV_SESSION_REF], [pjsip], [pjsip_inv_add_ref], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
-      AST_EXT_LIB_CHECK([PJSIP_AUTH_CLT_DEINIT], [pjsip], [pjsip_auth_clt_deinit], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
-      AST_EXT_LIB_CHECK([PJSIP_TSX_LAYER_FIND_TSX2], [pjsip], [pjsip_tsx_layer_find_tsx2], [pjsip.h], [$PJPROJECT_LIB], [$PJPROJECT_CFLAGS])
+   if test "x$PBX_PJPROJECT" = "x1" ; then
+      if test "x${AST_DEVMODE}" = "xyes" ; then
+         AC_SUBST([PYTHONDEV_LIB])
+         AC_SUBST([PYTHONDEV_INCLUDE])
+         AST_PKG_CONFIG_CHECK([PYTHONDEV], [python-2.7])
+         AST_PKG_CONFIG_CHECK([PYTHONDEV], [python2])
+         AST_PKG_CONFIG_CHECK([PYTHONDEV], [python])
+         # The PJProject offers a C extension to Python. That wrapper is used by the
+         # Asterisk Test Framework, which requires Asterisk to be in Developer Mode.
+         # However, the used wrapper (called 'PJSUA Python') is deprecated and was not
+         # ported from Python 2.7 to Python 3.x. This is confirmed; it simply does not
+         # build. For more see <http://www.pjsip.org/trac/wiki/Python_SIP_Tutorial>.
+         # Therefore, the C libraries for Python 3 are of no help in Asterisk:
+         #AST_PKG_CONFIG_CHECK([PYTHONDEV], [python3])
+      fi
    fi
 fi
-
-AC_SUBST([PYTHONDEV_LIB])
-AC_SUBST([PYTHONDEV_INCLUDE])
-AST_PKG_CONFIG_CHECK([PYTHONDEV], [python])
 
 AST_EXT_LIB_CHECK([POPT], [popt], [poptStrerror], [popt.h])
 
@@ -2417,31 +2484,33 @@ AST_PKG_CONFIG_CHECK([PORTAUDIO], [portaudio-2.0])
 AST_EXT_LIB_CHECK([PORTAUDIO], [portaudio], [Pa_GetDeviceCount], [portaudio.h])
 
 AST_EXT_LIB_CHECK([PRI], [pri], [pri_connected_line_update], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_SETUP_ACK_INBAND], [pri], [pri_setup_ack], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_L2_PERSISTENCE], [pri], [pri_persistent_layer2_option], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_DATETIME_SEND], [pri], [pri_date_time_send_option], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_MWI_V2], [pri], [pri_mwi_indicate_v2], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_DISPLAY_TEXT], [pri], [pri_display_text], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_MWI], [pri], [pri_mwi_indicate], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_MCID], [pri], [pri_mcid_enable], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_CALL_WAITING], [pri], [pri_connect_ack_enable], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_AOC_EVENTS], [pri], [pri_aoc_events_enable], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_TRANSFER], [pri], [pri_transfer_enable], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_CCSS], [pri], [pri_cc_enable], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_HANGUP_FIX], [pri], [pri_hangup_fix_enable], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_SUBADDR], [pri], [pri_sr_set_called_subaddress], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_CALL_HOLD], [pri], [pri_hold_enable], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_CALL_REROUTING], [pri], [pri_reroute_enable], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_SETUP_KEYPAD], [pri], [pri_sr_set_keypad_digits], [libpri.h])
+if test "x$PBX_PRI" = "x1" ; then
+   AST_EXT_LIB_CHECK([PRI_SETUP_ACK_INBAND], [pri], [pri_setup_ack], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_L2_PERSISTENCE], [pri], [pri_persistent_layer2_option], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_DATETIME_SEND], [pri], [pri_date_time_send_option], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_MWI_V2], [pri], [pri_mwi_indicate_v2], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_DISPLAY_TEXT], [pri], [pri_display_text], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_MWI], [pri], [pri_mwi_indicate], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_MCID], [pri], [pri_mcid_enable], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_CALL_WAITING], [pri], [pri_connect_ack_enable], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_AOC_EVENTS], [pri], [pri_aoc_events_enable], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_TRANSFER], [pri], [pri_transfer_enable], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_CCSS], [pri], [pri_cc_enable], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_HANGUP_FIX], [pri], [pri_hangup_fix_enable], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_SUBADDR], [pri], [pri_sr_set_called_subaddress], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_CALL_HOLD], [pri], [pri_hold_enable], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_CALL_REROUTING], [pri], [pri_reroute_enable], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_SETUP_KEYPAD], [pri], [pri_sr_set_keypad_digits], [libpri.h])
 
-# ------------------------------------v
-# TODO: The code can be changed to always include these features now.
-# These features will always be present if pri_connected_line_update is available.
-AST_EXT_LIB_CHECK([PRI_PROG_W_CAUSE], [pri], [pri_progress_with_cause], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_INBANDDISCONNECT], [pri], [pri_set_inbanddisconnect], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_SERVICE_MESSAGES], [pri], [pri_maintenance_service], [libpri.h])
-AST_EXT_LIB_CHECK([PRI_REVERSE_CHARGE], [pri], [pri_sr_set_reversecharge], [libpri.h])
-# ------------------------------------^
+   # ------------------------------------v
+   # TODO: The code can be changed to always include these features now.
+   # These features will always be present if pri_connected_line_update is available.
+   AST_EXT_LIB_CHECK([PRI_PROG_W_CAUSE], [pri], [pri_progress_with_cause], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_INBANDDISCONNECT], [pri], [pri_set_inbanddisconnect], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_SERVICE_MESSAGES], [pri], [pri_maintenance_service], [libpri.h])
+   AST_EXT_LIB_CHECK([PRI_REVERSE_CHARGE], [pri], [pri_sr_set_reversecharge], [libpri.h])
+   # ------------------------------------^
+fi
 
 AST_EXT_LIB_CHECK([RESAMPLE], [resample], [resample_open], [libresample.h], [-lm])
 AST_EXT_LIB_CHECK([FFTW3], [fftw3], [fftw_malloc], [fftw3.h])
@@ -2570,6 +2639,7 @@ AST_EXT_LIB_CHECK([CRYPTO], [crypto], [AES_encrypt], [openssl/aes.h])
 if test "$PBX_CRYPTO" = "1";
 then
 	AST_EXT_LIB_CHECK([OPENSSL], [ssl], [SSL_connect], [openssl/ssl.h], [-lcrypto])
+	AST_EXT_LIB_CHECK([OPENSSL_BIO_METHOD], [ssl], [BIO_meth_new], [openssl/ssl.h], [-lcrypto])
 fi
 
 if test "$PBX_OPENSSL" = "1";
@@ -2639,7 +2709,7 @@ then
     fi
 fi
 
-for ver in 2.0 2.2 2.4 2.6 3.0; do
+for ver in 3.0 2.6 2.4 2.2 2.0; do
 	AST_PKG_CONFIG_CHECK([GMIME], gmime-$ver)
 	if test "$PBX_GMIME" = 1; then
 		break;
@@ -2833,9 +2903,9 @@ AC_OUTPUT
 
 ${ac_cv_path_EGREP} 'CURSES|GTK2|OSARCH|NEWT' makeopts > makeopts.acbak2
 if test "x${ac_cv_path_CMP}" = "x:"; then
-	( cd `pwd`/menuselect && ./configure )
+	( cd "`pwd`/menuselect" && ./configure )
 elif ${ac_cv_path_CMP} -s makeopts.acbak makeopts.acbak2; then : ; else
-	( cd `pwd`/menuselect && ./configure )
+	( cd "`pwd`/menuselect" && ./configure )
 fi
 
 rm makeopts.acbak makeopts.acbak2

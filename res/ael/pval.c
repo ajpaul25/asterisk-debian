@@ -759,10 +759,10 @@ static int extension_matches(pval *here, const char *exten, const char *pattern)
 				*r++ = '.';
 				*r++ = '*';
 				break;
-			case '*':
+			case '*': /* regex metacharacter */
+			case '+': /* regex metacharacter */
 				*r++ = '\\';
-				*r++ = '*';
-				break;
+				/* fall through */
 			default:
 				*r++ = *p;
 				break;
@@ -792,14 +792,9 @@ static int extension_matches(pval *here, const char *exten, const char *pattern)
 			   exten, pattern); */
 			return 1;
 		}
-
-
-	} else {
-		if ( strcmp(exten,pattern) == 0 ) {
-			return 1;
-		} else
-			return 0;
 	}
+
+	return 0;
 }
 
 
@@ -2924,7 +2919,7 @@ void ael2_semantic_check(pval *item, int *arg_errs, int *arg_warns, int *arg_not
 /* "CODE" GENERATOR -- Convert the AEL representation to asterisk extension language */
 /* =============================================================================================== */
 
-static int control_statement_count = 0;
+static int control_statement_count;
 
 struct ael_priority *new_prio(void)
 {
@@ -3540,18 +3535,14 @@ static int gen_prios(struct ael_extension *exten, char *label, pval *statement, 
 					strcpy(buf2, strp3);
 					strp3 = strchr(buf2,'(');
 					if (strp3) {
-						*strp3 = '|';
-					}
-					while ((strp3=strchr(buf2,','))) {
-						*strp3 = '|';
+						*strp3 = ',';
 					}
 					strp3 = strrchr(buf2, ')');
 					if (strp3)
 						*strp3 = 0; /* remove the closing paren */
-
 					for_init->appargs = strdup(buf2);
 					free(for_init->app);
-					for_init->app = strdup("Macro");
+					for_init->app = strdup("Gosub");
 				} else {  /* must be a regular app call */
 					char *strp3;
 					strcpy(buf2, strp2);
@@ -3598,7 +3589,7 @@ static int gen_prios(struct ael_extension *exten, char *label, pval *statement, 
 
 					for_inc->appargs = strdup(buf2);
 
-					for_inc->app = strdup("Macro");
+					for_inc->app = strdup("Gosub");
 				} else {  /* must be a regular app call */
 					char *strp3;
 					strcpy(buf2, strp2);
@@ -4426,6 +4417,9 @@ int ast_compile_ael2(struct ast_context **local_contexts, struct ast_hashtab *lo
 	char buf[2000];
 	struct ael_extension *exten;
 	struct ael_extension *exten_list = 0;
+
+	/* Reset the counter so that we get consistent labels between reloads */
+	control_statement_count = 0;
 
 	for (p=root; p; p=p->next ) { /* do the globals first, so they'll be there
 									 when we try to eval them */

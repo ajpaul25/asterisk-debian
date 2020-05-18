@@ -818,6 +818,8 @@ struct ast_sip_endpoint {
 	unsigned int trust_connected_line;
 	/*! Do we send connected line updates to this endpoint? */
 	unsigned int send_connected_line;
+	/*! Ignore 183 if no SDP is present */
+	unsigned int ignore_183_without_sdp;
 };
 
 /*! URI parameter for symmetric transport */
@@ -2760,6 +2762,13 @@ unsigned int ast_sip_get_mwi_disable_initial_unsolicited(void);
 unsigned int ast_sip_get_use_callerid_contact(void);
 
 /*!
+ * \brief Retrieve the global setting 'norefersub'.
+ *
+ * \retval non zero if norefersub is to be sent in "Supported" Headers
+ */
+unsigned int ast_sip_get_norefersub(void);
+
+/*!
  * \brief Retrieve the global setting 'ignore_uri_user_options'.
  * \since 13.12.0
  *
@@ -2943,6 +2952,11 @@ const char *ast_sip_get_host_ip_string(int af);
  * \since 13.7.0
  */
 long ast_sip_threadpool_queue_size(void);
+
+/*!
+ * \brief Retrieve the SIP threadpool object
+ */
+struct ast_threadpool *ast_sip_threadpool(void);
 
 /*!
  * \brief Retrieve transport state
@@ -3141,6 +3155,29 @@ enum ast_transport_monitor_reg {
  */
 enum ast_transport_monitor_reg ast_sip_transport_monitor_register(pjsip_transport *transport,
 	ast_transport_monitor_shutdown_cb cb, void *ao2_data);
+
+/*!
+ * \brief Register a reliable transport shutdown monitor callback replacing any duplicate.
+ * \since 13.26.0
+ * \since 16.3.0
+ *
+ * \param transport Transport to monitor for shutdown.
+ * \param cb Who to call when transport is shutdown.
+ * \param ao2_data Data to pass with the callback.
+ * \param matches Matcher function that returns true if data matches a previously
+ *                registered data object
+ *
+ * \note The data object passed will have its reference count automatically
+ * incremented by this call and automatically decremented after the callback
+ * runs or when the callback is unregistered.
+ *
+ * This function checks for duplicates, and overwrites/replaces the old monitor
+ * with the given one.
+ *
+ * \return enum ast_transport_monitor_reg
+ */
+enum ast_transport_monitor_reg ast_sip_transport_monitor_register_replace(pjsip_transport *transport,
+	ast_transport_monitor_shutdown_cb cb, void *ao2_data, ast_transport_monitor_data_matcher matches);
 
 /*!
  * \brief Unregister a reliable transport shutdown monitor

@@ -1216,6 +1216,18 @@ static char *action2str(enum ext_match_t action)
 
 #endif
 
+static const char *candidate_exten_advance(const char *str)
+{
+	str++;
+	while (*str == '-') {
+		str++;
+	}
+	return str;
+}
+
+#define MORE(s) (*candidate_exten_advance(s))
+#define ADVANCE(s) candidate_exten_advance(s)
+
 static void new_find_extension(const char *str, struct scoreboard *score, struct match_char *tree, int length, int spec, const char *callerid, const char *label, enum ext_match_t action)
 {
 	struct match_char *p; /* note minimal stack storage requirements */
@@ -1231,7 +1243,7 @@ static void new_find_extension(const char *str, struct scoreboard *score, struct
 			if (p->x[0] == 'N') {
 				if (p->x[1] == 0 && *str >= '2' && *str <= '9' ) {
 #define	NEW_MATCHER_CHK_MATCH	       \
-					if (p->exten && !(*(str + 1))) { /* if a shorter pattern matches along the way, might as well report it */             \
+					if (p->exten && !MORE(str)) { /* if a shorter pattern matches along the way, might as well report it */             \
 						if (action == E_MATCH || action == E_SPAWN || action == E_FINDLABEL) { /* if in CANMATCH/MATCHMORE, don't let matches get in the way */   \
 							update_scoreboard(score, length + 1, spec + p->specificity, p->exten, 0, callerid, p->deleted, p);                 \
 							if (!p->deleted) {                                                                                           \
@@ -1249,10 +1261,10 @@ static void new_find_extension(const char *str, struct scoreboard *score, struct
 					}
 
 #define	NEW_MATCHER_RECURSE	           \
-					if (p->next_char && (*(str + 1) || (p->next_char->x[0] == '/' && p->next_char->x[1] == 0)                 \
+					if (p->next_char && (MORE(str) || (p->next_char->x[0] == '/' && p->next_char->x[1] == 0)                 \
 		                                       || p->next_char->x[0] == '!')) {                                          \
-						if (*(str + 1) || p->next_char->x[0] == '!') {                                                         \
-							new_find_extension(str + 1, score, p->next_char, length + 1, spec + p->specificity, callerid, label, action); \
+						if (MORE(str) || p->next_char->x[0] == '!') {                                                         \
+							new_find_extension(ADVANCE(str), score, p->next_char, length + 1, spec + p->specificity, callerid, label, action); \
 							if (score->exten)  {                                                                             \
 						        ast_debug(4 ,"returning an exact match-- %s\n", score->exten->name);                         \
 								return; /* the first match is all we need */                                                 \
@@ -1265,7 +1277,7 @@ static void new_find_extension(const char *str, struct scoreboard *score, struct
 								return; /* the first match is all we need */                                                 \
 							}												                                                 \
 						}                                                                                                    \
-					} else if ((p->next_char || action == E_CANMATCH) && !*(str + 1)) {                                                                  \
+					} else if ((p->next_char || action == E_CANMATCH) && !MORE(str)) {                                                                  \
 						score->canmatch = 1;                                                                                 \
 						score->canmatch_exten = get_canmatch_exten(p);                                                       \
 						if (action == E_CANMATCH || action == E_MATCHMORE) {                                                 \
@@ -1361,6 +1373,9 @@ static void new_find_extension(const char *str, struct scoreboard *score, struct
 	}
 	ast_debug(4, "return at end of func\n");
 }
+
+#undef MORE
+#undef ADVANCE
 
 /* the algorithm for forming the extension pattern tree is also a bit simple; you
  * traverse all the extensions in a context, and for each char of the extension,
@@ -2869,6 +2884,11 @@ static int pbx_extension_helper(struct ast_channel *c, struct ast_context *con,
 	int matching_action = (action == E_MATCH || action == E_CANMATCH || action == E_MATCHMORE);
 
 	ast_rdlock_contexts();
+
+	if (!context) {
+		context = con->name;
+	}
+
 	if (found)
 		*found = 0;
 
@@ -4594,7 +4614,6 @@ static int increase_call_count(const struct ast_channel *c)
 	int failed = 0;
 	double curloadavg;
 #if defined(HAVE_SYSINFO)
-	long curfreemem;
 	struct sysinfo sys_info;
 #endif
 
@@ -4614,13 +4633,16 @@ static int increase_call_count(const struct ast_channel *c)
 	}
 #if defined(HAVE_SYSINFO)
 	if (option_minmemfree) {
+		/* Make sure that the free system memory is above the configured low watermark */
 		if (!sysinfo(&sys_info)) {
-			/* make sure that the free system memory is above the configured low watermark
-			 * convert the amount of freeram from mem_units to MB */
-			curfreemem = sys_info.freeram * sys_info.mem_unit;
+			/* Convert the amount of available RAM from mem_units to MB. The calculation
+			 * was done this way to avoid overflow problems */
+			uint64_t curfreemem = sys_info.freeram + sys_info.bufferram;
+			curfreemem *= sys_info.mem_unit;
 			curfreemem /= 1024 * 1024;
 			if (curfreemem < option_minmemfree) {
-				ast_log(LOG_WARNING, "Available system memory (~%ldMB) is below the configured low watermark (%ldMB)\n", curfreemem, option_minmemfree);
+				ast_log(LOG_WARNING, "Available system memory (~%" PRIu64 "MB) is below the configured low watermark (%ldMB)\n",
+					curfreemem, option_minmemfree);
 				failed = -1;
 			}
 		}
@@ -7584,6 +7606,7 @@ static void *pbx_outgoing_exec(void *data)
 {
 	RAII_VAR(struct pbx_outgoing *, outgoing, data, ao2_cleanup);
 	enum ast_dial_result res;
+	struct ast_channel *chan;
 
 	res = ast_dial_run(outgoing->dial, NULL, 0);
 
@@ -7604,36 +7627,37 @@ static void *pbx_outgoing_exec(void *data)
 		return NULL;
 	}
 
+	/* We steal the channel so we get ownership of when it is hung up */
+	chan = ast_dial_answered_steal(outgoing->dial);
+
 	if (!ast_strlen_zero(outgoing->app)) {
 		struct ast_app *app = pbx_findapp(outgoing->app);
 
 		if (app) {
 			ast_verb(4, "Launching %s(%s) on %s\n", outgoing->app, S_OR(outgoing->appdata, ""),
-				ast_channel_name(ast_dial_answered(outgoing->dial)));
-			pbx_exec(ast_dial_answered(outgoing->dial), app, outgoing->appdata);
+				ast_channel_name(chan));
+			pbx_exec(chan, app, outgoing->appdata);
 		} else {
 			ast_log(LOG_WARNING, "No such application '%s'\n", outgoing->app);
 		}
-	} else {
-		struct ast_channel *answered = ast_dial_answered(outgoing->dial);
 
+		ast_hangup(chan);
+	} else {
 		if (!ast_strlen_zero(outgoing->context)) {
-			ast_channel_context_set(answered, outgoing->context);
+			ast_channel_context_set(chan, outgoing->context);
 		}
 
 		if (!ast_strlen_zero(outgoing->exten)) {
-			ast_channel_exten_set(answered, outgoing->exten);
+			ast_channel_exten_set(chan, outgoing->exten);
 		}
 
 		if (outgoing->priority > 0) {
-			ast_channel_priority_set(answered, outgoing->priority);
+			ast_channel_priority_set(chan, outgoing->priority);
 		}
 
-		if (ast_pbx_run(answered)) {
-			ast_log(LOG_ERROR, "Failed to start PBX on %s\n", ast_channel_name(answered));
-		} else {
-			/* PBX will have taken care of hanging up, so we steal the answered channel so dial doesn't do it */
-			ast_dial_answered_steal(outgoing->dial);
+		if (ast_pbx_run(chan)) {
+			ast_log(LOG_ERROR, "Failed to start PBX on %s\n", ast_channel_name(chan));
+			ast_hangup(chan);
 		}
 	}
 
@@ -8760,6 +8784,7 @@ static int pbx_parseable_goto(struct ast_channel *chan, const char *goto_string,
 	char *stringp;
 	int ipri;
 	int mode = 0;
+	char rest[2] = "";
 
 	if (ast_strlen_zero(goto_string)) {
 		ast_log(LOG_WARNING, "Goto requires an argument ([[context,]extension,]priority)\n");
@@ -8785,7 +8810,7 @@ static int pbx_parseable_goto(struct ast_channel *chan, const char *goto_string,
 		mode = -1;
 		pri++;
 	}
-	if (sscanf(pri, "%30d", &ipri) != 1) {
+	if (sscanf(pri, "%30d%1s", &ipri, rest) != 1) {
 		ipri = ast_findlabel_extension(chan, context ? context : ast_channel_context(chan),
 			exten ? exten : ast_channel_exten(chan), pri,
 			S_COR(ast_channel_caller(chan)->id.number.valid, ast_channel_caller(chan)->id.number.str, NULL));

@@ -1217,3 +1217,36 @@ ALTER TABLE ps_globals ADD COLUMN send_contact_status_on_update_registration ENU
 
 UPDATE alembic_version SET version_num='0838f8db6a61' WHERE alembic_version.version_num = '1ac563b350a8';
 
+-- Running upgrade 0838f8db6a61 -> f3c0b8695b66
+
+ALTER TABLE ps_globals ADD COLUMN taskprocessor_overload_trigger ENUM('none','global','pjsip_only');
+
+UPDATE alembic_version SET version_num='f3c0b8695b66' WHERE alembic_version.version_num = '0838f8db6a61';
+
+-- Running upgrade f3c0b8695b66 -> 80473bad3c16
+
+ALTER TABLE ps_endpoints ADD COLUMN ignore_183_without_sdp ENUM('0','1','off','on','false','true','no','yes');
+
+UPDATE alembic_version SET version_num='80473bad3c16' WHERE alembic_version.version_num = 'f3c0b8695b66';
+
+-- Running upgrade 80473bad3c16 -> 3a094a18e75b
+
+ALTER TABLE ps_globals ADD COLUMN norefersub ENUM('0','1','off','on','false','true','no','yes');
+
+UPDATE alembic_version SET version_num='3a094a18e75b' WHERE alembic_version.version_num = '80473bad3c16';
+
+-- Running upgrade 3a094a18e75b -> fbb7766f17bc
+
+CREATE TABLE musiconhold_entry (
+    name VARCHAR(80) NOT NULL, 
+    position INTEGER NOT NULL, 
+    entry VARCHAR(1024) NOT NULL, 
+    PRIMARY KEY (name, position)
+);
+
+ALTER TABLE musiconhold_entry ADD CONSTRAINT fk_musiconhold_entry_name_musiconhold FOREIGN KEY(name) REFERENCES musiconhold (name);
+
+ALTER TABLE musiconhold MODIFY mode ENUM('custom','files','mp3nb','quietmp3nb','quietmp3','playlist') NULL;
+
+UPDATE alembic_version SET version_num='fbb7766f17bc' WHERE alembic_version.version_num = '3a094a18e75b';
+

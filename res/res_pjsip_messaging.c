@@ -19,6 +19,7 @@
 /*** MODULEINFO
 	<depend>pjproject</depend>
 	<depend>res_pjsip</depend>
+	<depend>res_pjsip_session</depend>
 	<support_level>core</support_level>
  ***/
 
@@ -90,10 +91,13 @@ static enum pjsip_status_code check_content_type_in_dialog(const pjsip_rx_data *
 	static const pj_str_t text = { "text", 4};
 	static const pj_str_t application = { "application", 11};
 
+	if (!(rdata->msg_info.msg->body && rdata->msg_info.msg->body->len > 0)) {
+		return res;
+	}
+
 	/* We'll accept any text/ or application/ content type */
-	if (rdata->msg_info.msg->body && rdata->msg_info.msg->body->len
-		&& (pj_stricmp(&rdata->msg_info.msg->body->content_type.type, &text) == 0
-			|| pj_stricmp(&rdata->msg_info.msg->body->content_type.type, &application) == 0)) {
+	if (pj_stricmp(&rdata->msg_info.msg->body->content_type.type, &text) == 0
+			|| pj_stricmp(&rdata->msg_info.msg->body->content_type.type, &application) == 0) {
 		res = PJSIP_SC_OK;
 	} else if (rdata->msg_info.ctype
 		&& (pj_stricmp(&rdata->msg_info.ctype->media.type, &text) == 0
@@ -313,10 +317,7 @@ static int is_msg_var_blocked(const char *name)
 {
 	int i;
 
-	/*
-	 * Don't block Content-Type or Max-Forwards headers because the
-	 * user can override them.
-	 */
+	/* Don't block the Max-Forwards header because the user can override it */
 	static const char *hdr[] = {
 		"To",
 		"From",
@@ -327,6 +328,7 @@ static int is_msg_var_blocked(const char *name)
 		"CSeq",
 		"Allow",
 		"Content-Length",
+		"Content-Type",
 		"Request-URI",
 	};
 
@@ -632,11 +634,40 @@ static struct msg_data *msg_data_create(const struct ast_msg *msg, const char *t
 	return mdata;
 }
 
+static void update_content_type(pjsip_tx_data *tdata, struct ast_msg *msg, struct ast_sip_body *body)
+{
+	static const pj_str_t CONTENT_TYPE = { "Content-Type", sizeof("Content-Type") - 1 };
+
+	const char *content_type = ast_msg_get_var(msg, pj_strbuf(&CONTENT_TYPE));
+	if (content_type) {
+		pj_str_t type, subtype;
+		pjsip_ctype_hdr *parsed;
+
+		/* Let pjsip do the parsing for us */
+		parsed = pjsip_parse_hdr(tdata->pool, &CONTENT_TYPE,
+			ast_strdupa(content_type), strlen(content_type),
+			NULL);
+
+		if (!parsed) {
+			ast_log(LOG_WARNING, "Failed to parse '%s' as a content type. Using text/plain\n",
+				content_type);
+			return;
+		}
+
+		/* We need to turn type and subtype into zero-terminated strings */
+		pj_strdup_with_null(tdata->pool, &type, &parsed->media.type);
+		pj_strdup_with_null(tdata->pool, &subtype, &parsed->media.subtype);
+
+		body->type = pj_strbuf(&type);
+		body->subtype = pj_strbuf(&subtype);
+	}
+}
+
 static int msg_send(void *data)
 {
-	RAII_VAR(struct msg_data *, mdata, data, ao2_cleanup);
+	struct msg_data *mdata = data; /* The caller holds a reference */
 
-	const struct ast_sip_body body = {
+	struct ast_sip_body body = {
 		.type = "text",
 		.subtype = "plain",
 		.body_text = ast_msg_get_body(mdata->msg)
@@ -661,6 +692,7 @@ static int msg_send(void *data)
 
 	update_to(tdata, mdata->to);
 	update_from(tdata, mdata->from);
+	update_content_type(tdata, mdata->msg, &body);
 
 	if (ast_sip_add_body(tdata, &body)) {
 		pjsip_tx_data_dec_ref(tdata);
@@ -678,24 +710,28 @@ static int msg_send(void *data)
 		return -1;
 	}
 
-	return PJ_SUCCESS;
+	return 0;
 }
 
 static int sip_msg_send(const struct ast_msg *msg, const char *to, const char *from)
 {
 	struct msg_data *mdata;
+	int res;
 
 	if (ast_strlen_zero(to)) {
 		ast_log(LOG_ERROR, "SIP MESSAGE - a 'To' URI  must be specified\n");
 		return -1;
 	}
 
-	if (!(mdata = msg_data_create(msg, to, from)) ||
-	    ast_sip_push_task(message_serializer, msg_send, mdata)) {
-		ao2_cleanup(mdata);
+	mdata = msg_data_create(msg, to, from);
+	if (!mdata) {
 		return -1;
 	}
-	return 0;
+
+	res = ast_sip_push_task_wait_serializer(message_serializer, msg_send, mdata);
+	ao2_ref(mdata, -1);
+
+	return res;
 }
 
 static const struct ast_msg_tech msg_tech = {

@@ -95,6 +95,8 @@ struct ast_sip_session_media {
 	unsigned int remote_rtcp_mux:1;
 	/*! \brief Does remote support ice */
 	unsigned int remote_ice:1;
+	/*! \brief Stream is held by remote side changed during this negotiation*/
+	unsigned int remotely_held_changed:1;
 	/*! \brief Media type of this session media */
 	enum ast_media_type type;
 	/*! \brief The write callback when writing frames */
@@ -211,10 +213,14 @@ struct ast_sip_session {
 	unsigned int defer_end:1;
 	/*! Session end (remote hangup) requested while termination deferred */
 	unsigned int ended_while_deferred:1;
+	/*! Whether to pass through hold and unhold using re-invites with recvonly and sendrecv */
+	unsigned int moh_passthrough:1;
 	/*! DTMF mode to use with this session, from endpoint but can change */
 	enum ast_sip_dtmf_mode dtmf;
 	/*! Initial incoming INVITE Request-URI.  NULL otherwise. */
 	pjsip_uri *request_uri;
+	/* Media statistics for negotiated RTP streams */
+	AST_VECTOR(, struct ast_rtp_instance_stats *) media_stats;
 };
 
 typedef int (*ast_sip_session_request_creation_cb)(struct ast_sip_session *session, pjsip_tx_data *tdata);
@@ -827,6 +833,13 @@ struct ast_sip_session_media_state *ast_sip_session_media_state_alloc(void);
  */
 struct ast_sip_session_media *ast_sip_session_media_state_add(struct ast_sip_session *session,
 	struct ast_sip_session_media_state *media_state, enum ast_media_type type, int position);
+
+/*!
+ * \brief Save a media stats.
+ *
+ * \param media_state The media state to save
+ */
+void ast_sip_session_media_stats_save(struct ast_sip_session *sip_session, struct ast_sip_session_media_state *media_state);
 
 /*!
  * \brief Reset a media state to a clean state

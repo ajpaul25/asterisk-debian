@@ -34,6 +34,8 @@
 #include "asterisk/statsd.h"
 #include "asterisk/pbx.h"
 #include "asterisk/stream.h"
+#include "asterisk/stasis.h"
+#include "asterisk/security_events.h"
 
 /*! \brief Number of buckets for persistent endpoint information */
 #define PERSISTENT_BUCKETS 53
@@ -48,6 +50,8 @@ struct sip_persistent_endpoint {
 static struct ao2_container *persistent_endpoints;
 
 static struct ast_sorcery *sip_sorcery;
+
+static struct stasis_subscription *acl_change_sub;
 
 /*! \brief Hashing function for persistent endpoint information */
 static int persistent_endpoint_hash(const void *obj, const int flags)
@@ -1044,7 +1048,9 @@ static int set_var_handler(const struct aco_option *opt,
 		return -1;
 	}
 
-	ast_variable_list_append(&endpoint->channel_vars, new_var);
+	if (ast_variable_list_replace(&endpoint->channel_vars, new_var)) {
+		ast_variable_list_append(&endpoint->channel_vars, new_var);
+	}
 
 	return 0;
 }
@@ -1785,6 +1791,16 @@ static void load_all_endpoints(void)
 	ao2_cleanup(endpoints);
 }
 
+static void acl_change_stasis_cb(void *data, struct stasis_subscription *sub,
+	struct stasis_message *message)
+{
+	if (stasis_message_type(message) != ast_named_acl_change_type()) {
+		return;
+	}
+
+	ast_sorcery_force_reload_object(sip_sorcery, "endpoint");
+}
+
 int ast_res_pjsip_initialize_configuration(void)
 {
 	if (ast_manager_register_xml(AMI_SHOW_ENDPOINTS, EVENT_FLAG_SYSTEM, ami_show_endpoints) ||
@@ -1949,6 +1965,7 @@ int ast_res_pjsip_initialize_configuration(void)
 	ast_sorcery_object_field_register(sip_sorcery, "endpoint", "follow_early_media_fork", "yes", OPT_BOOL_T, 1, FLDSET(struct ast_sip_endpoint, media.rtp.follow_early_media_fork));
 	ast_sorcery_object_field_register(sip_sorcery, "endpoint", "accept_multiple_sdp_answers", "no", OPT_BOOL_T, 1, FLDSET(struct ast_sip_endpoint, media.rtp.accept_multiple_sdp_answers));
 	ast_sorcery_object_field_register(sip_sorcery, "endpoint", "suppress_q850_reason_headers", "no", OPT_BOOL_T, 1, FLDSET(struct ast_sip_endpoint, suppress_q850_reason_headers));
+	ast_sorcery_object_field_register(sip_sorcery, "endpoint", "ignore_183_without_sdp", "no", OPT_BOOL_T, 1, FLDSET(struct ast_sip_endpoint, ignore_183_without_sdp));
 
 	if (ast_sip_initialize_sorcery_transport()) {
 		ast_log(LOG_ERROR, "Failed to register SIP transport support with sorcery\n");
@@ -2004,6 +2021,10 @@ int ast_res_pjsip_initialize_configuration(void)
 
 	ast_sip_location_prune_boot_contacts();
 
+	acl_change_sub = stasis_subscribe(ast_security_topic(), acl_change_stasis_cb, NULL);
+	stasis_subscription_accept_message_type(acl_change_sub, ast_named_acl_change_type());
+	stasis_subscription_set_filter(acl_change_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
+
 	return 0;
 }
 
@@ -2013,6 +2034,7 @@ void ast_res_pjsip_destroy_configuration(void)
 		return;
 	}
 
+	acl_change_sub = stasis_unsubscribe_and_join(acl_change_sub);
 	ast_sip_destroy_sorcery_global();
 	ast_sip_destroy_sorcery_location();
 	ast_sip_destroy_sorcery_auth();

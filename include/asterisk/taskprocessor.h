@@ -57,7 +57,7 @@
 struct ast_taskprocessor;
 
 /*! \brief Suggested maximum taskprocessor name length (less null terminator). */
-#define AST_TASKPROCESSOR_MAX_NAME	45
+#define AST_TASKPROCESSOR_MAX_NAME	70
 
 /*! Default taskprocessor high water level alert trigger */
 #define AST_TASKPROCESSOR_HIGH_WATER_LEVEL 500
@@ -305,6 +305,15 @@ int ast_taskprocessor_is_task(struct ast_taskprocessor *tps);
 unsigned int ast_taskprocessor_seq_num(void);
 
 /*!
+ * \brief Append the next sequence number to the given string, and copy into the buffer.
+ *
+ * \param buf Where to copy the appended taskprocessor name.
+ * \param size How large is buf including null terminator.
+ * \param name A name to append the sequence number to.
+ */
+void ast_taskprocessor_name_append(char *buf, unsigned int size, const char *name);
+
+/*!
  * \brief Build a taskprocessor name with a sequence number on the end.
  * \since 13.8.0
  *
@@ -340,6 +349,19 @@ long ast_taskprocessor_size(struct ast_taskprocessor *tps);
  * \retval non-zero if some task processors are in high water alert.
  */
 unsigned int ast_taskprocessor_alert_get(void);
+
+
+/*!
+ * \brief Get the current taskprocessor high water alert count by sybsystem.
+ * \since 13.26.0
+ * \since 16.3.0
+ *
+ * \param subsystem The subsystem name
+ *
+ * \retval 0 if no taskprocessors are in high water alert.
+ * \retval non-zero if some task processors are in high water alert.
+ */
+unsigned int ast_taskprocessor_get_subsystem_alert(const char *subsystem);
 
 /*!
  * \brief Set the high and low alert water marks of the given taskprocessor queue.

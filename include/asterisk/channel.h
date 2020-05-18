@@ -206,6 +206,12 @@ typedef unsigned long long ast_group_t;
 
 struct ast_stream_topology;
 
+/*!
+ * \brief Set as the change source reason when a channel stream topology has
+ *        been changed externally as a result of the remote side renegotiating.
+ */
+static const char ast_stream_topology_changed_external[] = "external";
+
 /*! \todo Add an explanation of an Asterisk generator
 */
 struct ast_generator {
@@ -2406,6 +2412,18 @@ int ast_activate_generator(struct ast_channel *chan, struct ast_generator *gen, 
 void ast_deactivate_generator(struct ast_channel *chan);
 
 /*!
+ * \since 13.27.0
+ * \since 16.4.0
+ * \brief Obtain how long it's been, in milliseconds, since the channel was created
+ *
+ * \param chan The channel object
+ *
+ * \retval 0 if the time value cannot be computed (or you called this really fast)
+ * \retval The number of milliseconds since channel creation
+ */
+int64_t ast_channel_get_duration_ms(struct ast_channel *chan);
+
+/*!
  * \since 12
  * \brief Obtain how long the channel since the channel was created
  *
@@ -2415,6 +2433,18 @@ void ast_deactivate_generator(struct ast_channel *chan);
  * \retval The number of seconds the channel has been up
  */
 int ast_channel_get_duration(struct ast_channel *chan);
+
+/*!
+ * \since 13.27.0
+ * \since 16.4.0
+ * \brief Obtain how long it has been since the channel was answered in ms
+ *
+ * \param chan The channel object
+ *
+ * \retval 0 if the channel isn't answered (or you called this really fast)
+ * \retval The number of milliseconds the channel has been up
+ */
+int64_t ast_channel_get_up_time_ms(struct ast_channel *chan);
 
 /*!
  * \since 12
@@ -4992,6 +5022,20 @@ int ast_channel_request_stream_topology_change(struct ast_channel *chan,
  *       It is not for use by the channel driver itself.
  */
 int ast_channel_stream_topology_changed(struct ast_channel *chan, struct ast_stream_topology *topology);
+
+/*!
+ * \brief Provide notice from a channel that the topology has changed on it as a result
+ *        of the remote party renegotiating.
+ *
+ * \param chan The channel to provide notice from
+ *
+ * \retval 0 success
+ * \retval -1 failure
+ *
+ * \note This interface is provided for channels to provide notice that a topology change
+ *       has occurred as a result of a remote party renegotiating the stream topology.
+ */
+int ast_channel_stream_topology_changed_externally(struct ast_channel *chan);
 
 /*!
  * \brief Retrieve the source that initiated the last stream topology change

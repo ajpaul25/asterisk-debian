@@ -134,6 +134,12 @@ enum ast_bridge_video_sfu_remb_behavior {
 	AST_BRIDGE_VIDEO_SFU_REMB_LOWEST,
 	/*! The highest reported bitrate is forwarded to the sender */
 	AST_BRIDGE_VIDEO_SFU_REMB_HIGHEST,
+	/*! The average of all reports WITHIN the bridge is sent to each sender */
+	AST_BRIDGE_VIDEO_SFU_REMB_AVERAGE_ALL,
+	/*! The lowest reported bitrate from all channels in the bridge is forwarded to each sender */
+	AST_BRIDGE_VIDEO_SFU_REMB_LOWEST_ALL,
+	/*! The highest reported bitrate from all channels in the bridge is forwarded to each sender */
+	AST_BRIDGE_VIDEO_SFU_REMB_HIGHEST_ALL,
 };
 
 /*! \brief This is used for selective forwarding unit configuration */
@@ -295,6 +301,12 @@ struct ast_bridge_softmix {
 	 * the channel uniqueid.  Used for participant info correlation.
 	 */
 	unsigned int send_sdp_label;
+	/*!
+	 * \brief The maximum sample rate softmix uses to mix channels.
+	 *
+	 * \note If this value is 0, there is no maximum sample rate.
+	 */
+	unsigned int maximum_sample_rate;
 };
 
 AST_LIST_HEAD_NOLOCK(ast_bridge_channels_list, ast_bridge_channel);
@@ -358,6 +370,8 @@ struct ast_bridge {
 
 	/*! Type mapping used for media routing */
 	struct ast_vector_int media_types;
+	/*! The time of bridge creation */
+	struct timeval creationtime;
 };
 
 /*! \brief Bridge base class virtual method table. */
@@ -592,6 +606,9 @@ enum ast_bridge_impart_flags {
  * it were placed into the bridge by ast_bridge_join().
  * Channels placed into a bridge by ast_bridge_join() are
  * removed by a third party using ast_bridge_remove().
+ *
+ * \note Any callbacks on the channel will be invoked on failure
+ * with the reason as AST_BRIDGE_AFTER_CB_REASON_IMPART_FAILED.
  */
 int ast_bridge_impart(struct ast_bridge *bridge,
 	struct ast_channel *chan,
@@ -893,6 +910,21 @@ int ast_bridge_queue_everyone_else(struct ast_bridge *bridge, struct ast_bridge_
  *
  */
 void ast_bridge_set_internal_sample_rate(struct ast_bridge *bridge, unsigned int sample_rate);
+
+/*!
+ * \brief Adjust the maximum mixing sample rate of a bridge
+ * used during multimix mode.
+ * \since 13.31.0
+ * \since 16.8.0
+ * \since 17.2.0
+ *
+ * \param bridge Channel to change the sample rate on.
+ * \param sample_rate the maximum sample rate to use. If a
+ *        value of 0 is passed here, the bridge will be free to pick
+ *        what ever sample rate it chooses.
+ *
+ */
+void ast_bridge_set_maximum_sample_rate(struct ast_bridge *bridge, unsigned int sample_rate);
 
 /*!
  * \brief Adjust the internal mixing interval of a bridge used

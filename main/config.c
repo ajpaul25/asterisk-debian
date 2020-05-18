@@ -665,6 +665,22 @@ struct ast_variable *ast_variable_list_append_hint(struct ast_variable **head, s
 	return curr;
 }
 
+int ast_variable_list_replace(struct ast_variable **head, struct ast_variable *replacement)
+{
+	struct ast_variable *v, **prev = head;
+
+	for (v = *head; v; prev = &v->next, v = v->next) {
+		if (!strcmp(v->name, replacement->name)) {
+			replacement->next = v->next;
+			*prev = replacement;
+			ast_free(v);
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
 const char *ast_config_option(struct ast_config *cfg, const char *cat, const char *var)
 {
 	const char *tmp;
@@ -2203,6 +2219,18 @@ static struct ast_config *config_text_file_load(const char *database, const char
 							continue;
 						}
 
+						/* If there is a UTF-8 BOM, skip over it */
+						if (lineno == 1) {
+#define UTF8_BOM "\xEF\xBB\xBF"
+							size_t line_bytes = strlen(buf);
+							size_t bom_bytes = sizeof(UTF8_BOM) - 1;
+							if (line_bytes >= bom_bytes
+							   && !memcmp(buf, UTF8_BOM, bom_bytes)) {
+								memmove(buf, &buf[bom_bytes], line_bytes - bom_bytes + 1);
+							}
+#undef UTF8_BOM
+						}
+
 						if (ast_test_flag(&flags, CONFIG_FLAG_WITHCOMMENTS)
 							&& lline_buffer
 							&& ast_str_strlen(lline_buffer)) {
@@ -2904,7 +2932,10 @@ static int reload_module(void)
 		ast_copy_string(buf, v->value, sizeof(buf));
 		stringp = buf;
 		driver = strsep(&stringp, ",");
-
+		if (!stringp) {
+			ast_log(LOG_WARNING, "extconfig.conf: value '%s' ignored due to wrong format\n", v->value);
+			continue;
+		}
 		if ((tmp = strchr(stringp, '\"')))
 			stringp = tmp;
 

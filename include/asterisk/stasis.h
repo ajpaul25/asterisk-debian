@@ -514,17 +514,60 @@ struct stasis_topic;
  * from a topic and destroy it. As a result the topic can persist until
  * the last subscriber unsubscribes itself even if there is no
  * publisher.
+ *
+ * \note Topic names should be in the form of <subsystem>:<functionality>[/<object>]
  */
 struct stasis_topic *stasis_topic_create(const char *name);
+
+/*!
+ * \brief Create a new topic with given detail.
+ * \param name Name of the new topic.
+ * \param detail Detail description of the new topic. i.e. "Queue main topic for subscribing every queue event"
+ * \return New topic instance.
+ * \return \c NULL on error.
+ *
+ * \note There is no explicit ability to unsubscribe all subscribers
+ * from a topic and destroy it. As a result the topic can persist until
+ * the last subscriber unsubscribes itself even if there is no
+ * publisher.
+ */
+struct stasis_topic *stasis_topic_create_with_detail(
+		const char *name, const char *detail);
+
+/*!
+ * \brief Get a topic of the given name.
+ * \param name Topic's name.
+ * \return Name of the topic.
+ * \return \c NULL on error or not exist.
+ *
+ * \note This SHOULD NOT be used in normal operation for publishing messages.
+ */
+struct stasis_topic *stasis_topic_get(const char *name);
+
+/*!
+ * \brief Return the uniqueid of a topic.
+ * \param topic Topic.
+ * \return Uniqueid of the topic.
+ * \return \c NULL if topic is \c NULL.
+ */
+const char *stasis_topic_uniqueid(const struct stasis_topic *topic);
 
 /*!
  * \brief Return the name of a topic.
  * \param topic Topic.
  * \return Name of the topic.
  * \return \c NULL if topic is \c NULL.
- * \since 12
  */
 const char *stasis_topic_name(const struct stasis_topic *topic);
+
+/*!
+ * \brief Return the detail of a topic.
+ * \param topic Topic.
+ * \return Detail of the topic.
+ * \return \c NULL if topic is \c NULL.
+ * \since 12
+ */
+const char *stasis_topic_detail(const struct stasis_topic *topic);
 
 /*!
  * \brief Return the number of subscribers of a topic.
@@ -897,7 +940,8 @@ struct stasis_topic *stasis_topic_pool_get_topic(struct stasis_topic_pool *pool,
  * \brief Delete a topic from the topic pool
  *
  * \param pool Pool from which to delete the topic
- * \param topic_name Name of the topic to delete
+ * \param topic_name Name of the topic to delete in the form of
+ *                   <pool_topic_name>/<topic_name> or just <topic_name>
  *
  * \since 13.24
  * \since 15.6

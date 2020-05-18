@@ -173,7 +173,9 @@ static int mysql_log(struct ast_cdr *cdr)
 {
 	struct ast_str *sql1 = ast_str_thread_get(&sql1_buf, 1024), *sql2 = ast_str_thread_get(&sql2_buf, 1024);
 	int retries = 5;
-#if MYSQL_VERSION_ID >= 50013
+#ifdef HAVE_MYSQLCLIENT_BOOL
+	bool my_bool_true = 1;
+#elif HAVE_MYSQLCLIENT_MY_BOOL
 	my_bool my_bool_true = 1;
 #endif
 
@@ -382,6 +384,13 @@ static int my_unload_module(int reload)
 {
 	struct column *entry;
 
+	if (!reload) {
+		if (ast_cdr_unregister(name)) {
+			/* If we can't unregister the backend, we can't unload the module */
+			return -1;
+		}
+	}
+
 	ast_cli_unregister_multiple(cdr_mysql_status_cli, sizeof(cdr_mysql_status_cli) / sizeof(struct ast_cli_entry));
 
 	if (connected) {
@@ -406,7 +415,8 @@ static int my_unload_module(int reload)
 	if (reload) {
 		return ast_cdr_backend_suspend(name);
 	} else {
-		return ast_cdr_unregister(name);
+		/* We unregistered earlier */
+		return 0;
 	}
 }
 
@@ -460,7 +470,9 @@ static int my_connect_db(struct ast_config *cfg)
 	MYSQL_ROW row;
 	MYSQL_RES *result;
 	char sqldesc[128];
-#if MYSQL_VERSION_ID >= 50013
+#ifdef HAVE_MYSQLCLIENT_BOOL
+	bool my_bool_true = 1;
+#elif HAVE_MYSQLCLIENT_MY_BOOL
 	my_bool my_bool_true = 1;
 #endif
 

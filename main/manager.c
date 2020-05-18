@@ -71,6 +71,7 @@
 #include "asterisk/lock.h"
 #include "asterisk/cli.h"
 #include "asterisk/app.h"
+#include "asterisk/mwi.h"
 #include "asterisk/pbx.h"
 #include "asterisk/md5.h"
 #include "asterisk/acl.h"
@@ -1598,6 +1599,7 @@ struct mansession_session {
 	time_t noncetime;	/*!< Timer for nonce value expiration */
 	unsigned long oldnonce;	/*!< Stale nonce value */
 	unsigned long nc;	/*!< incremental  nonce counter */
+	ast_mutex_t notify_lock; /*!< Lock for notifying this session of events */
 	AST_LIST_HEAD_NOLOCK(mansession_datastores, ast_datastore) datastores; /*!< Data stores on the session */
 	AST_LIST_ENTRY(mansession_session) list;
 };
@@ -1617,7 +1619,7 @@ struct mansession {
 	struct ast_iostream *stream;
 	struct ast_tcptls_session_instance *tcptls_session;
 	enum mansession_message_parsing parsing;
-	int write_error:1;
+	unsigned int write_error:1;
 	struct manager_custom_hook *hook;
 	ast_mutex_t lock;
 };
@@ -2211,6 +2213,8 @@ static void session_destructor(void *obj)
 	if (session->blackfilters) {
 		ao2_t_ref(session->blackfilters, -1, "decrement ref for black container, should be last one");
 	}
+
+	ast_mutex_destroy(&session->notify_lock);
 }
 
 /*! \brief Allocate manager session structure and add it to the list of sessions */
@@ -2235,6 +2239,8 @@ static struct mansession_session *build_mansession(const struct ast_sockaddr *ad
 	newsession->writetimeout = 100;
 	newsession->send_events = -1;
 	ast_sockaddr_copy(&newsession->addr, addr);
+
+	ast_mutex_init(&newsession->notify_lock);
 
 	sessions = ao2_global_obj_ref(mgr_sessions);
 	if (sessions) {
@@ -2544,6 +2550,9 @@ static char *handle_showmanager(struct ast_cli_entry *e, int cmd, struct ast_cli
 		for (v = user->chanvars ; v ; v = v->next) {
 			ast_cli(a->fd, "                 %s = %s\n", v->name, v->value);
 		}
+	if (!ast_acl_list_is_empty(user->acl)) {
+		ast_acl_output(a->fd, user->acl, NULL);
+	}
 
 	AST_RWLIST_UNLOCK(&users);
 
@@ -3048,6 +3057,15 @@ AST_THREADSTORAGE(userevent_buf);
 /*! \brief initial allocated size for the astman_append_buf and astman_send_*_va */
 #define ASTMAN_APPEND_BUF_INITSIZE   256
 
+static void astman_flush(struct mansession *s, struct ast_str *buf)
+{
+	if (s->hook || (s->tcptls_session && s->tcptls_session->stream)) {
+		send_string(s, ast_str_buffer(buf));
+	} else {
+		ast_verbose("No connection stream in astman_append, should not happen\n");
+	}
+}
+
 /*!
  * utility functions for creating AMI replies
  */
@@ -3097,21 +3115,32 @@ void astman_append(struct mansession *s, const char *fmt, ...)
 static void astman_send_response_full(struct mansession *s, const struct message *m, char *resp, char *msg, char *listflag)
 {
 	const char *id = astman_get_header(m, "ActionID");
+	struct ast_str *buf;
 
-	astman_append(s, "Response: %s\r\n", resp);
-	if (!ast_strlen_zero(id)) {
-		astman_append(s, "ActionID: %s\r\n", id);
-	}
-	if (listflag) {
-		astman_append(s, "EventList: %s\r\n", listflag);	/* Start, complete, cancelled */
-	}
-	if (msg == MSG_MOREDATA) {
+	buf = ast_str_thread_get(&astman_append_buf, ASTMAN_APPEND_BUF_INITSIZE);
+	if (!buf) {
 		return;
-	} else if (msg) {
-		astman_append(s, "Message: %s\r\n\r\n", msg);
-	} else {
-		astman_append(s, "\r\n");
 	}
+
+	ast_str_set(&buf, 0, "Response: %s\r\n", resp);
+
+	if (!ast_strlen_zero(id)) {
+		ast_str_append(&buf, 0, "ActionID: %s\r\n", id);
+	}
+
+	if (listflag) {
+		/* Start, complete, cancelled */
+		ast_str_append(&buf, 0, "EventList: %s\r\n", listflag);
+	}
+
+	if (msg != MSG_MOREDATA) {
+		if (msg) {
+			ast_str_append(&buf, 0, "Message: %s\r\n", msg);
+		}
+		ast_str_append(&buf, 0, "\r\n");
+	}
+
+	astman_flush(s, buf);
 }
 
 void astman_send_response(struct mansession *s, const struct message *m, char *resp, char *msg)
@@ -3166,18 +3195,43 @@ void astman_send_listack(struct mansession *s, const struct message *m, char *ms
 	astman_send_response_full(s, m, "Success", msg, listflag);
 }
 
-void astman_send_list_complete_start(struct mansession *s, const struct message *m, const char *event_name, int count)
+static struct ast_str *astman_send_list_complete_start_common(struct mansession *s, const struct message *m, const char *event_name, int count)
 {
 	const char *id = astman_get_header(m, "ActionID");
+	struct ast_str *buf;
 
-	astman_append(s, "Event: %s\r\n", event_name);
-	if (!ast_strlen_zero(id)) {
-		astman_append(s, "ActionID: %s\r\n", id);
+	buf = ast_str_thread_get(&astman_append_buf, ASTMAN_APPEND_BUF_INITSIZE);
+	if (!buf) {
+		return NULL;
 	}
-	astman_append(s,
+
+	ast_str_set(&buf, 0, "Event: %s\r\n", event_name);
+	if (!ast_strlen_zero(id)) {
+		ast_str_append(&buf, 0, "ActionID: %s\r\n", id);
+	}
+	ast_str_append(&buf, 0,
 		"EventList: Complete\r\n"
 		"ListItems: %d\r\n",
 		count);
+
+	return buf;
+}
+
+static void astman_send_list_complete(struct mansession *s, const struct message *m, const char *event_name, int count)
+{
+	struct ast_str *buf = astman_send_list_complete_start_common(s, m, event_name, count);
+	if (buf) {
+		ast_str_append(&buf, 0, "\r\n");
+		astman_flush(s, buf);
+	}
+}
+
+void astman_send_list_complete_start(struct mansession *s, const struct message *m, const char *event_name, int count)
+{
+	struct ast_str *buf = astman_send_list_complete_start_common(s, m, event_name, count);
+	if (buf) {
+		astman_flush(s, buf);
+	}
 }
 
 void astman_send_list_complete_end(struct mansession *s)
@@ -3769,8 +3823,8 @@ static enum error_type handle_updates(struct mansession *s, const struct message
 		int allowdups = 0;
 		int istemplate = 0;
 		int ignoreerror = 0;
-		char *inherit = NULL;
-		char *catfilter = NULL;
+		RAII_VAR(char *, inherit, NULL, ast_free);
+		RAII_VAR(char *, catfilter, NULL, ast_free);
 		char *token;
 		int foundvar = 0;
 		int foundcat = 0;
@@ -3808,7 +3862,9 @@ static enum error_type handle_updates(struct mansession *s, const struct message
 		snprintf(hdr, sizeof(hdr), "Options-%06d", x);
 		options = astman_get_header(m, hdr);
 		if (!ast_strlen_zero(options)) {
-			dupoptions = ast_strdupa(options);
+			char copy[strlen(options) + 1];
+			strcpy(copy, options); /* safe */
+			dupoptions = copy;
 			while ((token = ast_strsep(&dupoptions, ',', AST_STRSEP_STRIP))) {
 				if (!strcasecmp("allowdups", token)) {
 					allowdups = 1;
@@ -3826,7 +3882,7 @@ static enum error_type handle_updates(struct mansession *s, const struct message
 					char *c = ast_strsep(&token, '=', AST_STRSEP_STRIP);
 					c = ast_strsep(&token, '=', AST_STRSEP_STRIP);
 					if (c) {
-						inherit = ast_strdupa(c);
+						inherit = ast_strdup(c);
 					}
 					continue;
 				}
@@ -3834,7 +3890,7 @@ static enum error_type handle_updates(struct mansession *s, const struct message
 					char *c = ast_strsep(&token, '=', AST_STRSEP_STRIP);
 					c = ast_strsep(&token, '=', AST_STRSEP_STRIP);
 					if (c) {
-						catfilter = ast_strdupa(c);
+						catfilter = ast_strdup(c);
 					}
 					continue;
 				}
@@ -4162,10 +4218,13 @@ static int action_waitevent(struct mansession *s, const struct message *m)
 		/* XXX maybe put an upper bound, or prevent the use of 0 ? */
 	}
 
-	ao2_lock(s->session);
+	ast_mutex_lock(&s->session->notify_lock);
 	if (s->session->waiting_thread != AST_PTHREADT_NULL) {
 		pthread_kill(s->session->waiting_thread, SIGURG);
 	}
+	ast_mutex_unlock(&s->session->notify_lock);
+
+	ao2_lock(s->session);
 
 	if (s->session->managerid) { /* AMI-over-HTTP session */
 		/*
@@ -4188,8 +4247,9 @@ static int action_waitevent(struct mansession *s, const struct message *m)
 	}
 	ao2_unlock(s->session);
 
-	/* XXX should this go inside the lock ? */
+	ast_mutex_lock(&s->session->notify_lock);
 	s->session->waiting_thread = pthread_self();	/* let new events wake up this thread */
+	ast_mutex_unlock(&s->session->notify_lock);
 	ast_debug(1, "Starting waiting for an event!\n");
 
 	for (x = 0; x < timeout || timeout < 0; x++) {
@@ -4197,17 +4257,19 @@ static int action_waitevent(struct mansession *s, const struct message *m)
 		if (AST_RWLIST_NEXT(s->session->last_ev, eq_next)) {
 			needexit = 1;
 		}
-		/* We can have multiple HTTP session point to the same mansession entry.
-		 * The way we deal with it is not very nice: newcomers kick out the previous
-		 * HTTP session. XXX this needs to be improved.
-		 */
-		if (s->session->waiting_thread != pthread_self()) {
-			needexit = 1;
-		}
 		if (s->session->needdestroy) {
 			needexit = 1;
 		}
 		ao2_unlock(s->session);
+		/* We can have multiple HTTP session point to the same mansession entry.
+		 * The way we deal with it is not very nice: newcomers kick out the previous
+		 * HTTP session. XXX this needs to be improved.
+		 */
+		ast_mutex_lock(&s->session->notify_lock);
+		if (s->session->waiting_thread != pthread_self()) {
+			needexit = 1;
+		}
+		ast_mutex_unlock(&s->session->notify_lock);
 		if (needexit) {
 			break;
 		}
@@ -4221,9 +4283,14 @@ static int action_waitevent(struct mansession *s, const struct message *m)
 	}
 	ast_debug(1, "Finished waiting for an event!\n");
 
-	ao2_lock(s->session);
+	ast_mutex_lock(&s->session->notify_lock);
 	if (s->session->waiting_thread == pthread_self()) {
 		struct eventqent *eqe = s->session->last_ev;
+
+		s->session->waiting_thread = AST_PTHREADT_NULL;
+		ast_mutex_unlock(&s->session->notify_lock);
+
+		ao2_lock(s->session);
 		astman_send_response(s, m, "Success", "Waiting for Event completed.");
 		while ((eqe = advance_event(eqe))) {
 			if (((s->session->readperm & eqe->category) == eqe->category)
@@ -4237,11 +4304,11 @@ static int action_waitevent(struct mansession *s, const struct message *m)
 			"Event: WaitEventComplete\r\n"
 			"%s"
 			"\r\n", idText);
-		s->session->waiting_thread = AST_PTHREADT_NULL;
+		ao2_unlock(s->session);
 	} else {
+		ast_mutex_unlock(&s->session->notify_lock);
 		ast_debug(1, "Abandoning event request!\n");
 	}
-	ao2_unlock(s->session);
 
 	return 0;
 }
@@ -4494,8 +4561,7 @@ static int action_hangup(struct mansession *s, const struct message *m)
 	regfree(&regexbuf);
 	ast_free(regex_string);
 
-	astman_send_list_complete_start(s, m, "ChannelsHungupListComplete", channels_matched);
-	astman_send_list_complete_end(s);
+	astman_send_list_complete(s, m, "ChannelsHungupListComplete", channels_matched);
 
 	return 0;
 }
@@ -5681,6 +5747,7 @@ static int action_originate(struct mansession *s, const struct message *m)
 				                                     EAGI(/bin/rm,-rf /)       */
 				strcasestr(app, "mixmonitor") ||  /* MixMonitor(blah,,rm -rf)  */
 				strcasestr(app, "externalivr") || /* ExternalIVR(rm -rf)       */
+				strcasestr(app, "originate") ||   /* Originate(Local/1234,app,System,rm -rf) */
 				(strstr(appdata, "SHELL") && (bad_appdata = 1)) ||       /* NoOp(${SHELL(rm -rf /)})  */
 				(strstr(appdata, "EVAL") && (bad_appdata = 1))           /* NoOp(${EVAL(${some_var_containing_SHELL})}) */
 				)) {
@@ -6308,8 +6375,7 @@ static int action_coreshowchannels(struct mansession *s, const struct message *m
 	}
 	ao2_iterator_destroy(&it_chans);
 
-	astman_send_list_complete_start(s, m, "CoreShowChannelsComplete", numchans);
-	astman_send_list_complete_end(s);
+	astman_send_list_complete(s, m, "CoreShowChannelsComplete", numchans);
 
 	ao2_ref(channels, -1);
 	return 0;
@@ -6427,6 +6493,32 @@ static int manager_moduleload(struct mansession *s, const struct message *m)
 	return 0;
 }
 
+static void log_action(const struct message *m, const char *action)
+{
+	struct ast_str *buf;
+	int x;
+
+	if (!manager_debug) {
+		return;
+	}
+
+	buf = ast_str_create(256);
+	if (!buf) {
+		return;
+	}
+
+	for (x = 0; x < m->hdrcount; ++x) {
+		if (!strncasecmp(m->headers[x], "Secret", 6)) {
+			ast_str_append(&buf, 0, "Secret: <redacted from logging>\n");
+		} else {
+			ast_str_append(&buf, 0, "%s\n", m->headers[x]);
+		}
+	}
+
+	ast_verbose("<--- Examining AMI action: -->\n%s\n", ast_str_buffer(buf));
+	ast_free(buf);
+}
+
 /*
  * Done with the action handlers here, we start with the code in charge
  * of accepting connections and serving them.
@@ -6456,6 +6548,8 @@ static int process_message(struct mansession *s, const struct message *m)
 		mansession_unlock(s);
 		return 0;
 	}
+
+	log_action(m, action);
 
 	if (ast_shutting_down()) {
 		ast_log(LOG_ERROR, "Unable to process manager action '%s'. Asterisk is shutting down.\n", action);
@@ -6618,20 +6712,20 @@ static int get_input(struct mansession *s, char *output)
 			}
 		}
 
-		ao2_lock(s->session);
+		ast_mutex_lock(&s->session->notify_lock);
 		if (s->session->pending_event) {
 			s->session->pending_event = 0;
-			ao2_unlock(s->session);
+			ast_mutex_unlock(&s->session->notify_lock);
 			return 0;
 		}
 		s->session->waiting_thread = pthread_self();
-		ao2_unlock(s->session);
+		ast_mutex_unlock(&s->session->notify_lock);
 
 		res = ast_wait_for_input(ast_iostream_get_fd(s->session->stream), timeout);
 
-		ao2_lock(s->session);
+		ast_mutex_lock(&s->session->notify_lock);
 		s->session->waiting_thread = AST_PTHREADT_NULL;
-		ao2_unlock(s->session);
+		ast_mutex_unlock(&s->session->notify_lock);
 	}
 	if (res < 0) {
 		/* If we get a signal from some other thread (typically because
@@ -7012,7 +7106,7 @@ static int __attribute__((format(printf, 9, 0))) __manager_event_sessions_va(
 
 		iter = ao2_iterator_init(sessions, 0);
 		while ((session = ao2_iterator_next(&iter))) {
-			ao2_lock(session);
+			ast_mutex_lock(&session->notify_lock);
 			if (session->waiting_thread != AST_PTHREADT_NULL) {
 				pthread_kill(session->waiting_thread, SIGURG);
 			} else {
@@ -7023,7 +7117,7 @@ static int __attribute__((format(printf, 9, 0))) __manager_event_sessions_va(
 				 */
 				session->pending_event = 1;
 			}
-			ao2_unlock(session);
+			ast_mutex_unlock(&session->notify_lock);
 			unref_mansession(session);
 		}
 		ao2_iterator_destroy(&iter);
@@ -7909,9 +8003,11 @@ static int generic_http_callback(struct ast_tcptls_session_instance *ser,
 			blastaway = 1;
 		} else {
 			ast_debug(1, "Need destroy, but can't do it yet!\n");
+			ast_mutex_lock(&session->notify_lock);
 			if (session->waiting_thread != AST_PTHREADT_NULL) {
 				pthread_kill(session->waiting_thread, SIGURG);
 			}
+			ast_mutex_unlock(&session->notify_lock);
 			session->inuse--;
 		}
 	} else {
@@ -9001,7 +9097,7 @@ static int __init_manager(int reload, int by_external_config)
 		if (res != 0) {
 			return -1;
 		}
-		manager_topic = stasis_topic_create("manager_topic");
+		manager_topic = stasis_topic_create("manager:core");
 		if (!manager_topic) {
 			return -1;
 		}
