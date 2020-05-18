@@ -210,6 +210,7 @@ int daemon(int, int);  /* defined in libresolv of all places */
 #include "asterisk/cdr.h"
 #include "asterisk/pbx.h"
 #include "asterisk/app.h"
+#include "asterisk/mwi.h"
 #include "asterisk/lock.h"
 #include "asterisk/utils.h"
 #include "asterisk/file.h"
@@ -505,6 +506,7 @@ static char *handle_show_settings(struct ast_cli_entry *e, int cmd, struct ast_c
 	ast_cli(a->fd, "  Transmit silence during rec: %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_TRANSMIT_SILENCE) ? "Enabled" : "Disabled");
 	ast_cli(a->fd, "  Generic PLC:                 %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_GENERIC_PLC) ? "Enabled" : "Disabled");
 	ast_cli(a->fd, "  Generic PLC on equal codecs: %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_GENERIC_PLC_ON_EQUAL_CODECS) ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Hide Msg Chan AMI events:    %s\n", ast_opt_hide_messaging_ami_events ? "Enabled" : "Disabled");
 	ast_cli(a->fd, "  Min DTMF duration::          %u\n", option_dtmfminduration);
 #if !defined(LOW_MEMORY)
 	ast_cli(a->fd, "  Cache media frames:          %s\n", ast_opt_cache_media_frames ? "Enabled" : "Disabled");
@@ -3487,10 +3489,11 @@ static void main_atexit(void)
 int main(int argc, char *argv[])
 {
 	int c;
-	char * xarg = NULL;
 	int x;
 	int isroot = 1, rundir_exists = 0;
-	const char *runuser = NULL, *rungroup = NULL;
+	RAII_VAR(char *, runuser, NULL, ast_free);
+	RAII_VAR(char *, rungroup, NULL, ast_free);
+	RAII_VAR(char *, xarg, NULL, ast_free);
 	struct rlimit l;
 	static const char *getopt_settings = "BC:cde:FfG:ghIiL:M:mnpqRrs:TtU:VvWXx:";
 
@@ -3595,7 +3598,7 @@ int main(int argc, char *argv[])
 			break;
 #endif
 		case 'G':
-			rungroup = ast_strdupa(optarg);
+			rungroup = ast_strdup(optarg);
 			break;
 		case 'g':
 			ast_set_flag(&ast_options, AST_OPT_FLAG_DUMP_CORE);
@@ -3651,7 +3654,7 @@ int main(int argc, char *argv[])
 			ast_set_flag(&ast_options, AST_OPT_FLAG_CACHE_RECORD_FILES);
 			break;
 		case 'U':
-			runuser = ast_strdupa(optarg);
+			runuser = ast_strdup(optarg);
 			break;
 		case 'V':
 		case 'v':
@@ -3666,7 +3669,7 @@ int main(int argc, char *argv[])
 			ast_set_flag(&ast_options, AST_OPT_FLAG_NO_FORK | AST_OPT_FLAG_REMOTE);
 
 			ast_set_flag(&ast_options, AST_OPT_FLAG_EXEC | AST_OPT_FLAG_NO_COLOR);
-			xarg = ast_strdupa(optarg);
+			xarg = ast_strdup(optarg);
 			break;
 		case '?':
 			/* already processed. */
@@ -3745,9 +3748,9 @@ int main(int argc, char *argv[])
 #endif /* !defined(CONFIGURE_RAN_AS_ROOT) */
 
 	if ((!rungroup) && !ast_strlen_zero(ast_config_AST_RUN_GROUP))
-		rungroup = ast_config_AST_RUN_GROUP;
+		rungroup = ast_strdup(ast_config_AST_RUN_GROUP);
 	if ((!runuser) && !ast_strlen_zero(ast_config_AST_RUN_USER))
-		runuser = ast_config_AST_RUN_USER;
+		runuser = ast_strdup(ast_config_AST_RUN_USER);
 
 	/* Must install this signal handler up here to ensure that if the canary
 	 * fails to execute that it doesn't kill the Asterisk process.
@@ -4056,7 +4059,7 @@ static void asterisk_daemon(int isroot, const char *runuser, const char *rungrou
 	}
 	ast_verb(0, "PBX UUID: %s\n", pbx_uuid);
 
-	ast_json_init();
+	check_init(ast_json_init(), "libjansson");
 	ast_ulaw_init();
 	ast_alaw_init();
 	tdd_init();
@@ -4119,6 +4122,7 @@ static void asterisk_daemon(int isroot, const char *runuser, const char *rungrou
 	read_pjproject_startup_options();
 	check_init(ast_pj_init(), "Embedded PJProject");
 	check_init(app_init(), "App Core");
+	check_init(mwi_init(), "MWI Core");
 	check_init(devstate_init(), "Device State Core");
 	check_init(ast_msg_init(), "Messaging API");
 	check_init(ast_channels_init(), "Channel");

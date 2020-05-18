@@ -235,6 +235,7 @@ struct ast_rtp_instance {
 static const char * const rtp_extension_uris[AST_RTP_EXTENSION_MAX] = {
 	[AST_RTP_EXTENSION_UNSUPPORTED]		= "",
 	[AST_RTP_EXTENSION_ABS_SEND_TIME]	= "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+	[AST_RTP_EXTENSION_TRANSPORT_WIDE_CC]	= "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
 };
 
 /*! List of RTP engines that are currently registered */
@@ -276,6 +277,20 @@ static ast_rwlock_t static_RTP_PT_lock;
 /*! \brief \ref stasis topic for RTP related messages */
 static struct stasis_topic *rtp_topic;
 
+
+/*!
+ * \brief Set given json object into target with name
+ *
+ * \param target Target json.
+ * \param name key of given object.
+ * \param obj Json value will be set.
+ */
+#define SET_AST_JSON_OBJ(target, name, obj) ({					\
+	struct ast_json *j_tmp = obj;						\
+	if (j_tmp) {						\
+		ast_json_object_set(target, name, j_tmp);						\
+	}						\
+})
 
 /*!
  * \internal
@@ -442,7 +457,7 @@ static void instance_destructor(void *obj)
 
 int ast_rtp_instance_destroy(struct ast_rtp_instance *instance)
 {
-	ao2_ref(instance, -1);
+	ao2_cleanup(instance);
 
 	return 0;
 }
@@ -2727,6 +2742,7 @@ int ast_rtp_instance_add_srtp_policy(struct ast_rtp_instance *instance, struct a
 		return -1;
 	}
 
+	ao2_lock(instance);
 
 	srtp = rtcp ? &instance->rtcp_srtp : &instance->srtp;
 
@@ -2738,6 +2754,8 @@ int ast_rtp_instance_add_srtp_policy(struct ast_rtp_instance *instance, struct a
 	if (!res) {
 		res = res_srtp->add_stream(*srtp, local_policy);
 	}
+
+	ao2_unlock(instance);
 
 	return res;
 }
@@ -2878,6 +2896,13 @@ struct ast_rtp_engine_ice *ast_rtp_instance_get_ice(struct ast_rtp_instance *ins
 	/* ICE not available */
 	return NULL;
 }
+
+#ifdef TEST_FRAMEWORK
+struct ast_rtp_engine_test *ast_rtp_instance_get_test(struct ast_rtp_instance *instance)
+{
+	return instance->engine->test;
+}
+#endif
 
 static int rtp_dtls_wrap_set_configuration(struct ast_rtp_instance *instance,
 	const struct ast_rtp_dtls_cfg *dtls_cfg)
@@ -3379,14 +3404,14 @@ static struct ast_json *rtcp_report_to_json(struct stasis_message *msg,
 		char str_lsr[32];
 
 		snprintf(str_lsr, sizeof(str_lsr), "%u", payload->report->report_block[i]->lsr);
-		json_report_block = ast_json_pack("{s: I, s: i, s: i, s: i, s: i, s: s, s: i}",
+		json_report_block = ast_json_pack("{s: I, s: I, s: I, s: I, s: I, s: s, s: I}",
 			"source_ssrc", (ast_json_int_t)payload->report->report_block[i]->source_ssrc,
-			"fraction_lost", payload->report->report_block[i]->lost_count.fraction,
-			"packets_lost", payload->report->report_block[i]->lost_count.packets,
-			"highest_seq_no", payload->report->report_block[i]->highest_seq_no,
-			"ia_jitter", payload->report->report_block[i]->ia_jitter,
+			"fraction_lost", (ast_json_int_t)payload->report->report_block[i]->lost_count.fraction,
+			"packets_lost", (ast_json_int_t)payload->report->report_block[i]->lost_count.packets,
+			"highest_seq_no", (ast_json_int_t)payload->report->report_block[i]->highest_seq_no,
+			"ia_jitter", (ast_json_int_t)payload->report->report_block[i]->ia_jitter,
 			"lsr", str_lsr,
-			"dlsr", payload->report->report_block[i]->dlsr);
+			"dlsr", (ast_json_int_t)payload->report->report_block[i]->dlsr);
 		if (!json_report_block
 			|| ast_json_array_append(json_rtcp_report_blocks, json_report_block)) {
 			ast_json_unref(json_rtcp_report_blocks);
@@ -3400,21 +3425,21 @@ static struct ast_json *rtcp_report_to_json(struct stasis_message *msg,
 
 		snprintf(sec, sizeof(sec), "%lu", (unsigned long)payload->report->sender_information.ntp_timestamp.tv_sec);
 		snprintf(usec, sizeof(usec), "%lu", (unsigned long)payload->report->sender_information.ntp_timestamp.tv_usec);
-		json_rtcp_sender_info = ast_json_pack("{s: s, s: s, s: i, s: i, s: i}",
+		json_rtcp_sender_info = ast_json_pack("{s: s, s: s, s: I, s: I, s: I}",
 			"ntp_timestamp_sec", sec,
 			"ntp_timestamp_usec", usec,
-			"rtp_timestamp", payload->report->sender_information.rtp_timestamp,
-			"packets", payload->report->sender_information.packet_count,
-			"octets", payload->report->sender_information.octet_count);
+			"rtp_timestamp", (ast_json_int_t)payload->report->sender_information.rtp_timestamp,
+			"packets", (ast_json_int_t)payload->report->sender_information.packet_count,
+			"octets", (ast_json_int_t)payload->report->sender_information.octet_count);
 		if (!json_rtcp_sender_info) {
 			ast_json_unref(json_rtcp_report_blocks);
 			return NULL;
 		}
 	}
 
-	json_rtcp_report = ast_json_pack("{s: I, s: i, s: i, s: o, s: o}",
+	json_rtcp_report = ast_json_pack("{s: I, s: I, s: i, s: o, s: o}",
 		"ssrc", (ast_json_int_t)payload->report->ssrc,
-		"type", payload->report->type,
+		"type", (ast_json_int_t)payload->report->type,
 		"report_count", payload->report->reception_report_count,
 		"sender_information", json_rtcp_sender_info ?: ast_json_null(),
 		"report_blocks", json_rtcp_report_blocks);
@@ -3539,7 +3564,7 @@ int ast_rtp_engine_init(void)
 	ast_rwlock_init(&mime_types_lock);
 	ast_rwlock_init(&static_RTP_PT_lock);
 
-	rtp_topic = stasis_topic_create("rtp_topic");
+	rtp_topic = stasis_topic_create("rtp:all");
 	if (!rtp_topic) {
 		return -1;
 	}
@@ -3586,6 +3611,7 @@ int ast_rtp_engine_init(void)
 	set_next_mime_type(ast_format_h263, 0, "video", "H263", 90000);
 	set_next_mime_type(ast_format_h263p, 0, "video", "h263-1998", 90000);
 	set_next_mime_type(ast_format_h264, 0, "video", "H264", 90000);
+	set_next_mime_type(ast_format_h265, 0, "video", "H265", 90000);
 	set_next_mime_type(ast_format_mp4, 0, "video", "MP4V-ES", 90000);
 	set_next_mime_type(ast_format_t140_red, 0, "text", "RED", 1000);
 	set_next_mime_type(ast_format_t140, 0, "text", "T140", 1000);
@@ -3637,6 +3663,7 @@ int ast_rtp_engine_init(void)
 	add_static_payload(106, ast_format_t140, 0);     /* Real time text chat */
 	add_static_payload(107, ast_format_opus, 0);
 	add_static_payload(108, ast_format_vp9, 0);
+	add_static_payload(109, ast_format_h265, 0);
 
 	add_static_payload(110, ast_format_speex, 0);
 	add_static_payload(111, ast_format_g726, 0);
@@ -3739,4 +3766,204 @@ void ast_rtp_instance_set_stream_num(struct ast_rtp_instance *rtp, int stream_nu
 		rtp->engine->set_stream_num(rtp, stream_num);
 	}
 	ao2_unlock(rtp);
+}
+
+#ifdef TEST_FRAMEWORK
+size_t ast_rtp_instance_get_recv_buffer_max(struct ast_rtp_instance *instance)
+{
+	size_t res;
+	struct ast_rtp_engine_test *test = ast_rtp_instance_get_test(instance);
+
+	if (!test) {
+		ast_log(LOG_ERROR, "There is no test engine set up!\n");
+		return 0;
+	}
+
+	ao2_lock(instance);
+	res = test->recv_buffer_max(instance);
+	ao2_unlock(instance);
+
+	return res;
+}
+
+size_t ast_rtp_instance_get_recv_buffer_count(struct ast_rtp_instance *instance)
+{
+	size_t res;
+	struct ast_rtp_engine_test *test = ast_rtp_instance_get_test(instance);
+
+	if (!test) {
+		ast_log(LOG_ERROR, "There is no test engine set up!\n");
+		return 0;
+	}
+
+	ao2_lock(instance);
+	res = test->recv_buffer_count(instance);
+	ao2_unlock(instance);
+
+	return res;
+}
+
+size_t ast_rtp_instance_get_send_buffer_count(struct ast_rtp_instance *instance)
+{
+	size_t res;
+	struct ast_rtp_engine_test *test = ast_rtp_instance_get_test(instance);
+
+	if (!test) {
+		ast_log(LOG_ERROR, "There is no test engine set up!\n");
+		return 0;
+	}
+
+	ao2_lock(instance);
+	res = test->send_buffer_count(instance);
+	ao2_unlock(instance);
+
+	return res;
+}
+
+void ast_rtp_instance_set_schedid(struct ast_rtp_instance *instance, int id)
+{
+	struct ast_rtp_engine_test *test = ast_rtp_instance_get_test(instance);
+
+	if (!test) {
+		ast_log(LOG_ERROR, "There is no test engine set up!\n");
+		return;
+	}
+
+	ao2_lock(instance);
+	test->set_schedid(instance, id);
+	ao2_unlock(instance);
+}
+
+void ast_rtp_instance_drop_packets(struct ast_rtp_instance *instance, int num)
+{
+	struct ast_rtp_engine_test *test = ast_rtp_instance_get_test(instance);
+
+	if (!test) {
+		ast_log(LOG_ERROR, "There is no test engine set up!\n");
+		return;
+	}
+
+	test->packets_to_drop = num;
+}
+
+void ast_rtp_instance_queue_report(struct ast_rtp_instance *instance)
+{
+	struct ast_rtp_engine_test *test = ast_rtp_instance_get_test(instance);
+
+	if (!test) {
+		ast_log(LOG_ERROR, "There is no test engine set up!\n");
+		return;
+	}
+
+	test->send_report = 1;
+}
+
+int ast_rtp_instance_get_sdes_received(struct ast_rtp_instance *instance)
+{
+	struct ast_rtp_engine_test *test = ast_rtp_instance_get_test(instance);
+
+	if (!test) {
+		ast_log(LOG_ERROR, "There is no test engine set up!\n");
+		return 0;
+	}
+
+	return test->sdes_received;
+}
+
+void ast_rtp_instance_reset_test_engine(struct ast_rtp_instance *instance)
+{
+	struct ast_rtp_engine_test *test = ast_rtp_instance_get_test(instance);
+
+	if (!test) {
+		ast_log(LOG_ERROR, "There is no test engine set up!\n");
+		return;
+	}
+
+	test->packets_to_drop = 0;
+	test->send_report = 0;
+	test->sdes_received = 0;
+}
+#endif
+
+struct ast_json *ast_rtp_convert_stats_json(const struct ast_rtp_instance_stats *stats)
+{
+	struct ast_json *j_res;
+	int ret;
+
+	j_res = ast_json_object_create();
+	if (!j_res) {
+		return NULL;
+	}
+
+	/* set mandatory items */
+	ret = ast_json_object_set(j_res, "txcount", ast_json_integer_create(stats->txcount));
+	ret |= ast_json_object_set(j_res, "rxcount", ast_json_integer_create(stats->rxcount));
+
+	ret |= ast_json_object_set(j_res, "txploss", ast_json_integer_create(stats->txploss));
+	ret |= ast_json_object_set(j_res, "rxploss", ast_json_integer_create(stats->rxploss));
+
+	ret |= ast_json_object_set(j_res, "local_ssrc", ast_json_integer_create(stats->local_ssrc));
+	ret |= ast_json_object_set(j_res, "remote_ssrc", ast_json_integer_create(stats->remote_ssrc));
+
+	ret |= ast_json_object_set(j_res, "txoctetcount", ast_json_integer_create(stats->txoctetcount));
+	ret |= ast_json_object_set(j_res, "rxoctetcount", ast_json_integer_create(stats->rxoctetcount));
+
+	ret |= ast_json_object_set(j_res, "channel_uniqueid", ast_json_string_create(stats->channel_uniqueid));
+	if (ret) {
+		ast_log(LOG_WARNING, "Could not create rtp statistics info. channel: %s\n", stats->channel_uniqueid);
+		ast_json_unref(j_res);
+		return NULL;
+	}
+
+	/* set other items */
+	SET_AST_JSON_OBJ(j_res, "txjitter", ast_json_real_create(stats->txjitter));
+	SET_AST_JSON_OBJ(j_res, "rxjitter", ast_json_real_create(stats->rxjitter));
+
+	SET_AST_JSON_OBJ(j_res, "remote_maxjitter", ast_json_real_create(stats->remote_maxjitter));
+	SET_AST_JSON_OBJ(j_res, "remote_minjitter", ast_json_real_create(stats->remote_minjitter));
+	SET_AST_JSON_OBJ(j_res, "remote_normdevjitter", ast_json_real_create(stats->remote_normdevjitter));
+	SET_AST_JSON_OBJ(j_res, "remote_stdevjitter", ast_json_real_create(stats->remote_stdevjitter));
+
+	SET_AST_JSON_OBJ(j_res, "local_maxjitter", ast_json_real_create(stats->local_maxjitter));
+	SET_AST_JSON_OBJ(j_res, "local_minjitter", ast_json_real_create(stats->local_minjitter));
+	SET_AST_JSON_OBJ(j_res, "local_normdevjitter", ast_json_real_create(stats->local_normdevjitter));
+	SET_AST_JSON_OBJ(j_res, "local_stdevjitter", ast_json_real_create(stats->local_stdevjitter));
+
+	SET_AST_JSON_OBJ(j_res, "remote_maxrxploss", ast_json_real_create(stats->remote_maxrxploss));
+	SET_AST_JSON_OBJ(j_res, "remote_minrxploss", ast_json_real_create(stats->remote_minrxploss));
+	SET_AST_JSON_OBJ(j_res, "remote_normdevrxploss", ast_json_real_create(stats->remote_normdevrxploss));
+	SET_AST_JSON_OBJ(j_res, "remote_stdevrxploss", ast_json_real_create(stats->remote_stdevrxploss));
+
+	SET_AST_JSON_OBJ(j_res, "local_maxrxploss", ast_json_real_create(stats->local_maxrxploss));
+	SET_AST_JSON_OBJ(j_res, "local_minrxploss", ast_json_real_create(stats->local_minrxploss));
+	SET_AST_JSON_OBJ(j_res, "local_normdevrxploss", ast_json_real_create(stats->local_normdevrxploss));
+	SET_AST_JSON_OBJ(j_res, "local_stdevrxploss", ast_json_real_create(stats->local_stdevrxploss));
+
+	SET_AST_JSON_OBJ(j_res, "rtt", ast_json_real_create(stats->rtt));
+	SET_AST_JSON_OBJ(j_res, "maxrtt", ast_json_real_create(stats->maxrtt));
+	SET_AST_JSON_OBJ(j_res, "minrtt", ast_json_real_create(stats->minrtt));
+	SET_AST_JSON_OBJ(j_res, "normdevrtt", ast_json_real_create(stats->normdevrtt));
+	SET_AST_JSON_OBJ(j_res, "stdevrtt", ast_json_real_create(stats->stdevrtt));
+
+	return j_res;
+}
+
+struct ast_json *ast_rtp_instance_get_stats_all_json(struct ast_rtp_instance *instance)
+{
+	struct ast_rtp_instance_stats stats = {0,};
+
+	if(ast_rtp_instance_get_stats(instance, &stats, AST_RTP_INSTANCE_STAT_ALL)) {
+		return NULL;
+	}
+
+	return ast_rtp_convert_stats_json(&stats);
+}
+
+int ast_rtp_get_rate(const struct ast_format *format)
+{
+	/* For those wondering: due to a fluke in RFC publication, G.722 is advertised
+	 * as having a sample rate of 8kHz, while implementations must know that its
+	 * real rate is 16kHz. Seriously.
+	 */
+        return (ast_format_cmp(format, ast_format_g722) == AST_FORMAT_CMP_EQUAL) ? 8000 : (int)ast_format_get_sample_rate(format);
 }

@@ -101,6 +101,7 @@
 #include "asterisk/options.h"
 #include "asterisk/pbx.h"
 #include "asterisk/app.h"
+#include "asterisk/mwi.h"
 #include "asterisk/file.h"
 #include "asterisk/callerid.h"
 #include "asterisk/say.h"
@@ -1386,18 +1387,35 @@ static void pri_queue_control(struct sig_pri_span *pri, int chanpos, int subclas
  * \note Assumes the pri->lock is already obtained.
  * \note Assumes the sig_pri_lock_private(pri->pvts[chanpos]) is already obtained.
  *
+ * \note The unlocking/locking sequence now present has been stress tested
+ *       without deadlocks.  Please don't change it without consulting
+ *       core development team members.
+ *
  * \return Nothing
  */
 static void sig_pri_queue_hangup(struct sig_pri_span *pri, int chanpos)
 {
+	struct ast_channel *owner;
+
 	if (sig_pri_callbacks.queue_control) {
 		sig_pri_callbacks.queue_control(pri->pvts[chanpos]->chan_pvt, AST_CONTROL_HANGUP);
 	}
 
 	sig_pri_lock_owner(pri, chanpos);
-	if (pri->pvts[chanpos]->owner) {
-		ast_queue_hangup(pri->pvts[chanpos]->owner);
-		ast_channel_unlock(pri->pvts[chanpos]->owner);
+	owner = pri->pvts[chanpos]->owner;
+	if (owner) {
+		ao2_ref(owner, +1);
+		ast_queue_hangup(owner);
+		ast_channel_unlock(owner);
+
+		sig_pri_unlock_private(pri->pvts[chanpos]);
+		ast_mutex_unlock(&pri->lock);
+		/* Tell the CDR this DAHDI channel hung up */
+		ast_set_hangupsource(owner, ast_channel_name(owner), 0);
+		ast_mutex_lock(&pri->lock);
+		sig_pri_lock_private(pri->pvts[chanpos]);
+
+		ao2_ref(owner, -1);
 	}
 }
 
@@ -2229,7 +2247,7 @@ static void *pri_ss_thread(void *data)
 
 void pri_event_alarm(struct sig_pri_span *pri, int index, int before_start_pri)
 {
-	pri->dchanavail[index] &= ~(DCHAN_NOTINALARM | DCHAN_UP);
+	pri->dchanavail[index] &= ~DCHAN_NOTINALARM;
 	if (!before_start_pri) {
 		pri_find_dchan(pri);
 	}
@@ -6036,11 +6054,14 @@ static void sig_pri_handle_setup(struct sig_pri_span *pri, pri_event *e)
 
 	/* Setup the user tag for party id's from this device for this call. */
 	if (pri->append_msn_to_user_tag) {
-		snprintf(pri->pvts[chanpos]->user_tag,
+		int len = snprintf(pri->pvts[chanpos]->user_tag,
 			sizeof(pri->pvts[chanpos]->user_tag), "%s_%s",
 			pri->initial_user_tag,
 			pri->nodetype == PRI_NETWORK
 				? plancallingnum : e->ring.callednum);
+		if (len >= sizeof(pri->pvts[chanpos]->user_tag)) {
+			ast_log(LOG_WARNING, "user_tag '%s' truncated\n", pri->pvts[chanpos]->user_tag);
+		}
 	} else {
 		ast_copy_string(pri->pvts[chanpos]->user_tag,
 			pri->initial_user_tag, sizeof(pri->pvts[chanpos]->user_tag));
@@ -6434,7 +6455,7 @@ static void *pri_dchannel(void *vpri)
 
 		if (e) {
 			int chanpos = -1;
-			char cause_str[35];
+			char cause_str[36];
 
 			if (pri->debug) {
 				ast_verbose("Span %d: Processing event %s(%d)\n",

@@ -107,7 +107,7 @@
 #include "asterisk/musiconhold.h"
 #include "asterisk/say.h"
 #include "asterisk/tdd.h"
-#include "asterisk/app.h"
+#include "asterisk/mwi.h"
 #include "asterisk/dsp.h"
 #include "asterisk/astdb.h"
 #include "asterisk/manager.h"
@@ -184,6 +184,9 @@
 			</enum>
 			<enum name="dahdi_span">
 				<para>R/O DAHDI span related to this channel.</para>
+			</enum>
+			<enum name="dahdi_group">
+				<para>R/O DAHDI logical group related to this channel.</para>
 			</enum>
 			<enum name="dahdi_type">
 				<para>R/O DAHDI channel type, one of:</para>
@@ -462,6 +465,9 @@
 			<synopsis>Raised when a DAHDI channel is created or an underlying technology is associated with a DAHDI channel.</synopsis>
 			<syntax>
 				<channel_snapshot/>
+				<parameter name="DAHDIGroup">
+					<para>The DAHDI logical group associated with this channel.</para>
+				</parameter>
 				<parameter name="DAHDISpan">
 					<para>The DAHDI span associated with this channel.</para>
 				</parameter>
@@ -738,15 +744,24 @@ struct dahdi_mfcr2_conf {
 
 /* MFC-R2 pseudo-link structure */
 struct dahdi_mfcr2 {
+	int index;                             /*!< Unique index for CLI */
 	pthread_t r2master;		       /*!< Thread of master */
 	openr2_context_t *protocol_context;    /*!< OpenR2 context handle */
 	struct dahdi_pvt *pvts[SIG_MFCR2_MAX_CHANNELS];     /*!< Member channel pvt structs */
 	int numchans;                          /*!< Number of channels in this R2 block */
-	struct dahdi_mfcr2_conf conf;         /*!< Configuration used to setup this pseudo-link */
+	int live_chans;                        /*!< Number of unremoved channels in this R2 block */
+	int nodev;                             /*!< Link disconnected? */
+	struct dahdi_mfcr2_conf conf;          /*!< Configuration used to setup this pseudo-link */
 };
 
-/* malloc'd array of malloc'd r2links */
-static struct dahdi_mfcr2 **r2links;
+struct r2link_entry {
+	struct dahdi_mfcr2 mfcr2;
+	AST_LIST_ENTRY(r2link_entry) list;
+};
+static AST_LIST_HEAD_STATIC(r2links, r2link_entry);
+static struct r2links nodev_r2links = AST_LIST_HEAD_INIT_VALUE;
+
+
 /* how many r2links have been malloc'd */
 static int r2links_count = 0;
 
@@ -1727,21 +1742,24 @@ static struct ast_manager_event_blob *dahdichannel_to_ami(struct stasis_message 
 {
 	RAII_VAR(struct ast_str *, channel_string, NULL, ast_free);
 	struct ast_channel_blob *obj = stasis_message_data(msg);
-	struct ast_json *span, *channel;
+	struct ast_json *group, *span, *channel;
 
 	channel_string = ast_manager_build_channel_state_string(obj->snapshot);
 	if (!channel_string) {
 		return NULL;
 	}
 
+	group = ast_json_object_get(obj->blob, "group");
 	span = ast_json_object_get(obj->blob, "span");
 	channel = ast_json_object_get(obj->blob, "channel");
 
 	return ast_manager_event_blob_create(EVENT_FLAG_CALL, "DAHDIChannel",
 		"%s"
+		"DAHDIGroup: %llu\r\n"
 		"DAHDISpan: %u\r\n"
 		"DAHDIChannel: %s\r\n",
 		ast_str_buffer(channel_string),
+		(ast_group_t)ast_json_integer_get(group),
 		(unsigned int)ast_json_integer_get(span),
 		ast_json_string_get(channel));
 }
@@ -1751,13 +1769,14 @@ STASIS_MESSAGE_TYPE_DEFN_LOCAL(dahdichannel_type,
 	);
 
 /*! \brief Sends a DAHDIChannel channel blob used to produce DAHDIChannel AMI messages */
-static void publish_dahdichannel(struct ast_channel *chan, int span, const char *dahdi_channel)
+static void publish_dahdichannel(struct ast_channel *chan, ast_group_t group, int span, const char *dahdi_channel)
 {
 	RAII_VAR(struct ast_json *, blob, NULL, ast_json_unref);
 
 	ast_assert(dahdi_channel != NULL);
 
-	blob = ast_json_pack("{s: i, s: s}",
+	blob = ast_json_pack("{s: I, s: i, s: s}",
+		"group", (ast_json_int_t)group,
 		"span", span,
 		"channel", dahdi_channel);
 	if (!blob) {
@@ -1793,7 +1812,7 @@ static void dahdi_ami_channel_event(struct dahdi_pvt *p, struct ast_channel *cha
 		/* Real channel */
 		snprintf(ch_name, sizeof(ch_name), "%d", p->channel);
 	}
-	publish_dahdichannel(chan, p->span, ch_name);
+	publish_dahdichannel(chan, p->group, p->span, ch_name);
 }
 
 #ifdef HAVE_PRI
@@ -3532,6 +3551,21 @@ static void handle_clear_alarms(struct dahdi_pvt *p)
 }
 
 #ifdef HAVE_OPENR2
+static void mfcr2_queue_for_destruction(const struct dahdi_pvt *p)
+{
+	const struct dahdi_mfcr2 *r2link = p->mfcr2;
+	struct r2link_entry *cur;
+	AST_LIST_LOCK(&r2links);
+	AST_LIST_TRAVERSE_SAFE_BEGIN(&r2links, cur, list) {
+		if (r2link == &cur->mfcr2) {
+			ast_debug(3, "MFC/R2 channel %d queued for destruction\n", p->channel);
+			AST_LIST_MOVE_CURRENT(&nodev_r2links, list);
+			break;
+		}
+	}
+	AST_LIST_TRAVERSE_SAFE_END;
+	AST_LIST_UNLOCK(&r2links);
+}
 
 static int dahdi_r2_answer(struct dahdi_pvt *p)
 {
@@ -3617,6 +3651,9 @@ static void dahdi_r2_on_hardware_alarm(openr2_chan_t *r2chan, int alarm)
 	p->inalarm = alarm ? 1 : 0;
 	if (p->inalarm) {
 		res = get_alarms(p);
+		if (res == DAHDI_ALARM_NOTOPEN) {
+			mfcr2_queue_for_destruction(p);
+		}
 		handle_alarms(p, res);
 	} else {
 		handle_clear_alarms(p);
@@ -3626,7 +3663,19 @@ static void dahdi_r2_on_hardware_alarm(openr2_chan_t *r2chan, int alarm)
 
 static void dahdi_r2_on_os_error(openr2_chan_t *r2chan, int errorcode)
 {
+	struct dahdi_pvt *p = openr2_chan_get_client_data(r2chan);
+
 	ast_log(LOG_ERROR, "OS error on chan %d: %s\n", openr2_chan_get_number(r2chan), strerror(errorcode));
+	ast_mutex_lock(&p->lock);
+	/* Disconnected? */
+	if (errorcode == ENODEV) {
+		struct dahdi_mfcr2 *r2link = p->mfcr2;
+		p->mfcr2call = 0;
+		if (r2link) {
+			r2link->nodev = 1;
+		}
+	}
+	ast_mutex_unlock(&p->lock);
 }
 
 static void dahdi_r2_on_protocol_error(openr2_chan_t *r2chan, openr2_protocol_error_t reason)
@@ -3829,6 +3878,7 @@ static void dahdi_r2_on_call_disconnect(openr2_chan_t *r2chan, openr2_call_disco
 	ast_copy_string(cause_code->code, cause_str, datalen + 1 - sizeof(*cause_code));
 	ast_queue_control_data(p->owner, AST_CONTROL_PVT_CAUSE_CODE, cause_code, datalen);
 	ast_channel_hangupcause_hash_set(p->owner, cause_code, datalen);
+	ast_channel_hangupcause_set(p->owner, cause_code->ast_cause);
 
 	/* when we have an owner we don't call dahdi_r2_disconnect_call here, that will
 	   be done in dahdi_hangup */
@@ -4332,7 +4382,7 @@ static char *alarm2str(int alm)
 static const char *event2str(int event)
 {
 	static char buf[256];
-	if ((event < (ARRAY_LEN(events))) && (event > -1))
+	if ((event > -1) && (event < (ARRAY_LEN(events))) )
 		return events[event];
 	sprintf(buf, "Event %d", event); /* safe */
 	return buf;
@@ -5462,6 +5512,49 @@ static void dahdi_unlink_ss7_pvt(struct dahdi_pvt *pvt)
 }
 #endif	/* defined(HAVE_SS7) */
 
+#if defined(HAVE_OPENR2)
+/*!
+ * \internal
+ * \brief Unlink the channel interface from the MFC/R2 private pointer array.
+ *
+ * \param pvt chan_dahdi private interface structure to unlink.
+ *
+ * \return Nothing
+ */
+static void dahdi_unlink_mfcr2_pvt(struct dahdi_pvt *pvt)
+{
+	unsigned idx;
+	struct dahdi_mfcr2 *mfcr2;
+	int should_destroy_link = 0;
+
+	ast_mutex_lock(&pvt->lock);
+	if (pvt->r2chan) {
+		ast_debug(1, "Disable MFC/R2 channel %d read\n", pvt->channel);
+		openr2_chan_disable_read(pvt->r2chan);
+	}
+	mfcr2 = pvt->mfcr2;
+	if (mfcr2) {
+		for (idx = 0; idx < mfcr2->numchans; ++idx) {
+			if (mfcr2->pvts[idx] == pvt) {
+				ast_debug(1, "Removing MFC/R2 channel %d from the mfcr2 link\n", pvt->channel);
+				mfcr2->pvts[idx] = NULL;
+				mfcr2->live_chans--;
+				break;
+			}
+		}
+		if (!mfcr2->live_chans) {
+			ast_debug(1, "MFC/R2 link is now empty\n");
+			should_destroy_link = 1;
+		}
+	}
+	ast_mutex_unlock(&pvt->lock);
+	if (should_destroy_link) {
+		ast_debug(1, "MFC/R2 link is now empty\n");
+		mfcr2_queue_for_destruction(pvt);
+	}
+}
+#endif	/* defined(HAVE_OPENR2) */
+
 static struct dahdi_pvt *find_next_iface_in_span(struct dahdi_pvt *cur)
 {
 	if (cur->next && cur->next->span == cur->span) {
@@ -5490,6 +5583,9 @@ static void destroy_dahdi_pvt(struct dahdi_pvt *pvt)
 #endif	/* defined(HAVE_PRI) */
 #if defined(HAVE_SS7)
 	dahdi_unlink_ss7_pvt(p);
+#endif	/* defined(HAVE_SS7) */
+#if defined(HAVE_OPENR2)
+	dahdi_unlink_mfcr2_pvt(p);
 #endif	/* defined(HAVE_SS7) */
 	switch (pvt->which_iflist) {
 	case DAHDI_IFLIST_NONE:
@@ -6692,6 +6788,10 @@ static int dahdi_func_read(struct ast_channel *chan, const char *function, char 
 		ast_mutex_lock(&p->lock);
 		snprintf(buf, len, "%d", p->span);
 		ast_mutex_unlock(&p->lock);
+	} else if (!strcasecmp(data, "dahdi_group")) {
+		ast_mutex_lock(&p->lock);
+		snprintf(buf, len, "%llu", p->group);
+		ast_mutex_unlock(&p->lock);
 	} else if (!strcasecmp(data, "dahdi_type")) {
 		ast_mutex_lock(&p->lock);
 		switch (p->sig) {
@@ -7659,8 +7759,16 @@ static struct ast_frame *dahdi_handle_event(struct ast_channel *ast)
 				c++;
 			else
 				c = p->dialdest;
-			if (*c) snprintf(p->dop.dialstr, sizeof(p->dop.dialstr), "M*0%s#", c);
-			else ast_copy_string(p->dop.dialstr,"M*2#", sizeof(p->dop.dialstr));
+
+			if (*c) {
+				int numchars = snprintf(p->dop.dialstr, sizeof(p->dop.dialstr), "M*0%s#", c);
+				if (numchars >= sizeof(p->dop.dialstr)) {
+					ast_log(LOG_WARNING, "Dial string '%s' truncated\n", c);
+				}
+			} else {
+				ast_copy_string(p->dop.dialstr,"M*2#", sizeof(p->dop.dialstr));
+			}
+
 			if (strlen(p->dop.dialstr) > 4) {
 				memset(p->echorest, 'w', sizeof(p->echorest) - 1);
 				strcpy(p->echorest + (p->echotraining / 401) + 1, p->dop.dialstr + strlen(p->dop.dialstr) - 2);
@@ -9739,7 +9847,7 @@ static void *analog_ss_thread(void *data)
 		/* If starting a threeway call, never timeout on the first digit so someone
 		   can use flash-hook as a "hold" feature */
 		if (p->subs[SUB_THREEWAY].owner)
-			timeout = 999999;
+			timeout = INT_MAX;
 		while (len < AST_MAX_EXTENSION-1) {
 			int is_exten_parking = 0;
 
@@ -10992,6 +11100,40 @@ static void dahdi_destroy_channel_range(int start, int end)
 	}
 }
 
+#ifdef HAVE_OPENR2
+static void dahdi_r2_destroy_nodev(void)
+{
+	struct r2link_entry *cur;
+	AST_LIST_LOCK(&nodev_r2links);
+	AST_LIST_TRAVERSE_SAFE_BEGIN(&nodev_r2links, cur, list) {
+		int i;
+		struct dahdi_mfcr2 *r2 = &cur->mfcr2;
+		ast_debug(3, "About to destroy %d DAHDI channels of MFC/R2 link.\n", r2->numchans);
+		for (i = 0; i < r2->numchans; i++) {
+			int channel;
+			struct dahdi_pvt *pvt = r2->pvts[i];
+			if (!pvt) {
+				continue;
+			}
+			channel = pvt->channel;
+			ast_debug(3, "About to destroy B-channel %d.\n", channel);
+			dahdi_destroy_channel_range(channel, channel);
+		}
+		ast_debug(3, "Destroying R2 link\n");
+		AST_LIST_REMOVE(&nodev_r2links, cur, list);
+		if (r2->r2master != AST_PTHREADT_NULL) {
+			pthread_cancel(r2->r2master);
+			pthread_join(r2->r2master, NULL);
+			r2->r2master = AST_PTHREADT_NULL;
+			openr2_context_delete(r2->protocol_context);
+		}
+		ast_free(cur);
+	}
+	AST_LIST_TRAVERSE_SAFE_END;
+	AST_LIST_UNLOCK(&nodev_r2links);
+}
+#endif
+
 static int setup_dahdi(int reload);
 static int setup_dahdi_int(int reload, struct dahdi_chan_conf *default_conf, struct dahdi_chan_conf *base_conf, struct dahdi_chan_conf *conf);
 
@@ -11615,6 +11757,9 @@ static void *do_monitor(void *data)
 		}
 		ast_mutex_unlock(&iflock);
 		release_doomed_pris();
+#ifdef HAVE_OPENR2
+		dahdi_r2_destroy_nodev();
+#endif
 	}
 	/* Never reached */
 	pthread_cleanup_pop(1);
@@ -11800,55 +11945,70 @@ static struct dahdi_ss7 * ss7_resolve_linkset(int linkset)
 #ifdef HAVE_OPENR2
 static void dahdi_r2_destroy_links(void)
 {
-	int i = 0;
-	if (!r2links) {
-		return;
+	struct r2link_entry *cur;
+
+	/* Queue everything for removal */
+	AST_LIST_LOCK(&r2links);
+	AST_LIST_TRAVERSE_SAFE_BEGIN(&r2links, cur, list) {
+		ast_debug(3, "MFC/R2 link #%d queued for destruction\n", cur->mfcr2.index);
+		AST_LIST_MOVE_CURRENT(&nodev_r2links, list);
 	}
-	for (; i < r2links_count; i++) {
-		if (r2links[i]->r2master != AST_PTHREADT_NULL) {
-			pthread_cancel(r2links[i]->r2master);
-			pthread_join(r2links[i]->r2master, NULL);
-			openr2_context_delete(r2links[i]->protocol_context);
-		}
-		ast_free(r2links[i]);
-	}
-	ast_free(r2links);
-	r2links = NULL;
-	r2links_count = 0;
+	AST_LIST_TRAVERSE_SAFE_END;
+	AST_LIST_UNLOCK(&r2links);
+	/* Now destroy properly */
+	dahdi_r2_destroy_nodev();
 }
 
 /* This is an artificial convenient capacity, to keep at most a full E1 of channels in a single thread */
 #define R2_LINK_CAPACITY 30
-static struct dahdi_mfcr2 *dahdi_r2_get_link(const struct dahdi_chan_conf *conf)
+static struct r2link_entry *dahdi_r2_get_link(const struct dahdi_chan_conf *conf)
 {
-	struct dahdi_mfcr2 *new_r2link = NULL;
-	struct dahdi_mfcr2 **new_r2links = NULL;
-
+	struct r2link_entry *cur = NULL;
 	/* Only create a new R2 link if
 	   1. This is the first link requested
 	   2. Configuration changed
 	   3. We got more channels than supported per link */
-	if (!r2links_count ||
-	    memcmp(&conf->mfcr2, &r2links[r2links_count - 1]->conf, sizeof(conf->mfcr2)) ||
-	   (r2links[r2links_count - 1]->numchans == R2_LINK_CAPACITY)) {
-		new_r2link = ast_calloc(1, sizeof(**r2links));
-		if (!new_r2link) {
-			ast_log(LOG_ERROR, "Cannot allocate R2 link!\n");
-			return NULL;
+	AST_LIST_LOCK(&r2links);
+	if (! AST_LIST_EMPTY(&r2links)) {
+		cur = AST_LIST_LAST(&r2links);
+		if (memcmp(&conf->mfcr2, &cur->mfcr2.conf, sizeof(conf->mfcr2))) {
+			ast_debug(3, "Need new R2 link because of: Configuration change\n");
+			cur = NULL;
+		} else if (cur->mfcr2.numchans == R2_LINK_CAPACITY) {
+			ast_debug(3, "Need new R2 link because of: Capacity (%d)\n", R2_LINK_CAPACITY);
+			cur = NULL;
 		}
-		new_r2links = ast_realloc(r2links, ((r2links_count + 1) * sizeof(*r2links)));
-		if (!new_r2links) {
-			ast_log(LOG_ERROR, "Cannot allocate R2 link!\n");
-			ast_free(new_r2link);
-			return NULL;
-		}
-		r2links = new_r2links;
-		new_r2link->r2master = AST_PTHREADT_NULL;
-		r2links[r2links_count] = new_r2link;
-		r2links_count++;
-		ast_debug(1, "Created new R2 link!\n");
 	}
-	return r2links[r2links_count - 1];
+	if (!cur) {
+		struct r2link_entry *tmp = NULL;
+		int new_idx = r2links_count + 1;
+		int i;
+		for (i = 1; i <= r2links_count; i++) {
+			int i_unused = 1;
+			AST_LIST_TRAVERSE(&r2links, tmp, list) {
+				if (i == tmp->mfcr2.index) {
+					i_unused = 0;
+					break;
+				}
+			}
+			if (i_unused) {
+				new_idx = i;
+				break;
+			}
+		}
+		cur = ast_calloc(1, sizeof(*cur));
+		if (!cur) {
+			ast_log(LOG_ERROR, "Cannot allocate R2 link!\n");
+			return NULL;
+		}
+		cur->mfcr2.index = new_idx;
+		cur->mfcr2.r2master = AST_PTHREADT_NULL;
+		r2links_count++;
+		ast_debug(3, "Created new R2 link #%d (now have %d)\n", new_idx, r2links_count);
+		AST_LIST_INSERT_TAIL(&r2links, cur, list);
+	}
+	AST_LIST_UNLOCK(&r2links);
+	return cur;
 }
 
 static int dahdi_r2_set_context(struct dahdi_mfcr2 *r2_link, const struct dahdi_chan_conf *conf)
@@ -11903,7 +12063,7 @@ static int dahdi_r2_set_context(struct dahdi_mfcr2 *r2_link, const struct dahdi_
 		}
 	}
 	/* Save the configuration used to setup this link */
-	memcpy(&r2_link->conf, conf, sizeof(r2_link->conf));
+	memcpy(&r2_link->conf, &conf->mfcr2, sizeof(r2_link->conf));
 	return 0;
 }
 #endif
@@ -12103,7 +12263,8 @@ static struct dahdi_pvt *mkintf(int channel, const struct dahdi_chan_conf *conf,
 #ifdef HAVE_OPENR2
 			if (chan_sig == SIG_MFCR2) {
 				struct dahdi_mfcr2 *r2_link;
-				r2_link = dahdi_r2_get_link(conf);
+				struct r2link_entry *r2_le = dahdi_r2_get_link(conf);
+				r2_link = &r2_le->mfcr2;
 				if (!r2_link) {
 					ast_log(LOG_WARNING, "Cannot get another R2 DAHDI context!\n");
 					destroy_dahdi_pvt(tmp);
@@ -12129,6 +12290,7 @@ static struct dahdi_pvt *mkintf(int channel, const struct dahdi_chan_conf *conf,
 					destroy_dahdi_pvt(tmp);
 					return NULL;
 				}
+				r2_link->live_chans++;
 				tmp->mfcr2 = r2_link;
 				if (conf->mfcr2.call_files) {
 					openr2_chan_enable_call_files(tmp->r2chan);
@@ -12615,8 +12777,10 @@ static struct dahdi_pvt *mkintf(int channel, const struct dahdi_chan_conf *conf,
 			struct ast_variable *v, *tmpvar;
 			for (v = conf->chan.vars ; v ; v = v->next) {
 				if ((tmpvar = ast_variable_new(v->name, v->value, v->file))) {
-					tmpvar->next = tmp->vars;
-					tmp->vars = tmpvar;
+					if (ast_variable_list_replace(&tmp->vars, tmpvar)) {
+						tmpvar->next = tmp->vars;
+						tmp->vars = tmpvar;
+					}
 				}
 			}
 		}
@@ -13697,6 +13861,8 @@ static void dahdi_ss7_error(struct ss7 *ss7, char *s)
 static void *mfcr2_monitor(void *data)
 {
 	struct dahdi_mfcr2 *mfcr2 = data;
+	struct dahdi_pvt *pvt;
+
 	/* we should be using pthread_key_create
 	   and allocate pollers dynamically.
 	   I think do_monitor() could be leaking, since it
@@ -13713,8 +13879,12 @@ static void *mfcr2_monitor(void *data)
 	/* now that we're ready to get calls, unblock our side and
 	   get current line state */
 	for (i = 0; i < mfcr2->numchans; i++) {
-		openr2_chan_set_idle(mfcr2->pvts[i]->r2chan);
-		openr2_chan_handle_cas(mfcr2->pvts[i]->r2chan);
+		pvt = mfcr2->pvts[i];
+		if (!pvt) {
+			continue;
+		}
+		openr2_chan_set_idle(pvt->r2chan);
+		openr2_chan_handle_cas(pvt->r2chan);
 	}
 	while (1) {
 		/* we trust here that the mfcr2 channel list will not ever change once
@@ -13723,17 +13893,24 @@ static void *mfcr2_monitor(void *data)
 		for (i = 0; i < mfcr2->numchans; i++) {
 			pollers[i].revents = 0;
 			pollers[i].events = 0;
-			if (mfcr2->pvts[i]->owner) {
+			pvt = mfcr2->pvts[i];
+			if (!pvt) {
 				continue;
 			}
-			if (!mfcr2->pvts[i]->r2chan) {
-				ast_debug(1, "Wow, no r2chan on channel %d\n", mfcr2->pvts[i]->channel);
+			if (pvt->owner) {
+				continue;
+			}
+			if (mfcr2->nodev) {
+				continue;
+			}
+			if (!pvt->r2chan) {
+				ast_debug(1, "Wow, no r2chan on channel %d\n", pvt->channel);
 				quit_loop = 1;
 				break;
 			}
-			openr2_chan_enable_read(mfcr2->pvts[i]->r2chan);
+			openr2_chan_enable_read(pvt->r2chan);
 			pollers[i].events = POLLIN | POLLPRI;
-			pollers[i].fd = mfcr2->pvts[i]->subs[SUB_REAL].dfd;
+			pollers[i].fd = pvt->subs[SUB_REAL].dfd;
 			pollsize++;
 		}
 		if (quit_loop) {
@@ -13760,8 +13937,12 @@ static void *mfcr2_monitor(void *data)
 		/* do we want to allow to cancel while processing events? */
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
 		for (i = 0; i < mfcr2->numchans; i++) {
+			pvt = mfcr2->pvts[i];
+			if (!pvt) {
+				continue;
+			}
 			if (pollers[i].revents & POLLPRI || pollers[i].revents & POLLIN) {
-				openr2_chan_process_event(mfcr2->pvts[i]->r2chan);
+				openr2_chan_process_event(pvt->r2chan);
 			}
 		}
 		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
@@ -14690,10 +14871,11 @@ static char *handle_mfcr2_show_variants(struct ast_cli_entry *e, int cmd, struct
 
 static char *handle_mfcr2_show_channels(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
-#define FORMAT "%4s %-7.7s %-7.7s %-8.8s %-9.9s %-16.16s %-8.8s %-8.8s\n"
+#define FORMAT "%4s %4s %-7.7s %-7.7s %-8.8s %-9.9s %-16.16s %-8.8s %-8.8s\n"
 	int filtertype = 0;
 	int targetnum = 0;
 	char channo[5];
+	char linkno[5];
 	char anino[5];
 	char dnisno[5];
 	struct dahdi_pvt *p;
@@ -14725,7 +14907,7 @@ static char *handle_mfcr2_show_channels(struct ast_cli_entry *e, int cmd, struct
 			return CLI_SHOWUSAGE;
 		}
 	}
-	ast_cli(a->fd, FORMAT, "Chan", "Variant", "Max ANI", "Max DNIS", "ANI First", "Immediate Accept", "Tx CAS", "Rx CAS");
+	ast_cli(a->fd, FORMAT, "Chan", "Link#", "Variant", "Max ANI", "Max DNIS", "ANI First", "Immediate Accept", "Tx CAS", "Rx CAS");
 	ast_mutex_lock(&iflock);
 	for (p = iflist; p; p = p->next) {
 		if (!(p->sig & SIG_MFCR2) || !p->r2chan) {
@@ -14750,9 +14932,10 @@ static char *handle_mfcr2_show_channels(struct ast_cli_entry *e, int cmd, struct
 		r2context = openr2_chan_get_context(p->r2chan);
 		r2variant = openr2_context_get_variant(r2context);
 		snprintf(channo, sizeof(channo), "%d", p->channel);
+		snprintf(linkno, sizeof(linkno), "%d", p->mfcr2->index);
 		snprintf(anino, sizeof(anino), "%d", openr2_context_get_max_ani(r2context));
 		snprintf(dnisno, sizeof(dnisno), "%d", openr2_context_get_max_dnis(r2context));
-		ast_cli(a->fd, FORMAT, channo, openr2_proto_get_variant_string(r2variant),
+		ast_cli(a->fd, FORMAT, channo, linkno, openr2_proto_get_variant_string(r2variant),
 				anino, dnisno, openr2_context_get_ani_first(r2context) ? "Yes" : "No",
 				openr2_context_get_immediate_accept(r2context) ? "Yes" : "No",
 				openr2_chan_get_tx_cas_string(p->r2chan), openr2_chan_get_rx_cas_string(p->r2chan));
@@ -14963,14 +15146,163 @@ static char *handle_mfcr2_set_blocked(struct ast_cli_entry *e, int cmd, struct a
 	return CLI_SUCCESS;
 }
 
+static void mfcr2_show_links_of(struct ast_cli_args *a, struct r2links *list_head, const char *title)
+{
+#define FORMAT "%-5s %-10s %-15s %-10s %s\n"
+	AST_LIST_LOCK(list_head);
+	if (! AST_LIST_EMPTY(list_head)) {
+		int x = 0;
+		char index[5];
+		char live_chans_str[5];
+		char channel_list[R2_LINK_CAPACITY * 4];
+		struct r2link_entry *cur;
+		ast_cli(a->fd, "%s\n", title);
+		ast_cli(a->fd, FORMAT, "Index", "Thread", "Dahdi-Device", "Channels", "Channel-List");
+		AST_LIST_TRAVERSE(list_head, cur, list) {
+			struct dahdi_mfcr2 *mfcr2 = &cur->mfcr2;
+			const char *thread_status = NULL;
+			int i;
+			int len;
+			int inside_range;
+			int channo;
+			int prev_channo;
+			x++;
+			if (mfcr2->r2master == 0L) {
+				thread_status = "zero";
+			} else if (mfcr2->r2master == AST_PTHREADT_NULL) {
+				thread_status = "none";
+			} else {
+				thread_status = "created";
+			}
+			snprintf(index, sizeof(index), "%d", mfcr2->index);
+			snprintf(live_chans_str, sizeof(live_chans_str), "%d", mfcr2->live_chans);
+			channo = 0;
+			prev_channo = 0;
+			inside_range = 0;
+			len = 0;
+			/* Prepare nice string in channel_list[] */
+			for (i = 0; i < mfcr2->numchans && len < sizeof(channel_list) - 1; i++) {
+				struct dahdi_pvt *p = mfcr2->pvts[i];
+				if (!p) {
+					continue;
+				}
+				channo = p->channel;
+				/* Don't show a range until we know the last channel number */
+				if (prev_channo && prev_channo == channo - 1) {
+					prev_channo = channo;
+					inside_range = 1;
+					continue;
+				}
+				if (inside_range) {
+					/* Close range */
+					len += snprintf(channel_list + len, sizeof(channel_list) - len - 1, "-%d,%d", prev_channo, channo);
+					inside_range = 0;
+				} else if (prev_channo) {
+					/* Non-sequential channel numbers */
+					len += snprintf(channel_list + len, sizeof(channel_list) - len - 1, ",%d", channo);
+				} else {
+					/* First channel number */
+					len += snprintf(channel_list + len, sizeof(channel_list) - len - 1, "%d", channo);
+				}
+				prev_channo = channo;
+			}
+			/* Handle leftover channels */
+			if (inside_range) {
+				/* Close range */
+				len += snprintf(channel_list + len, sizeof(channel_list) - len - 1, "-%d", channo);
+				inside_range = 0;
+			} else if (prev_channo) {
+				/* Non-sequential channel numbers */
+				len += snprintf(channel_list + len, sizeof(channel_list) - len - 1, ",%d", channo);
+			}
+			// channel_list[len] = '\0';
+			ast_cli(a->fd, FORMAT,
+				index,
+				thread_status,
+				(mfcr2->nodev) ? "MISSING" : "OK",
+				live_chans_str,
+				channel_list);
+		}
+	}
+	AST_LIST_UNLOCK(list_head);
+#undef FORMAT
+}
+
+static char *handle_mfcr2_show_links(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	switch (cmd) {
+	case CLI_INIT:
+		e->command = "mfcr2 show links";
+		e->usage =
+			"Usage: mfcr2 show links\n"
+			"       Shows the DAHDI MFC/R2 links.\n";
+		return NULL;
+	case CLI_GENERATE:
+		return NULL;
+	}
+	if (a->argc != 3) {
+		return CLI_SHOWUSAGE;
+	}
+	mfcr2_show_links_of(a, &r2links, "Live links\n");
+	mfcr2_show_links_of(a, &nodev_r2links, "Links to be removed (device missing)\n");
+	return CLI_SUCCESS;
+}
+
+static char *handle_mfcr2_destroy_link(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	int res;
+	int wanted_link_index;
+	int found_link = 0;
+	struct r2link_entry *cur = NULL;
+
+	switch (cmd) {
+	case CLI_INIT:
+		e->command = "mfcr2 destroy link";
+		e->usage =
+			"Usage: mfcr2 destroy link <index-number>\n"
+			"       Destorys D-channel of link and its B-channels.\n"
+			"	DON'T USE THIS UNLESS YOU KNOW WHAT YOU ARE DOING.\n";
+		return NULL;
+	case CLI_GENERATE:
+		return NULL;
+	}
+	if (a->argc < 4) {
+		return CLI_SHOWUSAGE;
+	}
+	res = sscanf(a->argv[3], "%30d", &wanted_link_index);
+	if ((res != 1) || wanted_link_index < 1) {
+		ast_cli(a->fd,
+			"Invalid link index '%s'.  Should be a positive number\n", a->argv[3]);
+		return CLI_SUCCESS;
+	}
+	AST_LIST_LOCK(&r2links);
+	AST_LIST_TRAVERSE_SAFE_BEGIN(&r2links, cur, list) {
+		struct dahdi_mfcr2 *mfcr2 = &cur->mfcr2;
+		if (wanted_link_index == mfcr2->index) {
+			AST_LIST_MOVE_CURRENT(&nodev_r2links, list);
+			r2links_count--;
+			break;
+		}
+	}
+	AST_LIST_TRAVERSE_SAFE_END;
+	AST_LIST_UNLOCK(&r2links);
+	if (! found_link) {
+		ast_cli(a->fd, "No link found with index %d.\n", wanted_link_index);
+		return CLI_FAILURE;
+	}
+	return CLI_SUCCESS;
+}
+
 static struct ast_cli_entry dahdi_mfcr2_cli[] = {
 	AST_CLI_DEFINE(handle_mfcr2_version, "Show OpenR2 library version"),
 	AST_CLI_DEFINE(handle_mfcr2_show_variants, "Show supported MFC/R2 variants"),
 	AST_CLI_DEFINE(handle_mfcr2_show_channels, "Show MFC/R2 channels"),
+	AST_CLI_DEFINE(handle_mfcr2_show_links, "Show MFC/R2 links"),
 	AST_CLI_DEFINE(handle_mfcr2_set_debug, "Set MFC/R2 channel logging level"),
 	AST_CLI_DEFINE(handle_mfcr2_call_files, "Enable/Disable MFC/R2 call files"),
 	AST_CLI_DEFINE(handle_mfcr2_set_idle, "Reset MFC/R2 channel forcing it to IDLE"),
 	AST_CLI_DEFINE(handle_mfcr2_set_blocked, "Reset MFC/R2 channel forcing it to BLOCKED"),
+	AST_CLI_DEFINE(handle_mfcr2_destroy_link, "Destroy given MFC/R2 link"),
 };
 
 #endif /* HAVE_OPENR2 */
@@ -17807,13 +18139,17 @@ static int process_dahdi(struct dahdi_chan_conf *confp, const char *cat, struct 
 		} else if (!strcasecmp(v->name, "namedpickupgroup")) {
 			confp->chan.named_pickupgroups = ast_get_namedgroups(v->value);
 		} else if (!strcasecmp(v->name, "setvar")) {
-			char *varname = ast_strdupa(v->value), *varval = NULL;
-			struct ast_variable *tmpvar;
-			if (varname && (varval = strchr(varname, '='))) {
-				*varval++ = '\0';
-				if ((tmpvar = ast_variable_new(varname, varval, ""))) {
-					tmpvar->next = confp->chan.vars;
-					confp->chan.vars = tmpvar;
+			if (v->value) {
+				char *varval = NULL;
+				struct ast_variable *tmpvar;
+				char varname[strlen(v->value) + 1];
+				strcpy(varname, v->value); /* safe */
+				if ((varval = strchr(varname, '='))) {
+					*varval++ = '\0';
+					if ((tmpvar = ast_variable_new(varname, varval, ""))) {
+						tmpvar->next = confp->chan.vars;
+						confp->chan.vars = tmpvar;
+					}
 				}
 			}
 		} else if (!strcasecmp(v->name, "immediate")) {
@@ -18757,9 +19093,12 @@ static int process_dahdi(struct dahdi_chan_conf *confp, const char *cat, struct 
 			} else if (!strcasecmp(v->name, "mfcr2_logging")) {
 				openr2_log_level_t tmplevel;
 				char *clevel;
-				char *logval = ast_strdupa(v->value);
+				char *logval;
+				char copy[strlen(v->value) + 1];
+				strcpy(copy, v->value); /* safe */
+				logval = copy;
 				while (logval) {
- 					clevel = strsep(&logval,",");
+					clevel = strsep(&logval,",");
 					if (-1 == (tmplevel = openr2_log_get_level(clevel))) {
 						ast_log(LOG_WARNING, "Ignoring invalid logging level: '%s' at line %d.\n", clevel, v->lineno);
 						continue;
@@ -19273,15 +19612,22 @@ static int setup_dahdi_int(int reload, struct dahdi_chan_conf *default_conf, str
 #endif	/* defined(HAVE_SS7) */
 #ifdef HAVE_OPENR2
 	if (reload != 1) {
-		int x;
-		for (x = 0; x < r2links_count; x++) {
-			if (ast_pthread_create(&r2links[x]->r2master, NULL, mfcr2_monitor, r2links[x])) {
-				ast_log(LOG_ERROR, "Unable to start R2 monitor on channel group %d\n", x + 1);
-				return -1;
-			} else {
-				ast_verb(2, "Starting R2 monitor on channel group %d\n", x + 1);
+		struct r2link_entry *cur;
+		int x = 0;
+		AST_LIST_LOCK(&r2links);
+		AST_LIST_TRAVERSE(&r2links, cur, list) {
+			struct dahdi_mfcr2 *r2 = &cur->mfcr2;
+			if (r2->r2master == AST_PTHREADT_NULL) {
+				if (ast_pthread_create(&r2->r2master, NULL, mfcr2_monitor, r2)) {
+					ast_log(LOG_ERROR, "Unable to start R2 monitor on channel group %d\n", x + 1);
+					return -1;
+				} else {
+					ast_verb(2, "Starting R2 monitor on channel group %d\n", x + 1);
+				}
+				x++;
 			}
 		}
+		AST_LIST_UNLOCK(&r2links);
 	}
 #endif
 	/* And start the monitor for the first time */

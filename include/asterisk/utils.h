@@ -375,9 +375,33 @@ static force_inline void ast_slinear_saturated_multiply(short *input, short *val
 		*input = (short) res;
 }
 
+static force_inline void ast_slinear_saturated_multiply_float(short *input, float *value)
+{
+	float res;
+
+	res = (float) *input * *value;
+	if (res > 32767)
+		*input = 32767;
+	else if (res < -32768)
+		*input = -32768;
+	else
+		*input = (short) res;
+}
+
 static force_inline void ast_slinear_saturated_divide(short *input, short *value)
 {
 	*input /= *value;
+}
+
+static force_inline void ast_slinear_saturated_divide_float(short *input, float *value)
+{
+	float res = (float) *input / *value;
+	if (res > 32767)
+		*input = 32767;
+	else if (res < -32768)
+		*input = -32768;
+	else
+		*input = (short) res;
 }
 
 #ifdef localtime_r
@@ -423,8 +447,13 @@ int ast_careful_fwrite(FILE *f, int fd, const char *s, size_t len, int timeoutms
  * Thread management support (should be moved to lock.h or a different header)
  */
 
-#define AST_STACKSIZE     (((sizeof(void *) * 8 * 8) - 16) * 1024)
-#define AST_STACKSIZE_LOW (((sizeof(void *) * 8 * 2) - 16) * 1024)
+#if defined(PTHREAD_STACK_MIN)
+# define AST_STACKSIZE     MAX((((sizeof(void *) * 8 * 8) - 16) * 1024), PTHREAD_STACK_MIN)
+# define AST_STACKSIZE_LOW MAX((((sizeof(void *) * 8 * 2) - 16) * 1024), PTHREAD_STACK_MIN)
+#else
+# define AST_STACKSIZE     (((sizeof(void *) * 8 * 8) - 16) * 1024)
+# define AST_STACKSIZE_LOW (((sizeof(void *) * 8 * 2) - 16) * 1024)
+#endif
 
 int ast_background_stacksize(void);
 

@@ -863,13 +863,13 @@ static void caching_topic_exec(void *data, struct stasis_subscription *sub,
 		 * continue to grow unabated.
 		 */
 		if (strcmp(change->description, "Unsubscribe") == 0) {
-			struct stasis_cache_entry *sub;
+			struct stasis_cache_entry *cached_sub;
 
 			ao2_wrlock(caching_topic->cache->entries);
-			sub = cache_find(caching_topic->cache->entries, stasis_subscription_change_type(), change->uniqueid);
-			if (sub) {
-				cache_remove(caching_topic->cache->entries, sub, stasis_message_eid(message));
-				ao2_cleanup(sub);
+			cached_sub = cache_find(caching_topic->cache->entries, stasis_subscription_change_type(), change->uniqueid);
+			if (cached_sub) {
+				ao2_cleanup(cache_remove(caching_topic->cache->entries, cached_sub, stasis_message_eid(message)));
+				ao2_cleanup(cached_sub);
 			}
 			ao2_unlock(caching_topic->cache->entries);
 			ao2_cleanup(caching_topic_needs_unref);
@@ -948,10 +948,11 @@ static void print_cache_entry(void *v_obj, void *where, ao2_prnt_fn *prnt)
 struct stasis_caching_topic *stasis_caching_topic_create(struct stasis_topic *original_topic, struct stasis_cache *cache)
 {
 	struct stasis_caching_topic *caching_topic;
+	static int caching_id;
 	char *new_name;
 	int ret;
 
-	ret = ast_asprintf(&new_name, "%s-cached", stasis_topic_name(original_topic));
+	ret = ast_asprintf(&new_name, "cache:%d/%s", ast_atomic_fetchadd_int(&caching_id, +1), stasis_topic_name(original_topic));
 	if (ret < 0) {
 		return NULL;
 	}

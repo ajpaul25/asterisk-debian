@@ -92,6 +92,7 @@
 #include "asterisk/manager.h"
 #include "asterisk/callerid.h"
 #include "asterisk/app.h"
+#include "asterisk/mwi.h"
 #include "asterisk/astdb.h"
 #include "asterisk/musiconhold.h"
 #include "asterisk/features.h"
@@ -3813,7 +3814,7 @@ static int peer_status(struct iax2_peer *peer, char *status, int statuslen)
 /*! \brief Show one peer in detail */
 static char *handle_cli_iax2_show_peer(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
-	char status[30];
+	char status[64];
 	char cbuf[256];
 	struct iax2_peer *peer;
 	struct ast_str *codec_buf = ast_str_alloca(AST_FORMAT_CAP_NAMES_LEN);
@@ -6835,7 +6836,7 @@ struct show_peers_context {
 static void _iax2_show_peers_one(int fd, struct mansession *s, struct show_peers_context *cont, struct iax2_peer *peer)
 {
 	char name[256] = "";
-	char status[20];
+	char status[64];
 	int retstatus;
 	struct ast_str *encmethods = ast_str_alloca(256);
 
@@ -7915,9 +7916,11 @@ static int check_access(int callno, struct ast_sockaddr *addr, struct iax_ies *i
 		/* We found our match (use the first) */
 		/* copy vars */
 		for (v = user->vars ; v ; v = v->next) {
-			if((tmpvar = ast_variable_new(v->name, v->value, v->file))) {
-				tmpvar->next = iaxs[callno]->vars;
-				iaxs[callno]->vars = tmpvar;
+			if ((tmpvar = ast_variable_new(v->name, v->value, v->file))) {
+				if (ast_variable_list_replace(&iaxs[callno]->vars, tmpvar)) {
+					tmpvar->next = iaxs[callno]->vars;
+					iaxs[callno]->vars = tmpvar;
+				}
 			}
 		}
 		/* If a max AUTHREQ restriction is in place, activate it */
@@ -11110,18 +11113,18 @@ static int socket_process_helper(struct iax2_thread *thread)
 						if (iaxs[fr->callno]->pingtime <= peer->maxms) {
 							ast_log(LOG_NOTICE, "Peer '%s' is now REACHABLE! Time: %u\n", peer->name, iaxs[fr->callno]->pingtime);
 							ast_endpoint_set_state(peer->endpoint, AST_ENDPOINT_ONLINE);
-							blob = ast_json_pack("{s: s, s: i}",
+							blob = ast_json_pack("{s: s, s: I}",
 								"peer_status", "Reachable",
-								"time", iaxs[fr->callno]->pingtime);
+								"time", (ast_json_int_t)iaxs[fr->callno]->pingtime);
 							ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "IAX2/%s", peer->name); /* Activate notification */
 						}
 					} else if ((peer->historicms > 0) && (peer->historicms <= peer->maxms)) {
 						if (iaxs[fr->callno]->pingtime > peer->maxms) {
 							ast_log(LOG_NOTICE, "Peer '%s' is now TOO LAGGED (%u ms)!\n", peer->name, iaxs[fr->callno]->pingtime);
 							ast_endpoint_set_state(peer->endpoint, AST_ENDPOINT_ONLINE);
-							blob = ast_json_pack("{s: s, s: i}",
+							blob = ast_json_pack("{s: s, s: I}",
 								"peer_status", "Lagged",
-								"time", iaxs[fr->callno]->pingtime);
+								"time", (ast_json_int_t)iaxs[fr->callno]->pingtime);
 							ast_devstate_changed(AST_DEVICE_UNAVAILABLE, AST_DEVSTATE_CACHABLE, "IAX2/%s", peer->name); /* Activate notification */
 						}
 					}
@@ -13183,9 +13186,11 @@ static struct iax2_user *build_user(const char *name, struct ast_variable *v, st
 				if ((varval = strchr(varname, '='))) {
 					*varval = '\0';
 					varval++;
-					if((tmpvar = ast_variable_new(varname, varval, ""))) {
-						tmpvar->next = user->vars;
-						user->vars = tmpvar;
+					if ((tmpvar = ast_variable_new(varname, varval, ""))) {
+						if (ast_variable_list_replace(&user->vars, tmpvar)) {
+							tmpvar->next = user->vars;
+							user->vars = tmpvar;
+						}
 					}
 				}
 			} else if (!strcasecmp(v->name, "allow")) {

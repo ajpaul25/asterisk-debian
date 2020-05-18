@@ -162,6 +162,9 @@ type=user
               ; is ejected from the conference, the user's channel will have the CONFBRIDGE_RESULT
               ; variable set to "TIMEOUT". A value of 0 indicates that there is no timeout.
               ; Default: 0
+;text_messaging=yes ; When set to yes text messages will be sent to this user. Text messages
+                    ; may occur as a result of events or can be received from other participants.
+                    ; When set to no text messages will not be sent to this user.
 
 ; --- ConfBridge Bridge Profile Options ---
 [default_bridge]
@@ -202,6 +205,10 @@ type=bridge
                                ; sample rate is set that Asterisk does not support, the
                                ; closest sample rate Asterisk does support to the one requested
                                ; will be used.
+
+;maximum_sample_rate=none      ; Sets the maximum sample rate the conference
+                               ; is mixed at. This is set to no maximum by default.
+                               ; Values can be anything from 8000-192000.
 
 ;mixing_interval=40     ; Sets the internal mixing interval in milliseconds for the bridge.  This
                         ; number reflects how tight or loose the mixing will be for the conference.
@@ -254,7 +261,11 @@ type=bridge
 ;remb_behavior=average     ; How the combined REMB report for an SFU video bridge is constructed. If set to "average" then
                            ; the estimated maximum bitrate of each receiver is used to construct an average bitrate. If
                            ; set to "lowest" the lowest maximum bitrate is forwarded to the sender. If set to "highest"
-                           ; the highest maximum bitrate is forwarded to the sender. This defaults to "average".
+                           ; the highest maximum bitrate is forwarded to the sender. If set to "average_all" a single average
+                           ; is generated from every receiver and the same value is sent to every sender. If set to
+                           ; "lowest_all" the lowest maximum bitrate of all receivers is sent to every sender. If set to
+                           ; "highest_all" the highest maximum bitrate of all receivers is sent to every sender. This
+                           ; defaults to "average".
 
 ;enable_events=no          ; If enabled, recipients who joined the bridge via a channel driver
                            ; that supports Enhanced Messaging (currently only chan_pjsip) will

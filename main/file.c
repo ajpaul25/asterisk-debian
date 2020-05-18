@@ -315,6 +315,8 @@ static char *build_filename(const char *filename, const char *ext)
 {
 	char *fn = NULL;
 
+	/* The wav49 -> WAV translation is duplicated in apps/app_mixmonitor.c, so
+	   if you change it here you need to change it there as well */
 	if (!strcmp(ext, "wav49"))
 		ext = "WAV";
 
@@ -517,7 +519,9 @@ static int filehelper(const char *filename, const void *arg2, const char *fmt, c
 	AST_RWLIST_RDLOCK(&formats);
 	/* Check for a specific format */
 	AST_RWLIST_TRAVERSE(&formats, f, list) {
-		char *stringp, *ext = NULL;
+		char *ext = NULL;
+		char storage[strlen(f->exts) + 1];
+		char *stringp;
 
 		if (fmt && !exts_compare(f->exts, fmt))
 			continue;
@@ -526,7 +530,8 @@ static int filehelper(const char *filename, const void *arg2, const char *fmt, c
 		 * The file must exist, and for OPEN, must match
 		 * one of the formats supported by the channel.
 		 */
-		stringp = ast_strdupa(f->exts);	/* this is in the stack so does not need to be freed */
+		strcpy(storage, f->exts); /* safe - this is in the stack so does not need to be freed */
+		stringp = storage;
 		while ( (ext = strsep(&stringp, "|")) ) {
 			struct stat st;
 			char *fn = build_filename(filename, ext);
@@ -637,6 +642,11 @@ static int is_absolute_path(const char *filename)
 	return filename[0] == '/';
 }
 
+static int is_remote_path(const char *filename)
+{
+	return strstr(filename, "://") ? 1 : 0;
+}
+
 /*!
  * \brief test if a file exists for a given format.
  * \note result_cap is OPTIONAL
@@ -650,7 +660,7 @@ static int fileexists_test(const char *filename, const char *fmt, const char *la
 		return 0;
 	}
 
-	if (!ast_media_cache_retrieve(filename, NULL, buf, buflen)) {
+	if (is_remote_path(filename) && !ast_media_cache_retrieve(filename, NULL, buf, buflen)) {
 		return filehelper(buf, result_cap, NULL, ACTION_EXISTS);
 	}
 
@@ -1407,13 +1417,13 @@ struct ast_filestream *ast_writefile(const char *filename, const char *type, con
 			  We touch orig_fn just as a place-holder so other things (like vmail) see the file is there.
 			  What we are really doing is writing to record_cache_dir until we are done then we will mv the file into place.
 			*/
-			orig_fn = ast_strdupa(fn);
+			orig_fn = ast_strdup(fn);
 			for (c = fn; *c; c++)
 				if (*c == '/')
 					*c = '_';
 
 			size = strlen(fn) + strlen(record_cache_dir) + 2;
-			buf = ast_alloca(size);
+			buf = ast_malloc(size);
 			strcpy(buf, record_cache_dir);
 			strcat(buf, "/");
 			strcat(buf, fn);
@@ -1444,14 +1454,18 @@ struct ast_filestream *ast_writefile(const char *filename, const char *type, con
 				if (orig_fn) {
 					unlink(fn);
 					unlink(orig_fn);
+					ast_free(orig_fn);
 				}
 				if (fs) {
 					ast_closestream(fs);
 					fs = NULL;
 				}
-				if (!buf) {
-					ast_free(fn);
-				}
+				/*
+				 * 'fn' was has either been allocated from build_filename, or that was freed
+				 * and now 'fn' points to memory allocated for 'buf'. Either way the memory
+				 * now needs to be released.
+				 */
+				ast_free(fn);
 				continue;
 			}
 			fs->trans = NULL;
@@ -1459,8 +1473,14 @@ struct ast_filestream *ast_writefile(const char *filename, const char *type, con
 			fs->flags = flags;
 			fs->mode = mode;
 			if (orig_fn) {
-				fs->realfilename = ast_strdup(orig_fn);
-				fs->filename = ast_strdup(fn);
+				fs->realfilename = orig_fn;
+				fs->filename = fn;
+				/*
+				 * The above now manages the memory allocated for 'orig_fn' and 'fn', so
+				 * set them to NULL, so they don't get released at the end of the loop.
+				 */
+				orig_fn = NULL;
+				fn = NULL;
 			} else {
 				fs->realfilename = NULL;
 				fs->filename = ast_strdup(filename);
@@ -1473,9 +1493,9 @@ struct ast_filestream *ast_writefile(const char *filename, const char *type, con
 			if (orig_fn)
 				unlink(orig_fn);
 		}
-		/* if buf != NULL then fn is already free and pointing to it */
-		if (!buf)
-			ast_free(fn);
+		/* Free 'fn', or if 'fn' points to 'buf' then free 'buf' */
+		ast_free(fn);
+		ast_free(orig_fn);
 	}
 
 	AST_RWLIST_UNLOCK(&formats);

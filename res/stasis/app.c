@@ -65,6 +65,10 @@ struct stasis_app {
 	enum stasis_app_subscription_model subscription_model;
 	/*! Whether or not someone wants to see debug messages about this app */
 	int debug;
+	/*! An array of allowed events types for this application */
+	struct ast_json *events_allowed;
+	/*! An array of disallowed events types for this application */
+	struct ast_json *events_disallowed;
 	/*! Name of the Stasis application */
 	char name[];
 };
@@ -316,6 +320,12 @@ static void app_dtor(void *obj)
 	app->forwards = NULL;
 	ao2_cleanup(app->data);
 	app->data = NULL;
+
+	ast_json_unref(app->events_allowed);
+	app->events_allowed = NULL;
+	ast_json_unref(app->events_disallowed);
+	app->events_disallowed = NULL;
+
 }
 
 static void call_forwarded_handler(struct stasis_app *app, struct stasis_message *message)
@@ -949,6 +959,8 @@ struct stasis_app *app_create(const char *name, stasis_app_cb handler, void *dat
 	int res = 0;
 	size_t context_size = strlen("stasis-") + strlen(name) + 1;
 	char context_name[context_size];
+	char *topic_name;
+	int ret;
 
 	ast_assert(name != NULL);
 	ast_assert(handler != NULL);
@@ -969,7 +981,13 @@ struct stasis_app *app_create(const char *name, stasis_app_cb handler, void *dat
 		return NULL;
 	}
 
-	app->topic = stasis_topic_create(name);
+	ret = ast_asprintf(&topic_name, "ari:application/%s", name);
+	if (ret < 0) {
+		return NULL;
+	}
+
+	app->topic = stasis_topic_create(topic_name);
+	ast_free(topic_name);
 	if (!app->topic) {
 		return NULL;
 	}
@@ -1143,12 +1161,28 @@ void app_update(struct stasis_app *app, stasis_app_cb handler, void *data)
 
 		ast_verb(1, "Replacing Stasis app '%s'\n", app->name);
 
-		msg = ast_json_pack("{s: s, s: s}",
+		msg = ast_json_pack("{s: s, s: o?, s: s}",
 			"type", "ApplicationReplaced",
+			"timestamp", ast_json_timeval(ast_tvnow(), NULL),
 			"application", app->name);
 		if (msg) {
+			/*
+			 * The app must be unlocked before calling 'send' since a handler may
+			 * subsequently attempt to grab the app lock after first obtaining a
+			 * lock for another object, thus causing a deadlock.
+			 */
+			ao2_unlock(app);
 			app_send(app, msg);
+			ao2_lock(app);
 			ast_json_unref(msg);
+			if (!app->handler) {
+				/*
+				 * If the handler disappeared then the app was deactivated. In that
+				 * case don't replace. Re-activation will reset the handler later.
+				 */
+				ao2_unlock(app);
+				return;
+			}
 		}
 	} else {
 		ast_verb(1, "Activating Stasis app '%s'\n", app->name);
@@ -1642,4 +1676,120 @@ void stasis_app_unregister_event_sources(void)
 	stasis_app_unregister_event_source(&endpoint_event_source);
 	stasis_app_unregister_event_source(&bridge_event_source);
 	stasis_app_unregister_event_source(&channel_event_source);
+}
+
+struct ast_json *stasis_app_event_filter_to_json(struct stasis_app *app, struct ast_json *json)
+{
+	if (!app || !json) {
+		return json;
+	}
+
+	ast_json_object_set(json, "events_allowed", app->events_allowed ?
+		ast_json_ref(app->events_allowed) : ast_json_array_create());
+	ast_json_object_set(json, "events_disallowed", app->events_disallowed ?
+		ast_json_ref(app->events_disallowed) : ast_json_array_create());
+
+	return json;
+}
+
+static int app_event_filter_set(struct stasis_app *app,	struct ast_json **member,
+	struct ast_json *filter, const char *filter_type)
+{
+	if (filter && ast_json_typeof(filter) == AST_JSON_OBJECT) {
+		if (!ast_json_object_size(filter)) {
+			/* If no filters are specified then reset this filter type */
+			filter = NULL;
+		} else {
+			/* Otherwise try to get the filter array for this type */
+			filter = ast_json_object_get(filter, filter_type);
+			if (!filter) {
+				/* A filter type exists, but not this one, so don't update */
+				return 0;
+			}
+		}
+	}
+
+	/* At this point the filter object should be an array */
+	if (filter && ast_json_typeof(filter) != AST_JSON_ARRAY) {
+		ast_log(LOG_ERROR, "Invalid json type event filter - app: %s, filter: %s\n",
+				app->name, filter_type);
+		return -1;
+	}
+
+	if (filter) {
+		/* Confirm that at least the type names are specified */
+		struct ast_json *obj;
+		int i;
+
+		for (i = 0; i < ast_json_array_size(filter) &&
+				 (obj = ast_json_array_get(filter, i)); ++i) {
+
+			if (ast_strlen_zero(ast_json_object_string_get(obj, "type"))) {
+				ast_log(LOG_ERROR, "Filter event must have a type - app: %s, "
+						"filter: %s\n",	app->name, filter_type);
+				return -1;
+			}
+		}
+	}
+
+	ao2_lock(app);
+	ast_json_unref(*member);
+	*member = filter ? ast_json_ref(filter) : NULL;
+	ao2_unlock(app);
+
+	return 0;
+}
+
+static int app_events_allowed_set(struct stasis_app *app, struct ast_json *filter)
+{
+	return app_event_filter_set(app, &app->events_allowed, filter, "allowed");
+}
+
+static int app_events_disallowed_set(struct stasis_app *app, struct ast_json *filter)
+{
+	return app_event_filter_set(app, &app->events_disallowed, filter, "disallowed");
+}
+
+int stasis_app_event_filter_set(struct stasis_app *app, struct ast_json *filter)
+{
+	return app_events_disallowed_set(app, filter) || app_events_allowed_set(app, filter);
+}
+
+static int app_event_filter_matched(struct ast_json *array, struct ast_json *event, int empty)
+{
+	struct ast_json *obj;
+	int i;
+
+	if (!array || !ast_json_array_size(array)) {
+		return empty;
+	}
+
+	for (i = 0; i < ast_json_array_size(array) &&
+			(obj = ast_json_array_get(array, i)); ++i) {
+
+		if (ast_strings_equal(ast_json_object_string_get(obj, "type"),
+				ast_json_object_string_get(event, "type"))) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int stasis_app_event_allowed(const char *app_name, struct ast_json *event)
+{
+	struct stasis_app *app = stasis_app_get_by_name(app_name);
+	int res;
+
+	if (!app) {
+		return 0;
+	}
+
+	ao2_lock(app);
+	res = !app_event_filter_matched(app->events_disallowed, event, 0) &&
+		app_event_filter_matched(app->events_allowed, event, 1);
+	ao2_unlock(app);
+	ao2_ref(app, -1);
+
+	return res;
 }

@@ -74,7 +74,7 @@
 			Attempt to connect to another device or endpoint and bridge the call.
 		</synopsis>
 		<syntax>
-			<parameter name="Technology/Resource" required="true" argsep="&amp;">
+			<parameter name="Technology/Resource" required="false" argsep="&amp;">
 				<argument name="Technology/Resource" required="true">
 					<para>Specification of the device(s) to dial.  These must be in the format of
 					<literal>Technology/Resource</literal>, where <replaceable>Technology</replaceable>
@@ -565,8 +565,26 @@
 				<variable name="DIALEDTIME">
 					<para>This is the time from dialing a channel until when it is disconnected.</para>
 				</variable>
+				<variable name="DIALEDTIME_MS">
+					<para>This is the milliseconds version of the DIALEDTIME variable.</para>
+				</variable>
 				<variable name="ANSWEREDTIME">
 					<para>This is the amount of time for actual call.</para>
+				</variable>
+				<variable name="ANSWEREDTIME_MS">
+					<para>This is the milliseconds version of the ANSWEREDTIME variable.</para>
+				</variable>
+				<variable name="RINGTIME">
+					<para>This is the time from creating the channel to the first RINGING event received. Empty if there was no ring.</para>
+				</variable>
+				<variable name="RINGTIME_MS">
+					<para>This is the milliseconds version of the RINGTIME variable.</para>
+				</variable>
+				<variable name="PROGRESSTIME">
+					<para>This is the time from creating the channel to the first PROGRESS event received. Empty if there was no such event.</para>
+				</variable>
+				<variable name="PROGRESSTIME_MS">
+					<para>This is the milliseconds version of the PROGRESSTIME variable.</para>
 				</variable>
 				<variable name="DIALEDPEERNAME">
 					<para>The name of the outbound channel that answered the call.</para>
@@ -985,7 +1003,8 @@ static void do_forward(struct chanlist *o, struct cause_args *num,
 			 * any Dial operations that happen later won't record CC interfaces.
 			 */
 			ast_ignore_cc(o->chan);
-			ast_log(LOG_NOTICE, "Not accepting call completion offers from call-forward recipient %s\n", ast_channel_name(o->chan));
+			ast_verb(3, "Not accepting call completion offers from call-forward recipient %s\n",
+				ast_channel_name(o->chan));
 		} else
 			ast_log(LOG_NOTICE,
 				"Forwarding failed to create channel to dial '%s/%s' (cause = %d)\n",
@@ -1162,6 +1181,23 @@ static void update_connected_line_from_peer(struct ast_channel *chan, struct ast
 	ast_party_connected_line_free(&connected_caller);
 }
 
+/*!
+ * \internal
+ * \pre chan is locked
+ */
+static void set_duration_var(struct ast_channel *chan, const char *var_base, int64_t duration)
+{
+	char buf[32];
+	char full_var_name[128];
+
+	snprintf(buf, sizeof(buf), "%" PRId64, duration / 1000);
+	pbx_builtin_setvar_helper(chan, var_base, buf);
+
+	snprintf(full_var_name, sizeof(full_var_name), "%s_MS", var_base);
+	snprintf(buf, sizeof(buf), "%" PRId64, duration);
+	pbx_builtin_setvar_helper(chan, full_var_name, buf);
+}
+
 static struct ast_channel *wait_for_answer(struct ast_channel *in,
 	struct dial_head *out_chans, int *to, struct ast_flags64 *peerflags,
 	char *opt_args[],
@@ -1184,6 +1220,8 @@ static struct ast_channel *wait_for_answer(struct ast_channel *in,
 	int is_cc_recall;
 	int cc_frame_received = 0;
 	int num_ringing = 0;
+	int sent_ring = 0;
+	int sent_progress = 0;
 	struct timeval start = ast_tvnow();
 
 	if (single) {
@@ -1457,6 +1495,23 @@ static struct ast_channel *wait_for_answer(struct ast_channel *in,
 							ast_indicate(in, AST_CONTROL_RINGING);
 							pa->sentringing++;
 						}
+						if (!sent_ring) {
+							struct timeval now, then;
+							int64_t diff;
+
+							now = ast_tvnow();
+
+							ast_channel_lock(in);
+							ast_channel_stage_snapshot(in);
+
+							then = ast_channel_creationtime(c);
+							diff = ast_tvzero(then) ? 0 : ast_tvdiff_ms(now, then);
+							set_duration_var(in, "RINGTIME", diff);
+
+							ast_channel_stage_snapshot_done(in);
+							ast_channel_unlock(in);
+							sent_ring = 1;
+						}
 					}
 					ast_channel_publish_dial(in, c, NULL, "RINGING");
 					break;
@@ -1471,6 +1526,23 @@ static struct ast_channel *wait_for_answer(struct ast_channel *in,
 						if (single || (!single && !pa->sentringing)) {
 							ast_indicate(in, AST_CONTROL_PROGRESS);
 						}
+					}
+					if (!sent_progress) {
+						struct timeval now, then;
+						int64_t diff;
+
+						now = ast_tvnow();
+
+						ast_channel_lock(in);
+						ast_channel_stage_snapshot(in);
+
+						then = ast_channel_creationtime(c);
+						diff = ast_tvzero(then) ? 0 : ast_tvdiff_ms(now, then);
+						set_duration_var(in, "PROGRESSTIME", diff);
+
+						ast_channel_stage_snapshot_done(in);
+						ast_channel_unlock(in);
+						sent_progress = 1;
 					}
 					if (!ast_strlen_zero(dtmf_progress)) {
 						ast_verb(3,
@@ -1932,7 +2004,7 @@ static int do_privacy(struct ast_channel *chan, struct ast_channel *peer,
 		/* well, there seems basically two choices. Just patch the caller thru immediately,
 			  or,... put 'em thru to voicemail. */
 		/* since the callee may have hung up, let's do the voicemail thing, no database decision */
-		ast_log(LOG_NOTICE, "privacy: no valid response from the callee. Sending the caller to voicemail, the callee isn't responding\n");
+		ast_verb(3, "privacy: no valid response from the callee. Sending the caller to voicemail, the callee isn't responding\n");
 		/* XXX should we set status to DENY ? */
 		/* XXX what about the privacy flags ? */
 		break;
@@ -2058,18 +2130,12 @@ static int setup_privacy_args(struct privacy_args *pa,
 
 static void end_bridge_callback(void *data)
 {
-	char buf[80];
-	time_t end;
 	struct ast_channel *chan = data;
-
-	time(&end);
 
 	ast_channel_lock(chan);
 	ast_channel_stage_snapshot(chan);
-	snprintf(buf, sizeof(buf), "%d", ast_channel_get_up_time(chan));
-	pbx_builtin_setvar_helper(chan, "ANSWEREDTIME", buf);
-	snprintf(buf, sizeof(buf), "%d", ast_channel_get_duration(chan));
-	pbx_builtin_setvar_helper(chan, "DIALEDTIME", buf);
+	set_duration_var(chan, "ANSWEREDTIME", ast_channel_get_up_time_ms(chan));
+	set_duration_var(chan, "DIALEDTIME", ast_channel_get_duration_ms(chan));
 	ast_channel_stage_snapshot_done(chan);
 	ast_channel_unlock(chan);
 }
@@ -2211,7 +2277,13 @@ static int dial_exec_full(struct ast_channel *chan, const char *data, struct ast
 	pbx_builtin_setvar_helper(chan, "DIALEDPEERNUMBER", "");
 	pbx_builtin_setvar_helper(chan, "DIALEDPEERNAME", "");
 	pbx_builtin_setvar_helper(chan, "ANSWEREDTIME", "");
+	pbx_builtin_setvar_helper(chan, "ANSWEREDTIME_MS", "");
 	pbx_builtin_setvar_helper(chan, "DIALEDTIME", "");
+	pbx_builtin_setvar_helper(chan, "DIALEDTIME_MS", "");
+	pbx_builtin_setvar_helper(chan, "RINGTIME", "");
+	pbx_builtin_setvar_helper(chan, "RINGTIME_MS", "");
+	pbx_builtin_setvar_helper(chan, "PROGRESSTIME", "");
+	pbx_builtin_setvar_helper(chan, "PROGRESSTIME_MS", "");
 	ast_channel_stage_snapshot_done(chan);
 	max_forwards = ast_max_forwards_get(chan);
 	ast_channel_unlock(chan);
@@ -2220,12 +2292,6 @@ static int dial_exec_full(struct ast_channel *chan, const char *data, struct ast
 		ast_log(LOG_WARNING, "Cannot place outbound call from channel '%s'. Max forwards exceeded\n",
 				ast_channel_name(chan));
 		pbx_builtin_setvar_helper(chan, "DIALSTATUS", "BUSY");
-		return -1;
-	}
-
-	if (ast_strlen_zero(data)) {
-		ast_log(LOG_WARNING, "Dial requires an argument (technology/resource)\n");
-		pbx_builtin_setvar_helper(chan, "DIALSTATUS", pa.status);
 		return -1;
 	}
 
@@ -2247,18 +2313,12 @@ static int dial_exec_full(struct ast_channel *chan, const char *data, struct ast
 		return -1;
 	}
 
-	parse = ast_strdupa(data);
+	parse = ast_strdupa(data ?: "");
 
 	AST_STANDARD_APP_ARGS(args, parse);
 
 	if (!ast_strlen_zero(args.options) &&
 		ast_app_parse_options64(dial_exec_options, &opts, opt_args, args.options)) {
-		pbx_builtin_setvar_helper(chan, "DIALSTATUS", pa.status);
-		goto done;
-	}
-
-	if (ast_strlen_zero(args.peers)) {
-		ast_log(LOG_WARNING, "Dial requires an argument (technology/resource)\n");
 		pbx_builtin_setvar_helper(chan, "DIALSTATUS", pa.status);
 		goto done;
 	}
@@ -2288,7 +2348,7 @@ static int dial_exec_full(struct ast_channel *chan, const char *data, struct ast
 	if (ast_test_flag64(&opts, OPT_DURATION_STOP) && !ast_strlen_zero(opt_args[OPT_ARG_DURATION_STOP])) {
 		calldurationlimit.tv_sec = atoi(opt_args[OPT_ARG_DURATION_STOP]);
 		if (!calldurationlimit.tv_sec) {
-			ast_log(LOG_WARNING, "Dial does not accept S(%s), hanging up.\n", opt_args[OPT_ARG_DURATION_STOP]);
+			ast_log(LOG_WARNING, "Dial does not accept S(%s)\n", opt_args[OPT_ARG_DURATION_STOP]);
 			pbx_builtin_setvar_helper(chan, "DIALSTATUS", pa.status);
 			goto done;
 		}
@@ -2435,14 +2495,23 @@ static int dial_exec_full(struct ast_channel *chan, const char *data, struct ast
 
 	/* loop through the list of dial destinations */
 	rest = args.peers;
-	while ((cur = strsep(&rest, "&")) ) {
+	while ((cur = strsep(&rest, "&"))) {
 		struct ast_channel *tc; /* channel for this destination */
-		/* Get a technology/resource pair */
-		char *number = cur;
-		char *tech = strsep(&number, "/");
+		char *number;
+		char *tech;
 		size_t tech_len;
 		size_t number_len;
 		struct ast_stream_topology *topology;
+
+		cur = ast_strip(cur);
+		if (ast_strlen_zero(cur)) {
+			/* No tech/resource in this position. */
+			continue;
+		}
+
+		/* Get a technology/resource pair */
+		number = cur;
+		tech = strsep(&number, "/");
 
 		num_dialed++;
 		if (ast_strlen_zero(number)) {
@@ -2640,6 +2709,17 @@ static int dial_exec_full(struct ast_channel *chan, const char *data, struct ast
 		/* Put channel in the list of outgoing thingies. */
 		tmp->chan = tc;
 		AST_LIST_INSERT_TAIL(&out_chans, tmp, node);
+	}
+
+	if (AST_LIST_EMPTY(&out_chans)) {
+		ast_verb(3, "No devices or endpoints to dial (technology/resource)\n");
+		if (continue_exec) {
+			/* There is no point in having RetryDial try again */
+			*continue_exec = 1;
+		}
+		strcpy(pa.status, "CHANUNAVAIL");
+		res = 0;
+		goto out;
 	}
 
 	/*

@@ -462,7 +462,7 @@ static SQLHSTMT execute(struct odbc_obj *obj, void *data, int silent)
 		return NULL;
 	}
 
-	res = SQLExecDirect(stmt, (unsigned char *)sql, SQL_NTS);
+	res = ast_odbc_execute_sql(obj, stmt, sql);
 	if ((res != SQL_SUCCESS) && (res != SQL_SUCCESS_WITH_INFO) && (res != SQL_NO_DATA)) {
 		if (res == SQL_ERROR && !silent) {
 			int i;
@@ -920,15 +920,17 @@ static int acf_odbc_read(struct ast_channel *chan, const char *cmd, char *s, cha
 
 			if (y == 0) {
 				char colname[256];
-				SQLULEN maxcol = 0;
+				SQLLEN octetlength = 0;
 
-				res = SQLDescribeCol(stmt, x + 1, (unsigned char *)colname, sizeof(colname), &collength, NULL, &maxcol, NULL, NULL);
-				ast_debug(3, "Got collength of %d and maxcol of %d for column '%s' (offset %d)\n", (int)collength, (int)maxcol, colname, x);
+				res = SQLDescribeCol(stmt, x + 1, (unsigned char *)colname, sizeof(colname), &collength, NULL, NULL, NULL, NULL);
+				ast_debug(3, "Got collength of %d for column '%s' (offset %d)\n", (int)collength, colname, x);
 				if (((res != SQL_SUCCESS) && (res != SQL_SUCCESS_WITH_INFO)) || collength == 0) {
 					snprintf(colname, sizeof(colname), "field%d", x);
 				}
 
-				ast_str_make_space(&coldata, maxcol + 1);
+				SQLColAttribute(stmt, x + 1, SQL_DESC_OCTET_LENGTH, NULL, 0, NULL, &octetlength);
+
+				ast_str_make_space(&coldata, octetlength + 1);
 
 				if (ast_str_strlen(colnames)) {
 					ast_str_append(&colnames, 0, ",");
@@ -1404,7 +1406,7 @@ static char *cli_odbc_read(struct ast_cli_entry *e, int cmd, struct ast_cli_args
 		AST_APP_ARG(field)[100];
 	);
 	struct ast_str *sql;
-	char *char_args, varname[10];
+	char *char_args, varname[15];
 	struct acf_odbc_query *query;
 	struct ast_channel *chan;
 	int i;
@@ -1498,10 +1500,9 @@ static char *cli_odbc_read(struct ast_cli_entry *e, int cmd, struct ast_cli_args
 		SQLHSTMT stmt;
 		int rows = 0, res, x;
 		SQLSMALLINT colcount = 0, collength;
-		SQLLEN indicator;
+		SQLLEN indicator, octetlength;
 		struct ast_str *coldata = ast_str_thread_get(&coldata_buf, 16);
 		char colname[256];
-		SQLULEN maxcol;
 
 		if (!coldata) {
 			AST_RWLIST_UNLOCK(&queries);
@@ -1560,14 +1561,15 @@ static char *cli_odbc_read(struct ast_cli_entry *e, int cmd, struct ast_cli_args
 			}
 			for (;;) {
 				for (x = 0; x < colcount; x++) {
-					maxcol = 0;
-
-					res = SQLDescribeCol(stmt, x + 1, (unsigned char *)colname, sizeof(colname), &collength, NULL, &maxcol, NULL, NULL);
+					res = SQLDescribeCol(stmt, x + 1, (unsigned char *)colname, sizeof(colname), &collength, NULL, NULL, NULL, NULL);
 					if (((res != SQL_SUCCESS) && (res != SQL_SUCCESS_WITH_INFO)) || collength == 0) {
 						snprintf(colname, sizeof(colname), "field%d", x);
 					}
 
-					res = ast_odbc_ast_str_SQLGetData(&coldata, maxcol, stmt, x + 1, SQL_CHAR, &indicator);
+					octetlength = 0;
+					SQLColAttribute(stmt, x + 1, SQL_DESC_OCTET_LENGTH, NULL, 0, NULL, &octetlength);
+
+					res = ast_odbc_ast_str_SQLGetData(&coldata, octetlength + 1, stmt, x + 1, SQL_CHAR, &indicator);
 					if (indicator == SQL_NULL_DATA) {
 						ast_str_set(&coldata, 0, "(nil)");
 						res = SQL_SUCCESS;
@@ -1620,7 +1622,7 @@ static char *cli_odbc_write(struct ast_cli_entry *e, int cmd, struct ast_cli_arg
 		AST_APP_ARG(field)[100];
 	);
 	struct ast_str *sql;
-	char *char_args, *char_values, varname[10];
+	char *char_args, *char_values, varname[15];
 	struct acf_odbc_query *query;
 	struct ast_channel *chan;
 	int i;

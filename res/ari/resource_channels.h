@@ -261,6 +261,34 @@ int ast_ari_channels_continue_in_dialplan_parse_body(
  * \param[out] response HTTP response
  */
 void ast_ari_channels_continue_in_dialplan(struct ast_variable *headers, struct ast_ari_channels_continue_in_dialplan_args *args, struct ast_ari_response *response);
+/*! Argument struct for ast_ari_channels_move() */
+struct ast_ari_channels_move_args {
+	/*! Channel's id */
+	const char *channel_id;
+	/*! The channel will be passed to this Stasis application. */
+	const char *app;
+	/*! The application arguments to pass to the Stasis application provided by 'app'. */
+	const char *app_args;
+};
+/*!
+ * \brief Body parsing function for /channels/{channelId}/move.
+ * \param body The JSON body from which to parse parameters.
+ * \param[out] args The args structure to parse into.
+ * \retval zero on success
+ * \retval non-zero on failure
+ */
+int ast_ari_channels_move_parse_body(
+	struct ast_json *body,
+	struct ast_ari_channels_move_args *args);
+
+/*!
+ * \brief Move the channel from one Stasis application to another.
+ *
+ * \param headers HTTP headers
+ * \param args Swagger parameters
+ * \param[out] response HTTP response
+ */
+void ast_ari_channels_move(struct ast_variable *headers, struct ast_ari_channels_move_args *args, struct ast_ari_response *response);
 /*! Argument struct for ast_ari_channels_redirect() */
 struct ast_ari_channels_redirect_args {
 	/*! Channel's id */
@@ -781,5 +809,60 @@ int ast_ari_channels_dial_parse_body(
  * \param[out] response HTTP response
  */
 void ast_ari_channels_dial(struct ast_variable *headers, struct ast_ari_channels_dial_args *args, struct ast_ari_response *response);
+/*! Argument struct for ast_ari_channels_rtpstatistics() */
+struct ast_ari_channels_rtpstatistics_args {
+	/*! Channel's id */
+	const char *channel_id;
+};
+/*!
+ * \brief RTP stats on a channel.
+ *
+ * \param headers HTTP headers
+ * \param args Swagger parameters
+ * \param[out] response HTTP response
+ */
+void ast_ari_channels_rtpstatistics(struct ast_variable *headers, struct ast_ari_channels_rtpstatistics_args *args, struct ast_ari_response *response);
+/*! Argument struct for ast_ari_channels_external_media() */
+struct ast_ari_channels_external_media_args {
+	/*! The unique id to assign the channel on creation. */
+	const char *channel_id;
+	/*! Stasis Application to place channel into */
+	const char *app;
+	/*! The "variables" key in the body object holds variable key/value pairs to set on the channel on creation. Other keys in the body object are interpreted as query parameters. Ex. { "endpoint": "SIP/Alice", "variables": { "CALLERID(name)": "Alice" } } */
+	struct ast_json *variables;
+	/*! Hostname/ip:port of external host */
+	const char *external_host;
+	/*! Payload encapsulation protocol */
+	const char *encapsulation;
+	/*! Transport protocol */
+	const char *transport;
+	/*! Connection type (client/server) */
+	const char *connection_type;
+	/*! Format to encode audio in */
+	const char *format;
+	/*! External media direction */
+	const char *direction;
+};
+/*!
+ * \brief Body parsing function for /channels/externalMedia.
+ * \param body The JSON body from which to parse parameters.
+ * \param[out] args The args structure to parse into.
+ * \retval zero on success
+ * \retval non-zero on failure
+ */
+int ast_ari_channels_external_media_parse_body(
+	struct ast_json *body,
+	struct ast_ari_channels_external_media_args *args);
+
+/*!
+ * \brief Start an External Media session.
+ *
+ * Create a channel to an External Media source/sink.
+ *
+ * \param headers HTTP headers
+ * \param args Swagger parameters
+ * \param[out] response HTTP response
+ */
+void ast_ari_channels_external_media(struct ast_variable *headers, struct ast_ari_channels_external_media_args *args, struct ast_ari_response *response);
 
 #endif /* _ASTERISK_RESOURCE_CHANNELS_H */

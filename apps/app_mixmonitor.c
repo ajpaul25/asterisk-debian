@@ -115,6 +115,11 @@
 						Like with the basic filename argument, if an absolute path isn't given, it will create
 						the file in the configured monitoring directory.</para>
 					</option>
+					<option name="S">
+						<para>When combined with the <replaceable>r</replaceable> or <replaceable>t</replaceable>
+						option, inserts silence when necessary to maintain synchronization between the receive
+						and transmit audio streams.</para>
+					</option>
 					<option name="i">
 						<argument name="chanvar" required="true" />
 						<para>Stores the MixMonitor's ID on this channel variable.</para>
@@ -149,6 +154,11 @@
 			<para>This application does not automatically answer and should be preceeded by
 			an application such as Answer or Progress().</para>
 			<note><para>MixMonitor runs as an audiohook.</para></note>
+			<note><para>If a filename passed to MixMonitor ends with
+			<literal>.wav49</literal>, Asterisk will silently convert the extension to
+			<literal>.WAV</literal> for legacy reasons. <variable>MIXMONITOR_FILENAME</variable>
+			will contain the actual filename that Asterisk is writing to, not necessarily the
+			value that was passed in.</para></note>
 			<variablelist>
 				<variable name="MIXMONITOR_FILENAME">
 					<para>Will contain the filename used to record.</para>
@@ -347,7 +357,8 @@ enum mixmonitor_flags {
 	MUXFLAG_VMRECIPIENTS = (1 << 10),
 	MUXFLAG_BEEP = (1 << 11),
 	MUXFLAG_BEEP_START = (1 << 12),
-	MUXFLAG_BEEP_STOP = (1 << 13)
+	MUXFLAG_BEEP_STOP = (1 << 13),
+	MUXFLAG_RWSYNC = (1 << 14),
 };
 
 enum mixmonitor_args {
@@ -359,6 +370,7 @@ enum mixmonitor_args {
 	OPT_ARG_UID,
 	OPT_ARG_VMRECIPIENTS,
 	OPT_ARG_BEEP_INTERVAL,
+	OPT_ARG_RWSYNC,
 	OPT_ARG_ARRAY_SIZE,	/* Always last element of the enum */
 };
 
@@ -375,6 +387,7 @@ AST_APP_OPTIONS(mixmonitor_opts, {
 	AST_APP_OPTION_ARG('t', MUXFLAG_WRITE, OPT_ARG_WRITENAME),
 	AST_APP_OPTION_ARG('i', MUXFLAG_UID, OPT_ARG_UID),
 	AST_APP_OPTION_ARG('m', MUXFLAG_VMRECIPIENTS, OPT_ARG_VMRECIPIENTS),
+	AST_APP_OPTION_ARG('S', MUXFLAG_RWSYNC, OPT_ARG_RWSYNC),
 });
 
 struct mixmonitor_ds {
@@ -962,6 +975,9 @@ static int launch_monitor_thread(struct ast_channel *chan, const char *filename,
 	}
 
 	ast_set_flag(&mixmonitor->audiohook, AST_AUDIOHOOK_TRIGGER_SYNC);
+	if ((ast_test_flag(mixmonitor, MUXFLAG_RWSYNC))) {
+		ast_set_flag(&mixmonitor->audiohook, AST_AUDIOHOOK_SUBSTITUTE_SILENCE);
+	}
 
 	if (readvol)
 		mixmonitor->audiohook.options.read_volume = readvol;
@@ -971,6 +987,7 @@ static int launch_monitor_thread(struct ast_channel *chan, const char *filename,
 	if (startmon(chan, &mixmonitor->audiohook)) {
 		ast_log(LOG_WARNING, "Unable to add '%s' spy to channel '%s'\n",
 			mixmonitor_spy_type, ast_channel_name(chan));
+		ast_autochan_destroy(mixmonitor->autochan);
 		ast_audiohook_destroy(&mixmonitor->audiohook);
 		mixmonitor_free(mixmonitor);
 		return -1;
@@ -987,16 +1004,34 @@ static int launch_monitor_thread(struct ast_channel *chan, const char *filename,
 static char *filename_parse(char *filename, char *buffer, size_t len)
 {
 	char *slash;
+	char *ext;
+
+	ast_assert(len > 0);
+
 	if (ast_strlen_zero(filename)) {
 		ast_log(LOG_WARNING, "No file name was provided for a file save option.\n");
-	} else if (filename[0] != '/') {
-		char *build;
-		build = ast_alloca(strlen(ast_config_AST_MONITOR_DIR) + strlen(filename) + 3);
+		buffer[0] = 0;
+		return buffer;
+	}
+
+	/* If we don't have an absolute path, make one */
+	if (*filename != '/') {
+		char *build = ast_alloca(strlen(ast_config_AST_MONITOR_DIR) + strlen(filename) + 3);
 		sprintf(build, "%s/%s", ast_config_AST_MONITOR_DIR, filename);
 		filename = build;
 	}
 
 	ast_copy_string(buffer, filename, len);
+
+	/* If the provided filename has a .wav49 extension, we need to convert it to .WAV to
+	   match the behavior of build_filename in main/file.c. Otherwise MIXMONITOR_FILENAME
+	   ends up referring to a file that does not/will not exist */
+	ext = strrchr(buffer, '.');
+	if (ext && !strcmp(ext, ".wav49")) {
+		/* Change to WAV - we know we have at least 6 writeable bytes where 'ext' points,
+		 * so this is safe */
+		memcpy(ext, ".WAV", sizeof(".WAV"));
+	}
 
 	if ((slash = strrchr(filename, '/'))) {
 		*slash = '\0';

@@ -537,6 +537,12 @@
 /* Define if your system has the MYSQLCLIENT libraries. */
 #undef HAVE_MYSQLCLIENT
 
+/* Define to 1 if mysql/mysql.h has bool defined. */
+#undef HAVE_MYSQLCLIENT_BOOL
+
+/* Define to 1 if mysql/mysql.h has my_bool defined. */
+#undef HAVE_MYSQLCLIENT_MY_BOOL
+
 /* Define to 1 if you have the Network Broadcast Sound library. */
 #undef HAVE_NBS
 
@@ -582,6 +588,9 @@
 /* Define to 1 if you have the OpenSSL Secure Sockets Layer library. */
 #undef HAVE_OPENSSL
 
+/* Define to 1 if CRYPTO has the OpenSSL BIO Method Support feature. */
+#undef HAVE_OPENSSL_BIO_METHOD
+
 /* Define to 1 if CRYPTO has the OpenSSL SRTP Extension Support feature. */
 #undef HAVE_OPENSSL_SRTP
 
@@ -603,6 +612,9 @@
 /* Define to 1 if your system defines the file flag O_SYMLINK in fcntl.h */
 #undef HAVE_O_SYMLINK
 
+/* Define to support libc with permanent dlopen. */
+#undef HAVE_PERMANENT_DLOPEN
+
 /* Define to indicate the PostgreSQL library */
 #undef HAVE_PGSQL
 
@@ -617,6 +629,9 @@
 
 /* Define if your system has PJPROJECT_BUNDLED */
 #undef HAVE_PJPROJECT_BUNDLED
+
+/* Define to 1 if on_valid_pair callback is present. */
+#undef HAVE_PJPROJECT_ON_VALID_ICE_PAIR_CALLBACK
 
 /* Define to 1 if PJPROJECT has the pjsip_auth_clt_deinit support feature. */
 #undef HAVE_PJSIP_AUTH_CLT_DEINIT

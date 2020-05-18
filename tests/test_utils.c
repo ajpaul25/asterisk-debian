@@ -27,9 +27,9 @@
 
 /*** MODULEINFO
 	<depend>TEST_FRAMEWORK</depend>
-	<use type="module">res_agi</use>
-	<use type="module">res_crypto</use>
-	<use type="external">crypto</use>
+	<depend>res_agi</depend>
+	<depend>res_crypto</depend>
+	<depend>crypto</depend>
 	<support_level>core</support_level>
  ***/
 
@@ -341,6 +341,11 @@ AST_TEST_DEFINE(adsi_loaded_test)
 		return AST_TEST_NOT_RUN;
 	case TEST_EXECUTE:
 		break;
+	}
+
+	if (!ast_module_check("res_adsi.so")) {
+		ast_test_status_update(test, "This test skipped because deprecated module res_adsi.so is not built by default.\n");
+		return AST_TEST_PASS;
 	}
 
 	if (!(c = ast_dummy_channel_alloc())) {

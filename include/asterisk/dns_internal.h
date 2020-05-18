@@ -23,6 +23,12 @@
  * \author Joshua Colp <jcolp@digium.com>
  */
 
+#ifndef _ASTERISK_DNS_INTERNAL_H
+#define _ASTERISK_DNS_INTERNAL_H
+
+/*! \brief For AST_LIST */
+#include "asterisk/linkedlists.h"
+
 /*! \brief For AST_VECTOR */
 #include "asterisk/vector.h"
 
@@ -50,6 +56,16 @@ struct ast_dns_record {
 	 * where in the structure it may lie.
 	 */
 	char *data_ptr;
+	/*! \brief The raw DNS record */
+	char data[0];
+};
+
+/*! \brief A TXT record */
+struct ast_dns_txt_record {
+	/*! \brief Generic DNS record information */
+	struct ast_dns_record generic;
+	/*! \brief The number of character strings in the TXT record */
+	size_t count;
 	/*! \brief The raw DNS record */
 	char data[0];
 };
@@ -197,6 +213,19 @@ struct ast_sched_context;
 struct ast_sched_context *ast_dns_get_sched(void);
 
 /*!
+ * \brief Allocate and parse a DNS TXT record
+ * \since 16.10.0, 17.4.0
+ *
+ * \param query The DNS query
+ * \param data This specific TXT record
+ * \param size The size of the TXT record
+ *
+ * \retval non-NULL success
+ * \retval NULL failure
+ */
+struct ast_dns_record *dns_txt_alloc(struct ast_dns_query *query, const char *data, const size_t size);
+
+/*!
  * \brief Allocate and parse a DNS NAPTR record
  *
  * \param query The DNS query
@@ -293,3 +322,5 @@ int dns_parse_string(char *cur, uint8_t *size, char **val);
  * \note The query must be released upon completion or cancellation using ao2_ref
  */
 struct ast_dns_query *dns_query_alloc(const char *name, int rr_type, int rr_class, ast_dns_resolve_callback callback, void *data);
+
+#endif /* _ASTERISK_DNS_INTERNAL_H */

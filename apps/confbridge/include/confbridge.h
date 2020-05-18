@@ -28,6 +28,7 @@
 #include "asterisk/channel.h"
 #include "asterisk/bridge.h"
 #include "asterisk/bridge_features.h"
+#include "asterisk/stasis_bridges.h"
 #include "conf_state.h"
 
 /*! Maximum length of a conference bridge name */
@@ -67,6 +68,7 @@ enum user_profile_flags {
 	USER_OPT_ANNOUNCE_JOIN_LEAVE_REVIEW = (1 << 16), /*!< modifies ANNOUNCE_JOIN_LEAVE - user reviews the recording before continuing */
 	USER_OPT_SEND_EVENTS = (1 << 17), /*!< Send text message events to users */
 	USER_OPT_ECHO_EVENTS = (1 << 18), /*!< Send events only to the admin(s) */
+	USER_OPT_TEXT_MESSAGING = (1 << 19), /*!< Send text messages to the user */
 };
 
 enum bridge_profile_flags {
@@ -82,6 +84,9 @@ enum bridge_profile_flags {
 	BRIDGE_OPT_REMB_BEHAVIOR_LOWEST = (1 << 9), /*!< The lowest estimated maximum bitrate is sent to the sender */
 	BRIDGE_OPT_REMB_BEHAVIOR_HIGHEST = (1 << 10), /*!< The highest estimated maximum bitrate is sent to the sender */
 	BRIDGE_OPT_ENABLE_EVENTS = (1 << 11), /*!< Enable sending events to participants */
+	BRIDGE_OPT_REMB_BEHAVIOR_AVERAGE_ALL = (1 << 12), /*!< The average of all REMB reports in the entire bridge is sent to each sender */
+	BRIDGE_OPT_REMB_BEHAVIOR_LOWEST_ALL = (1 << 13), /*!< The lowest estimated maximum bitrate from all receivers is sent to each sender */
+	BRIDGE_OPT_REMB_BEHAVIOR_HIGHEST_ALL = (1 << 14), /*!< The highest estimated maximum bitrate from all receivers is sent to each sender */
 };
 
 enum conf_menu_action_id {
@@ -224,6 +229,7 @@ struct bridge_profile {
 	unsigned int flags;
 	unsigned int max_members;          /*!< The maximum number of participants allowed in the conference */
 	unsigned int internal_sample_rate; /*!< The internal sample rate of the bridge. 0 when set to auto adjust mode. */
+	unsigned int maximum_sample_rate; /*!< The maximum sample rate of the bridge. 0 when set to no maximum. */
 	unsigned int mix_interval;  /*!< The internal mixing interval used by the bridge. When set to 0 the bridgewill use a default interval. */
 	struct bridge_profile_sounds *sounds;
 	char regcontext[AST_MAX_CONTEXT];
@@ -710,5 +716,15 @@ struct confbridge_conference *conf_find_bridge(const char *conference_name);
  */
 void conf_send_event_to_participants(struct confbridge_conference *conference,
 	struct ast_channel *chan, struct stasis_message *msg);
+
+/*!
+ * \brief Create join/leave events for attended transfers
+ * \since 13.28
+ * \since 16.5
+ *
+ * \param msg The attended transfer stasis message
+ *
+ */
+void confbridge_handle_atxfer(struct ast_attended_transfer_message *msg);
 
 #endif

@@ -81,6 +81,11 @@
 				</configOption>
 				<configOption name="max_retries" default="10">
 					<synopsis>Maximum number of registration attempts.</synopsis>
+					<description><para>
+						This sets the maximum number of registration attempts that are made before
+						stopping any further attempts. If set to 0 then upon failure no further attempts
+						are made.
+					</para></description>
 				</configOption>
 				<configOption name="outbound_auth" default="">
 					<synopsis>Authentication object(s) to be used for outbound registrations.</synopsis>
@@ -329,6 +334,14 @@ struct sip_outbound_registration_client_state {
 	 * module unload.
 	 */
 	pjsip_regc *client;
+	/*!
+	 * \brief Last tdata sent
+	 * We need the original tdata to resend a request on auth failure
+	 * or timeout.  On an auth failure, we use the original tdata
+	 * to initialize the new tdata for the authorized response.  On a timeout
+	 * we need it to skip failed SRV entries if any.
+	 */
+	pjsip_tx_data *last_tdata;
 	/*! \brief Timer entry for retrying on temporal responses */
 	pj_timer_entry timer;
 	/*! \brief Optional line parameter placed into Contact */
@@ -539,6 +552,13 @@ static pj_status_t registration_client_send(struct sip_outbound_registration_cli
 	/* Due to the message going out the callback may now be invoked, so bump the count */
 	ao2_ref(client_state, +1);
 	/*
+	 * We also bump tdata in expectation of saving it to client_state->last_tdata.
+	 * We have to do it BEFORE pjsip_regc_send because if it succeeds, it decrements
+	 * the ref count on its own.
+	 */
+	pjsip_tx_data_add_ref(tdata);
+
+	/*
 	 * Set the transport in case transports were reloaded.
 	 * When pjproject removes the extraneous error messages produced,
 	 * we can check status and only set the transport and resend if there was an error
@@ -547,12 +567,25 @@ static pj_status_t registration_client_send(struct sip_outbound_registration_cli
 	pjsip_regc_set_transport(client_state->client, &selector);
 	status = pjsip_regc_send(client_state->client, tdata);
 
-	/* If the attempt to send the message failed and the callback was not invoked we need to
-	 * drop the reference we just added
+	/*
+	 * If the attempt to send the message failed and the callback was not invoked we need to
+	 * drop the references we just added
 	 */
 	if ((status != PJ_SUCCESS) && !(*callback_invoked)) {
+		pjsip_tx_data_dec_ref(tdata);
 		ao2_ref(client_state, -1);
+		return status;
 	}
+
+	/*
+	 * Decref the old last_data before replacing it.
+	 * BTW, it's quite possible that last_data == tdata
+	 * if we're trying successive servers in an SRV set.
+	 */
+	if (client_state->last_tdata) {
+		pjsip_tx_data_dec_ref(client_state->last_tdata);
+	}
+	client_state->last_tdata = tdata;
 
 	return status;
 }
@@ -905,7 +938,17 @@ static int handle_registration_response(void *data)
 	ast_debug(1, "Processing REGISTER response %d from server '%s' for client '%s'\n",
 			response->code, server_uri, client_uri);
 
-	if ((response->code == 401 || response->code == 407)
+	if (response->code == 408 || response->code == 503) {
+		if ((ast_sip_failover_request(response->old_request))) {
+			int res = registration_client_send(response->client_state, response->old_request);
+			/* The tdata ref was stolen */
+			response->old_request = NULL;
+			if (res == PJ_SUCCESS) {
+				ao2_ref(response, -1);
+				return 0;
+			}
+		}
+	} else if ((response->code == 401 || response->code == 407)
 		&& (!response->client_state->auth_attempted
 			|| response->rdata->msg_info.cseq->cseq != response->client_state->auth_cseq)) {
 		int res;
@@ -1062,11 +1105,25 @@ static void sip_outbound_registration_response_cb(struct pjsip_regc_cbparam *par
 		retry_after = pjsip_msg_find_hdr(param->rdata->msg_info.msg, PJSIP_H_RETRY_AFTER,
 			NULL);
 		response->retry_after = retry_after ? retry_after->ivalue : 0;
+
+		/*
+		 * If we got a response from the server, we have to use the tdata
+		 * from the transaction, not the tdata saved when we sent the
+		 * request.  If we use the saved tdata, we won't process responses
+		 * like 423 Interval Too Brief correctly and we'll wind up sending
+		 * the bad Expires value again.
+		 */
+		pjsip_tx_data_dec_ref(client_state->last_tdata);
+
 		tsx = pjsip_rdata_get_tsx(param->rdata);
 		response->old_request = tsx->last_tx;
 		pjsip_tx_data_add_ref(response->old_request);
 		pjsip_rx_data_clone(param->rdata, 0, &response->rdata);
+	} else {
+		/* old_request steals the reference */
+		response->old_request = client_state->last_tdata;
 	}
+	client_state->last_tdata = NULL;
 
 	/*
 	 * Transfer response reference to serializer task so the
@@ -1112,6 +1169,9 @@ static void sip_outbound_registration_client_state_destroy(void *obj)
 	ast_taskprocessor_unreference(client_state->serializer);
 	ast_free(client_state->transport_name);
 	ast_free(client_state->registration_name);
+	if (client_state->last_tdata) {
+		pjsip_tx_data_dec_ref(client_state->last_tdata);
+	}
 }
 
 /*! \brief Allocator function for registration state */

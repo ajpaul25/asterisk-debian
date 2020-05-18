@@ -171,12 +171,8 @@ struct mohclass {
 	char announcement[256];
 	char mode[80];
 	char digit;
-	/*! A dynamically sized array to hold the list of filenames in "files" mode */
-	char **filearray;
-	/*! The current size of the filearray */
-	int allowed_files;
-	/*! The current number of files loaded into the filearray */
-	int total_files;
+	/*! A vector of filenames in "files" mode */
+	struct ast_vector_string files;
 	unsigned int flags;
 	/*! The format from the MOH source, not applicable to "files" mode */
 	struct ast_format *format;
@@ -318,6 +314,7 @@ static int ast_moh_files_next(struct ast_channel *chan)
 {
 	struct moh_files_state *state = ast_channel_music_state(chan);
 	int tries;
+	size_t file_count;
 
 	/* Discontinue a stream if it is running already */
 	if (ast_channel_stream(chan)) {
@@ -335,7 +332,8 @@ static int ast_moh_files_next(struct ast_channel *chan)
 		state->announcement = 0;
 	}
 
-	if (!state->class->total_files) {
+	file_count = AST_VECTOR_SIZE(&state->class->files);
+	if (!file_count) {
 		ast_log(LOG_WARNING, "No files available for class '%s'\n", state->class->name);
 		return -1;
 	}
@@ -343,15 +341,15 @@ static int ast_moh_files_next(struct ast_channel *chan)
 	if (state->pos == 0 && ast_strlen_zero(state->save_pos_filename)) {
 		/* First time so lets play the file. */
 		state->save_pos = -1;
-	} else if (state->save_pos >= 0 && state->save_pos < state->class->total_files && !strcmp(state->class->filearray[state->save_pos], state->save_pos_filename)) {
+	} else if (state->save_pos >= 0 && state->save_pos < file_count && !strcmp(AST_VECTOR_GET(&state->class->files, state->save_pos), state->save_pos_filename)) {
 		/* If a specific file has been saved confirm it still exists and that it is still valid */
 		state->pos = state->save_pos;
 		state->save_pos = -1;
 	} else if (ast_test_flag(state->class, MOH_SORTMODE) == MOH_RANDOMIZE) {
 		/* Get a random file and ensure we can open it */
 		for (tries = 0; tries < 20; tries++) {
-			state->pos = ast_random() % state->class->total_files;
-			if (ast_fileexists(state->class->filearray[state->pos], NULL, NULL) > 0) {
+			state->pos = ast_random() % file_count;
+			if (ast_fileexists(AST_VECTOR_GET(&state->class->files, state->pos), NULL, NULL) > 0) {
 				break;
 			}
 		}
@@ -360,29 +358,29 @@ static int ast_moh_files_next(struct ast_channel *chan)
 	} else {
 		/* This is easy, just increment our position and make sure we don't exceed the total file count */
 		state->pos++;
-		state->pos %= state->class->total_files;
+		state->pos %= file_count;
 		state->save_pos = -1;
 		state->samples = 0;
 	}
 
-	for (tries = 0; tries < state->class->total_files; ++tries) {
-		if (ast_openstream_full(chan, state->class->filearray[state->pos], ast_channel_language(chan), 1)) {
+	for (tries = 0; tries < file_count; ++tries) {
+		if (ast_openstream_full(chan, AST_VECTOR_GET(&state->class->files, state->pos), ast_channel_language(chan), 1)) {
 			break;
 		}
 
-		ast_log(LOG_WARNING, "Unable to open file '%s': %s\n", state->class->filearray[state->pos], strerror(errno));
+		ast_log(LOG_WARNING, "Unable to open file '%s': %s\n", AST_VECTOR_GET(&state->class->files, state->pos), strerror(errno));
 		state->pos++;
-		state->pos %= state->class->total_files;
+		state->pos %= file_count;
 	}
 
-	if (tries == state->class->total_files) {
+	if (tries == file_count) {
 		return -1;
 	}
 
 	/* Record the pointer to the filename for position resuming later */
-	ast_copy_string(state->save_pos_filename, state->class->filearray[state->pos], sizeof(state->save_pos_filename));
+	ast_copy_string(state->save_pos_filename, AST_VECTOR_GET(&state->class->files, state->pos), sizeof(state->save_pos_filename));
 
-	ast_debug(1, "%s Opened file %d '%s'\n", ast_channel_name(chan), state->pos, state->class->filearray[state->pos]);
+	ast_debug(1, "%s Opened file %d '%s'\n", ast_channel_name(chan), state->pos, state->save_pos_filename);
 
 	if (state->samples) {
 		size_t loc;
@@ -490,6 +488,7 @@ static void *moh_files_alloc(struct ast_channel *chan, void *params)
 {
 	struct moh_files_state *state;
 	struct mohclass *class = params;
+	size_t file_count;
 
 	state = ast_channel_music_state(chan);
 	if (!state && (state = ast_calloc(1, sizeof(*state)))) {
@@ -505,14 +504,16 @@ static void *moh_files_alloc(struct ast_channel *chan, void *params)
 		}
 	}
 
+	file_count = AST_VECTOR_SIZE(&class->files);
+
 	/* Resume MOH from where we left off last time or start from scratch? */
-	if (state->save_total != class->total_files || strcmp(state->name, class->name) != 0) {
+	if (state->save_total != file_count || strcmp(state->name, class->name) != 0) {
 		/* Start MOH from scratch. */
 		ao2_cleanup(state->origwfmt);
 		ao2_cleanup(state->mohwfmt);
 		memset(state, 0, sizeof(*state));
-		if (ast_test_flag(class, MOH_RANDOMIZE) && class->total_files) {
-			state->pos = ast_random() % class->total_files;
+		if (ast_test_flag(class, MOH_RANDOMIZE) && file_count) {
+			state->pos = ast_random() % file_count;
 		}
 	}
 
@@ -522,7 +523,7 @@ static void *moh_files_alloc(struct ast_channel *chan, void *params)
 	ao2_replace(state->mohwfmt, ast_channel_writeformat(chan));
 	/* For comparison on restart of MOH (see above) */
 	ast_copy_string(state->name, class->name, sizeof(state->name));
-	state->save_total = class->total_files;
+	state->save_total = file_count;
 
 	moh_post_start(chan, class->name);
 
@@ -943,15 +944,11 @@ static struct mohdata *mohalloc(struct mohclass *cl)
 	if (!(moh = ast_calloc(1, sizeof(*moh))))
 		return NULL;
 
-	if (pipe(moh->pipe)) {
+	if (ast_pipe_nonblock(moh->pipe)) {
 		ast_log(LOG_WARNING, "Failed to create pipe: %s\n", strerror(errno));
 		ast_free(moh);
 		return NULL;
 	}
-
-	/* Make entirely non-blocking */
-	ast_fd_set_flags(moh->pipe[0], O_NONBLOCK);
-	ast_fd_set_flags(moh->pipe[1], O_NONBLOCK);
 
 	moh->f.frametype = AST_FRAME_VOICE;
 	moh->f.subclass.format = cl->format;
@@ -1084,10 +1081,27 @@ static void moh_parse_options(struct ast_variable *var, struct mohclass *mohclas
 			ast_copy_string(mohclass->name, var->value, sizeof(mohclass->name));
 		} else if (!strcasecmp(var->name, "mode")) {
 			ast_copy_string(mohclass->mode, var->value, sizeof(mohclass->mode));
+		} else if (!strcasecmp(var->name, "entry")) {
+			if (ast_begins_with(var->value, "/") || ast_begins_with(var->value, "http://") || ast_begins_with(var->value, "https://")) {
+				char *dup = ast_strdup(var->value);
+				if (!dup) {
+					continue;
+				}
+				if (ast_begins_with(dup, "/") && strrchr(dup, '.')) {
+					ast_log(LOG_WARNING, "The playlist entry '%s' may include an extension, which could prevent it from playing.\n",
+						dup);
+				}
+				AST_VECTOR_APPEND(&mohclass->files, dup);
+			} else {
+				ast_log(LOG_ERROR, "Playlist entries must be a URL or absolute path, '%s' provided.\n", var->value);
+			}
 		} else if (!strcasecmp(var->name, "directory")) {
 			ast_copy_string(mohclass->dir, var->value, sizeof(mohclass->dir));
 		} else if (!strcasecmp(var->name, "application")) {
 			ast_copy_string(mohclass->args, var->value, sizeof(mohclass->args));
+		} else if (!strcasecmp(var->name, "announcement")) {
+			ast_copy_string(mohclass->announcement, var->value, sizeof(mohclass->announcement));
+			ast_set_flag(mohclass, MOH_ANNOUNCEMENT);
 		} else if (!strcasecmp(var->name, "digit") && (isdigit(*var->value) || strchr("*#", *var->value))) {
 			mohclass->digit = *var->value;
 		} else if (!strcasecmp(var->name, "random")) {
@@ -1105,54 +1119,33 @@ static void moh_parse_options(struct ast_variable *var, struct mohclass *mohclas
 			} else if (!strcasecmp(var->value, "randstart")) {
 				ast_set_flag(mohclass, MOH_RANDSTART);
 			}
-		} else if (!strcasecmp(var->name, "format")) {
+		} else if (!strcasecmp(var->name, "format") && !ast_strlen_zero(var->value)) {
 			ao2_cleanup(mohclass->format);
 			mohclass->format = ast_format_cache_get(var->value);
 			if (!mohclass->format) {
 				ast_log(LOG_WARNING, "Unknown format '%s' -- defaulting to SLIN\n", var->value);
 				mohclass->format = ao2_bump(ast_format_slin);
 			}
+		} else if (!strcasecmp(var->name, "kill_escalation_delay")) {
+			if (sscanf(var->value, "%zu", &mohclass->kill_delay) == 1) {
+				mohclass->kill_delay *= 1000;
+			} else {
+				ast_log(LOG_WARNING, "kill_escalation_delay '%s' is invalid.  Setting to 100ms\n", var->value);
+				mohclass->kill_delay = 100000;
+			}
+		} else if (!strcasecmp(var->name, "kill_method")) {
+			if (!strcasecmp(var->value, "process")) {
+				mohclass->kill_method = KILL_METHOD_PROCESS;
+			} else if (!strcasecmp(var->value, "process_group")) {
+				mohclass->kill_method = KILL_METHOD_PROCESS_GROUP;
+			} else {
+				ast_log(LOG_WARNING, "kill_method '%s' is invalid.  Setting to 'process_group'\n", var->value);
+				mohclass->kill_method = KILL_METHOD_PROCESS_GROUP;
+			}
 		}
 	}
-}
 
-static int moh_add_file(struct mohclass *class, const char *filepath)
-{
-	if (!class->allowed_files) {
-		class->filearray = ast_calloc(1, INITIAL_NUM_FILES * sizeof(*class->filearray));
-		if (!class->filearray) {
-			return -1;
-		}
-		class->allowed_files = INITIAL_NUM_FILES;
-	} else if (class->total_files == class->allowed_files) {
-		char **new_array;
-
-		new_array = ast_realloc(class->filearray, class->allowed_files * sizeof(*class->filearray) * 2);
-		if (!new_array) {
-			return -1;
-		}
-		class->filearray = new_array;
-		class->allowed_files *= 2;
-	}
-
-	class->filearray[class->total_files] = ast_strdup(filepath);
-	if (!class->filearray[class->total_files]) {
-		return -1;
-	}
-
-	class->total_files++;
-
-	return 0;
-}
-
-static int moh_sort_compare(const void *i1, const void *i2)
-{
-	char *s1, *s2;
-
-	s1 = ((char **)i1)[0];
-	s2 = ((char **)i2)[0];
-
-	return strcasecmp(s1, s2);
+	AST_VECTOR_COMPACT(&mohclass->files);
 }
 
 static int moh_scan_files(struct mohclass *class) {
@@ -1163,7 +1156,7 @@ static int moh_scan_files(struct mohclass *class) {
 	char filepath[PATH_MAX];
 	char *ext;
 	struct stat statbuf;
-	int i;
+	int res;
 
 	if (class->dir[0] != '/') {
 		snprintf(dir_path, sizeof(dir_path), "%s/%s", ast_config_AST_DATA_DIR, class->dir);
@@ -1177,12 +1170,11 @@ static int moh_scan_files(struct mohclass *class) {
 		return -1;
 	}
 
-	for (i = 0; i < class->total_files; i++) {
-		ast_free(class->filearray[i]);
-	}
-	class->total_files = 0;
+	AST_VECTOR_RESET(&class->files, ast_free);
 
 	while ((files_dirent = readdir(files_DIR))) {
+		char *filepath_copy;
+
 		/* The file name must be at least long enough to have the file type extension */
 		if ((strlen(files_dirent->d_name) < 4))
 			continue;
@@ -1207,20 +1199,32 @@ static int moh_scan_files(struct mohclass *class) {
 			*ext = '\0';
 
 		/* if the file is present in multiple formats, ensure we only put it into the list once */
-		for (i = 0; i < class->total_files; i++)
-			if (!strcmp(filepath, class->filearray[i]))
-				break;
+		if (AST_VECTOR_GET_CMP(&class->files, &filepath[0], !strcmp)) {
+			continue;
+		}
 
-		if (i == class->total_files) {
-			if (moh_add_file(class, filepath))
-				break;
+		filepath_copy = ast_strdup(filepath);
+		if (!filepath_copy) {
+			break;
+		}
+
+		if (ast_test_flag(class, MOH_SORTALPHA)) {
+			res = AST_VECTOR_ADD_SORTED(&class->files, filepath_copy, strcasecmp);
+		} else {
+			res = AST_VECTOR_APPEND(&class->files, filepath_copy);
+		}
+
+		if (res) {
+			ast_free(filepath_copy);
+			break;
 		}
 	}
 
 	closedir(files_DIR);
-	if (ast_test_flag(class, MOH_SORTALPHA))
-		qsort(&class->filearray[0], class->total_files, sizeof(char *), moh_sort_compare);
-	return class->total_files;
+
+	AST_VECTOR_COMPACT(&class->files);
+
+	return AST_VECTOR_SIZE(&class->files);
 }
 
 static int init_files_class(struct mohclass *class)
@@ -1345,6 +1349,13 @@ static int _moh_register(struct mohclass *moh, int reload, int unref, const char
 			}
 			return -1;
 		}
+	} else if (!strcasecmp(moh->mode, "playlist")) {
+		if (!AST_VECTOR_SIZE(&moh->files)) {
+			if (unref) {
+				moh = mohclass_unref(moh, "unreffing potential new moh class (no playlist entries)");
+			}
+			return -1;
+		}
 	} else if (!strcasecmp(moh->mode, "mp3") || !strcasecmp(moh->mode, "mp3nb") ||
 			!strcasecmp(moh->mode, "quietmp3") || !strcasecmp(moh->mode, "quietmp3nb") ||
 			!strcasecmp(moh->mode, "httpmp3") || !strcasecmp(moh->mode, "custom")) {
@@ -1371,6 +1382,13 @@ static int _moh_register(struct mohclass *moh, int reload, int unref, const char
 	return 0;
 }
 
+#define moh_unregister(a) _moh_unregister(a,__FILE__,__LINE__,__PRETTY_FUNCTION__)
+static int _moh_unregister(struct mohclass *moh, const char *file, int line, const char *funcname)
+{
+	ao2_t_unlink(mohclasses, moh, "Removing class from container");
+	return 0;
+}
+
 static void local_ast_moh_cleanup(struct ast_channel *chan)
 {
 	struct moh_files_state *state = ast_channel_music_state(chan);
@@ -1391,6 +1409,82 @@ static void local_ast_moh_cleanup(struct ast_channel *chan)
 	}
 }
 
+/*! \brief Support routing for 'moh unregister class' CLI
+ * This is in charge of generating all strings that match a prefix in the
+ * given position. As many functions of this kind, each invokation has
+ * O(state) time complexity so be careful in using it.
+ */
+static char *complete_mohclass_realtime(const char *line, const char *word, int pos, int state)
+{
+	int which=0;
+	struct mohclass *cur;
+	char *c = NULL;
+	int wordlen = strlen(word);
+	struct ao2_iterator i;
+
+	if (pos != 3) {
+		return NULL;
+	}
+
+	i = ao2_iterator_init(mohclasses, 0);
+	while ((cur = ao2_t_iterator_next(&i, "iterate thru mohclasses"))) {
+		if (cur->realtime && !strncasecmp(cur->name, word, wordlen) && ++which > state) {
+			c = ast_strdup(cur->name);
+			mohclass_unref(cur, "drop ref in iterator loop break");
+			break;
+		}
+		mohclass_unref(cur, "drop ref in iterator loop");
+	}
+	ao2_iterator_destroy(&i);
+
+	return c;
+}
+
+static char *handle_cli_moh_unregister_class(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	struct mohclass *cur;
+	int len;
+	int found = 0;
+	struct ao2_iterator i;
+
+	switch (cmd) {
+		case CLI_INIT:
+			e->command = "moh unregister class";
+			e->usage =
+				"Usage: moh unregister class <class>\n"
+				"       Unregisters a realtime moh class.\n";
+			return NULL;
+		case CLI_GENERATE:
+			return complete_mohclass_realtime(a->line, a->word, a->pos, a->n);
+	}
+
+	if (a->argc != 4)
+		return CLI_SHOWUSAGE;
+
+	len = strlen(a->argv[3]);
+
+	i = ao2_iterator_init(mohclasses, 0);
+	while ((cur = ao2_t_iterator_next(&i, "iterate thru mohclasses"))) {
+		if (cur->realtime && len == strlen(cur->name) && !strncasecmp(cur->name, a->argv[3], len)) {
+			found = 1;
+			break;
+		}
+		mohclass_unref(cur, "drop ref in iterator loop");
+	}
+	ao2_iterator_destroy(&i);
+
+	if (found) {
+		moh_unregister(cur);
+		mohclass_unref(cur, "drop ref after unregister");
+	} else {
+		ast_cli(a->fd, "No such realtime moh class '%s'\n", a->argv[3]);
+	}
+
+	return CLI_SUCCESS;
+}
+
+
+
 static void moh_class_destructor(void *obj);
 
 #define moh_class_malloc()	_moh_class_malloc(__FILE__,__LINE__,__PRETTY_FUNCTION__)
@@ -1405,6 +1499,7 @@ static struct mohclass *_moh_class_malloc(const char *file, int line, const char
 		class->format = ao2_bump(ast_format_slin);
 		class->srcfd = -1;
 		class->kill_delay = 100000;
+		AST_VECTOR_INIT(&class->files, 0);
 	}
 
 	return class;
@@ -1413,6 +1508,32 @@ static struct mohclass *_moh_class_malloc(const char *file, int line, const char
 static struct ast_variable *load_realtime_musiconhold(const char *name)
 {
 	struct ast_variable *var = ast_load_realtime("musiconhold", "name", name, SENTINEL);
+
+	if (var) {
+		const char *mode = ast_variable_find_in_list(var, "mode");
+		if (ast_strings_equal(mode, "playlist")) {
+			struct ast_variable *entries = ast_load_realtime("musiconhold_entry", "name", name, SENTINEL);
+			struct ast_variable *cur = entries;
+			size_t entry_count = 0;
+			for (; cur; cur = cur->next) {
+				if (!strcmp(cur->name, "entry")) {
+					struct ast_variable *dup = ast_variable_new(cur->name, cur->value, "");
+					if (dup) {
+						entry_count++;
+						ast_variable_list_append(&var, dup);
+					}
+				}
+			}
+			ast_variables_destroy(entries);
+
+			if (entry_count == 0) {
+				/* Behave as though this class doesn't exist */
+				ast_variables_destroy(var);
+				var = NULL;
+			}
+		}
+	}
+
 	if (!var) {
 		ast_log(LOG_WARNING,
 			"Music on Hold class '%s' not found in memory/database. "
@@ -1479,7 +1600,7 @@ static int local_ast_moh_start(struct ast_channel *chan, const char *mclass, con
 			ast_variables_destroy(var);
 
 			if (ast_strlen_zero(mohclass->dir)) {
-				if (!strcasecmp(mohclass->mode, "custom")) {
+				if (!strcasecmp(mohclass->mode, "custom") || !strcasecmp(mohclass->mode, "playlist")) {
 					strcpy(mohclass->dir, "nodir");
 				} else {
 					ast_log(LOG_WARNING, "A directory must be specified for class '%s'!\n", mohclass->name);
@@ -1532,6 +1653,11 @@ static int local_ast_moh_start(struct ast_channel *chan, const char *mclass, con
 							deprecation_warning = 1;
 						}
 						ast_set_flag(mohclass, MOH_RANDOMIZE);
+					}
+				} else if (!strcasecmp(mohclass->mode, "playlist")) {
+					if (!AST_VECTOR_SIZE(&mohclass->files)) {
+						mohclass = mohclass_unref(mohclass, "unreffing potential mohclass (no playlist entries)");
+						return -1;
 					}
 				} else if (!strcasecmp(mohclass->mode, "mp3") || !strcasecmp(mohclass->mode, "mp3nb") || !strcasecmp(mohclass->mode, "quietmp3") || !strcasecmp(mohclass->mode, "quietmp3nb") || !strcasecmp(mohclass->mode, "httpmp3") || !strcasecmp(mohclass->mode, "custom")) {
 
@@ -1599,7 +1725,7 @@ static int local_ast_moh_start(struct ast_channel *chan, const char *mclass, con
 	}
 
 	if (!state || !state->class || strcmp(mohclass->name, state->class->name)) {
-		if (mohclass->total_files) {
+		if (AST_VECTOR_SIZE(&mohclass->files)) {
 			res = ast_activate_generator(chan, &moh_file_stream, mohclass);
 		} else {
 			res = ast_activate_generator(chan, &mohgen, mohclass);
@@ -1678,14 +1804,8 @@ static void moh_class_destructor(void *obj)
 		class->srcfd = -1;
 	}
 
-	if (class->filearray) {
-		int i;
-		for (i = 0; i < class->total_files; i++) {
-			ast_free(class->filearray[i]);
-		}
-		ast_free(class->filearray);
-		class->filearray = NULL;
-	}
+	AST_VECTOR_RESET(&class->files, ast_free);
+	AST_VECTOR_FREE(&class->files);
 
 	if (class->timer) {
 		ast_timer_close(class->timer);
@@ -1778,52 +1898,9 @@ static int load_moh_classes(int reload)
 		/* For compatibility with the past, we overwrite any name=name
 		 * with the context [name]. */
 		ast_copy_string(class->name, cat, sizeof(class->name));
-		for (var = ast_variable_browse(cfg, cat); var; var = var->next) {
-			if (!strcasecmp(var->name, "mode")) {
-				ast_copy_string(class->mode, var->value, sizeof(class->mode));
-			} else if (!strcasecmp(var->name, "directory")) {
-				ast_copy_string(class->dir, var->value, sizeof(class->dir));
-			} else if (!strcasecmp(var->name, "application")) {
-				ast_copy_string(class->args, var->value, sizeof(class->args));
-			} else if (!strcasecmp(var->name, "announcement")) {
-				ast_copy_string(class->announcement, var->value, sizeof(class->announcement));
-				ast_set_flag(class, MOH_ANNOUNCEMENT);
-			} else if (!strcasecmp(var->name, "digit") && (isdigit(*var->value) || strchr("*#", *var->value))) {
-				class->digit = *var->value;
-			} else if (!strcasecmp(var->name, "random")) {
-				ast_set2_flag(class, ast_true(var->value), MOH_RANDOMIZE);
-			} else if (!strcasecmp(var->name, "sort") && !strcasecmp(var->value, "random")) {
-				ast_set_flag(class, MOH_RANDOMIZE);
-			} else if (!strcasecmp(var->name, "sort") && !strcasecmp(var->value, "alpha")) {
-				ast_set_flag(class, MOH_SORTALPHA);
-			} else if (!strcasecmp(var->name, "format")) {
-				ao2_cleanup(class->format);
-				class->format = ast_format_cache_get(var->value);
-				if (!class->format) {
-					ast_log(LOG_WARNING, "Unknown format '%s' -- defaulting to SLIN\n", var->value);
-					class->format = ao2_bump(ast_format_slin);
-				}
-			} else if (!strcasecmp(var->name, "kill_escalation_delay")) {
-				if (sscanf(var->value, "%zu", &class->kill_delay) == 1) {
-					class->kill_delay *= 1000;
-				} else {
-					ast_log(LOG_WARNING, "kill_escalation_delay '%s' is invalid.  Setting to 100ms\n", var->value);
-					class->kill_delay = 100000;
-				}
-			} else if (!strcasecmp(var->name, "kill_method")) {
-				if (!strcasecmp(var->value, "process")) {
-					class->kill_method = KILL_METHOD_PROCESS;
-				} else if (!strcasecmp(var->value, "process_group")){
-					class->kill_method = KILL_METHOD_PROCESS_GROUP;
-				} else {
-					ast_log(LOG_WARNING, "kill_method '%s' is invalid.  Setting to 'process_group'\n", var->value);
-					class->kill_method = KILL_METHOD_PROCESS_GROUP;
-				}
-			}
-		}
 
 		if (ast_strlen_zero(class->dir)) {
-			if (!strcasecmp(class->mode, "custom")) {
+			if (!strcasecmp(class->mode, "custom") || !strcasecmp(class->mode, "playlist")) {
 				strcpy(class->dir, "nodir");
 			} else {
 				ast_log(LOG_WARNING, "A directory must be specified for class '%s'!\n", class->name);
@@ -1913,13 +1990,13 @@ static char *handle_cli_moh_show_files(struct ast_cli_entry *e, int cmd, struct 
 	for (; (class = ao2_t_iterator_next(&i, "Show files iterator")); mohclass_unref(class, "Unref iterator in moh show files")) {
 		int x;
 
-		if (!class->total_files) {
+		if (!AST_VECTOR_SIZE(&class->files)) {
 			continue;
 		}
 
 		ast_cli(a->fd, "Class: %s\n", class->name);
-		for (x = 0; x < class->total_files; x++) {
-			ast_cli(a->fd, "\tFile: %s\n", class->filearray[x]);
+		for (x = 0; x < AST_VECTOR_SIZE(&class->files); x++) {
+			ast_cli(a->fd, "\tFile: %s\n", AST_VECTOR_GET(&class->files, x));
 		}
 	}
 	ao2_iterator_destroy(&i);
@@ -1970,9 +2047,10 @@ static char *handle_cli_moh_show_classes(struct ast_cli_entry *e, int cmd, struc
 }
 
 static struct ast_cli_entry cli_moh[] = {
-	AST_CLI_DEFINE(handle_cli_moh_reload,       "Reload MusicOnHold"),
-	AST_CLI_DEFINE(handle_cli_moh_show_classes, "List MusicOnHold classes"),
-	AST_CLI_DEFINE(handle_cli_moh_show_files,   "List MusicOnHold file-based classes")
+	AST_CLI_DEFINE(handle_cli_moh_reload,       	"Reload MusicOnHold"),
+	AST_CLI_DEFINE(handle_cli_moh_show_classes, 	"List MusicOnHold classes"),
+	AST_CLI_DEFINE(handle_cli_moh_show_files,   	"List MusicOnHold file-based classes"),
+	AST_CLI_DEFINE(handle_cli_moh_unregister_class, "Unregister realtime MusicOnHold class")
 };
 
 static int moh_class_hash(const void *obj, const int flags)

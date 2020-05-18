@@ -20,6 +20,8 @@ if (env.TIMEOUT_UNITTESTS) {
 
 pipeline {
 	options {
+		ansiColor('gnome-terminal')
+		throttle(['asterisk-check'])
 		timestamps()
 		timeout(time: timeoutTime, unit: timeoutUnits)
 	}
@@ -46,7 +48,7 @@ pipeline {
 			triggerOnEvents: [
 				commentAddedContains('^recheck$'),
 				patchsetCreated(excludeDrafts: false,
-								excludeNoCodeChange: true,
+								excludeNoCodeChange: false,
 								excludeTrivialRebase: false),
 				draftPublished()
 			],
@@ -59,7 +61,7 @@ pipeline {
 	}
 	agent {
 		/* All of the stages need to be performed on a docker host */
-		label "swdev-docker"
+		label "asterisk-check"
 	}
 
 	stages {
@@ -98,7 +100,7 @@ pipeline {
 						withCredentials([usernamePassword(credentialsId: "${JENKINS_GERRIT_CREDS}",
 							passwordVariable: 'GERRIT_USER_PW', usernameVariable: 'GERRIT_USER_NAME')]) {
 
-							sh "printenv | sort"
+							sh "printenv -0 | sort -z | tr '\\0' '\\n'"
 
 							checkout scm: [$class: 'GitSCM',
 								branches: [[name: env.GERRIT_BRANCH ]],
@@ -113,8 +115,7 @@ pipeline {
 									[$class: 'CloneOption',
 										honorRefspec: true,
 										noTags: true,
-										depth: 10,
-										shallow: true
+										shallow: false
 									],
 									[$class: 'PruneStaleBranch'],
 									[$class: 'BuildChooserSetting',
@@ -141,7 +142,7 @@ pipeline {
 					def randomImage = env.DOCKER_REGISTRY + "/" + ri;
 					def bt = env.BUILD_TAG.replaceAll(/[^a-zA-Z0-9_.-]/, '-')
 					def dockerOptions = "--privileged --ulimit core=0 --ulimit nofile=10240 " +
-						" --mount type=tmpfs,tmpfs-size=1g,dst=/tmp -v /srv/jenkins:/srv/jenkins:rw -v /srv/cache:/srv/cache:rw " +
+						" --tmpfs /tmp:exec,size=1G -v /srv/jenkins:/srv/jenkins:rw -v /srv/cache:/srv/cache:rw " +
 						" --entrypoint='' --name ${bt}-build"
 					def outputdir = "tests/CI/output/UnitTests"
 
@@ -181,8 +182,11 @@ pipeline {
 	}
 	post {
 		cleanup {
-			sh "sudo make distclean >/dev/null 2>&1 || : "
-			sh "sudo rm -rf tests/CI/output >/dev/null 2>&1 || : "
+			script {
+				if (env.CLEANUP_WS_UNITTESTS.toBoolean()) {
+					cleanWs deleteDirs: true, notFailBuild: false
+				}
+			}
 		}
 		/*
 		 * The Gerrit Trigger will automatically post the "Verified" results back

@@ -105,15 +105,11 @@ static int rtp_check_timeout(const void *data)
 	struct ast_sip_session_media *session_media = (struct ast_sip_session_media *)data;
 	struct ast_rtp_instance *rtp = session_media->rtp;
 	int elapsed;
+	int timeout;
 	struct ast_channel *chan;
 
 	if (!rtp) {
 		return 0;
-	}
-
-	elapsed = time(NULL) - ast_rtp_instance_get_last_rx(rtp);
-	if (elapsed < ast_rtp_instance_get_timeout(rtp)) {
-		return (ast_rtp_instance_get_timeout(rtp) - elapsed) * 1000;
 	}
 
 	chan = ast_channel_get_by_name(ast_rtp_instance_get_channel_id(rtp));
@@ -121,14 +117,41 @@ static int rtp_check_timeout(const void *data)
 		return 0;
 	}
 
-	ast_log(LOG_NOTICE, "Disconnecting channel '%s' for lack of RTP activity in %d seconds\n",
-		ast_channel_name(chan), elapsed);
-
+	/* Get channel lock to make sure that we access a consistent set of values
+	 * (last_rx and direct_media_addr) - the lock is held when values are modified
+	 * (see send_direct_media_request()/check_for_rtp_changes() in chan_pjsip.c). We
+	 * are trying to avoid a situation where direct_media_addr has been reset but the
+	 * last-rx time was not set yet.
+	 */
 	ast_channel_lock(chan);
-	ast_channel_hangupcause_set(chan, AST_CAUSE_REQUESTED_CHAN_UNAVAIL);
-	ast_channel_unlock(chan);
 
+	elapsed = time(NULL) - ast_rtp_instance_get_last_rx(rtp);
+	timeout = ast_rtp_instance_get_timeout(rtp);
+	if (elapsed < timeout) {
+		ast_channel_unlock(chan);
+		ast_channel_unref(chan);
+		return (timeout - elapsed) * 1000;
+	}
+
+	/* Last RTP packet was received too long ago
+	 * - disconnect channel unless direct media is in use.
+	 */
+	if (!ast_sockaddr_isnull(&session_media->direct_media_addr)) {
+		ast_debug(3, "Not disconnecting channel '%s' for lack of %s RTP activity in %d seconds "
+			"since direct media is in use\n", ast_channel_name(chan),
+			ast_codec_media_type2str(session_media->type), elapsed);
+		ast_channel_unlock(chan);
+		ast_channel_unref(chan);
+		return timeout * 1000; /* recheck later, direct media may have ended then */
+	}
+
+	ast_log(LOG_NOTICE, "Disconnecting channel '%s' for lack of %s RTP activity in %d seconds\n",
+		ast_channel_name(chan), ast_codec_media_type2str(session_media->type), elapsed);
+
+	ast_channel_hangupcause_set(chan, AST_CAUSE_REQUESTED_CHAN_UNAVAIL);
 	ast_softhangup(chan, AST_SOFTHANGUP_DEV);
+
+	ast_channel_unlock(chan);
 	ast_channel_unref(chan);
 
 	return 0;
@@ -274,6 +297,7 @@ static int create_rtp(struct ast_sip_session *session, struct ast_sip_session_me
 		ast_rtp_instance_set_prop(session_media->rtp, AST_RTP_PROPERTY_REMB, session->endpoint->media.webrtc);
 		if (session->endpoint->media.webrtc) {
 			enable_rtp_extension(session, session_media, AST_RTP_EXTENSION_ABS_SEND_TIME, AST_RTP_EXTENSION_DIRECTION_SENDRECV, sdp);
+			enable_rtp_extension(session, session_media, AST_RTP_EXTENSION_TRANSPORT_WIDE_CC, AST_RTP_EXTENSION_DIRECTION_SENDRECV, sdp);
 		}
 		if (session->endpoint->media.tos_video || session->endpoint->media.cos_video) {
 			ast_rtp_instance_set_qos(session_media->rtp, session->endpoint->media.tos_video,
@@ -381,7 +405,6 @@ static int set_caps(struct ast_sip_session *session,
 	RAII_VAR(struct ast_format_cap *, caps, NULL, ao2_cleanup);
 	RAII_VAR(struct ast_format_cap *, peer, NULL, ao2_cleanup);
 	RAII_VAR(struct ast_format_cap *, joint, NULL, ao2_cleanup);
-	RAII_VAR(struct ast_format_cap *, endpoint_caps, NULL, ao2_cleanup);
 	enum ast_media_type media_type = session_media->type;
 	struct ast_rtp_codecs codecs = AST_RTP_CODECS_NULL_INIT;
 	int fmts = 0;
@@ -592,6 +615,7 @@ static void add_ice_to_stream(struct ast_sip_session *session, struct ast_sip_se
 	}
 
 	if (!session_media->remote_ice) {
+		ice->stop(session_media->rtp);
 		return;
 	}
 
@@ -1006,7 +1030,7 @@ static int setup_sdes_srtp(struct ast_sip_session_media *session_media,
 			return 0;
 		}
 
-		ast_debug(1, "Ignoring crypto offer with unsupported parameters: %s\n", crypto_str);
+		ast_log(LOG_WARNING, "Ignoring crypto offer with unsupported parameters: %s\n", crypto_str);
 	}
 
 	/* no usable crypto attributes found */
@@ -1127,6 +1151,7 @@ static void process_ssrc_attributes(struct ast_sip_session *session, struct ast_
 		}
 
 		ast_rtp_instance_set_remote_ssrc(session_media->rtp, ssrc);
+		break;
 	}
 }
 
@@ -1183,7 +1208,18 @@ static void add_rtcp_fb_to_stream(struct ast_sip_session *session,
 	pj_str_t stmp;
 	pjmedia_sdp_attr *attr;
 
-	if (!session->endpoint->media.webrtc || session_media->type != AST_MEDIA_TYPE_VIDEO) {
+	if (!session->endpoint->media.webrtc) {
+		return;
+	}
+
+	/* transport-cc is supposed to be for the entire transport, and any media sources so
+	 * while the header does not appear in audio streams and isn't negotiated there, we still
+	 * place this attribute in as Chrome does.
+	 */
+	attr = pjmedia_sdp_attr_create(pool, "rtcp-fb", pj_cstr(&stmp, "* transport-cc"));
+	pjmedia_sdp_attr_add(&media->attr_count, media->attr, attr);
+
+	if (session_media->type != AST_MEDIA_TYPE_VIDEO) {
 		return;
 	}
 
@@ -1394,6 +1430,22 @@ static int negotiate_incoming_sdp_stream(struct ast_sip_session *session,
 	/* If ICE support is enabled find all the needed attributes */
 	check_ice_support(session, session_media, stream);
 
+	if (ast_sip_session_is_pending_stream_default(session, asterisk_stream) && media_type == AST_MEDIA_TYPE_AUDIO) {
+		/* Check if incomming SDP is changing the remotely held state */
+		if (ast_sockaddr_isnull(addrs) ||
+			ast_sockaddr_is_any(addrs) ||
+			pjmedia_sdp_media_find_attr2(stream, "sendonly", NULL) ||
+			pjmedia_sdp_media_find_attr2(stream, "inactive", NULL)) {
+			if (!session_media->remotely_held) {
+				session_media->remotely_held = 1;
+				session_media->remotely_held_changed = 1;
+			}
+		} else if (session_media->remotely_held) {
+			session_media->remotely_held = 0;
+			session_media->remotely_held_changed = 1;
+		}
+	}
+
 	if (set_caps(session, session_media, session_media_transport, stream, 1, asterisk_stream)) {
 		return 0;
 	}
@@ -1535,6 +1587,8 @@ static int create_outgoing_sdp_stream(struct ast_sip_session *session, struct as
 	static const pj_str_t STR_IP6 = { "IP6", 3};
 	static const pj_str_t STR_SENDRECV = { "sendrecv", 8 };
 	static const pj_str_t STR_SENDONLY = { "sendonly", 8 };
+	static const pj_str_t STR_INACTIVE = { "inactive", 8 };
+	static const pj_str_t STR_RECVONLY = { "recvonly", 8 };
 	pjmedia_sdp_media *media;
 	const char *hostip = NULL;
 	struct ast_sockaddr addr;
@@ -1799,9 +1853,26 @@ static int create_outgoing_sdp_stream(struct ast_sip_session *session, struct as
 		media->attr[media->attr_count++] = attr;
 	}
 
-	/* Add the sendrecv attribute - we purposely don't keep track because pjmedia-sdp will automatically change our offer for us */
 	attr = PJ_POOL_ZALLOC_T(pool, pjmedia_sdp_attr);
-	attr->name = !session_media->locally_held ? STR_SENDRECV : STR_SENDONLY;
+	if (session_media->locally_held) {
+		if (session_media->remotely_held) {
+			attr->name = STR_INACTIVE; /* To place on hold a recvonly stream, send inactive */
+		} else {
+			attr->name = STR_SENDONLY; /* Send sendonly to initate a local hold */
+		}
+	} else {
+		if (session_media->remotely_held) {
+			attr->name = STR_RECVONLY; /* Remote has sent sendonly, reply recvonly */
+		} else if (ast_stream_get_state(stream) == AST_STREAM_STATE_SENDONLY) {
+			attr->name = STR_SENDONLY; /* Stream has requested sendonly */
+		} else if (ast_stream_get_state(stream) == AST_STREAM_STATE_RECVONLY) {
+			attr->name = STR_RECVONLY; /* Stream has requested recvonly */
+		} else if (ast_stream_get_state(stream) == AST_STREAM_STATE_INACTIVE) {
+			attr->name = STR_INACTIVE; /* Stream has requested inactive */
+		} else {
+			attr->name = STR_SENDRECV; /* No hold in either direction */
+		}
+	}
 	media->attr[media->attr_count++] = attr;
 
 	/* If we've got rtcp-mux enabled, add it unless we received an offer without it */
@@ -1966,22 +2037,19 @@ static int apply_negotiated_sdp_stream(struct ast_sip_session *session,
 		return 1;
 	}
 
-	if (ast_sockaddr_isnull(addrs) ||
-		ast_sockaddr_is_any(addrs) ||
-		pjmedia_sdp_media_find_attr2(remote_stream, "sendonly", NULL) ||
-		pjmedia_sdp_media_find_attr2(remote_stream, "inactive", NULL)) {
-		if (!session_media->remotely_held) {
+	if (session_media->remotely_held_changed) {
+		if (session_media->remotely_held) {
 			/* The remote side has put us on hold */
 			ast_queue_hold(session->channel, session->endpoint->mohsuggest);
 			ast_rtp_instance_stop(session_media->rtp);
 			ast_queue_frame(session->channel, &ast_null_frame);
-			session_media->remotely_held = 1;
+			session_media->remotely_held_changed = 0;
+		} else {
+			/* The remote side has taken us off hold */
+			ast_queue_unhold(session->channel);
+			ast_queue_frame(session->channel, &ast_null_frame);
+			session_media->remotely_held_changed = 0;
 		}
-	} else if (session_media->remotely_held) {
-		/* The remote side has taken us off hold */
-		ast_queue_unhold(session->channel);
-		ast_queue_frame(session->channel, &ast_null_frame);
-		session_media->remotely_held = 0;
 	} else if ((pjmedia_sdp_neg_was_answer_remote(session->inv_session->neg) == PJ_FALSE)
 		&& (session->inv_session->state == PJSIP_INV_STATE_CONFIRMED)) {
 		ast_queue_control(session->channel, AST_CONTROL_UPDATE_RTP_PEER);
@@ -2049,8 +2117,8 @@ static void change_outgoing_sdp_stream_media_address(pjsip_tx_data *tdata, struc
 	if (ast_sip_transport_is_nonlocal(transport_state, &our_sdp_addr) && transport_state->localnet) {
 		return;
 	}
-	ast_debug(5, "Setting media address to %s\n", ast_sockaddr_stringify_host(&transport_state->external_media_address));
-	pj_strdup2(tdata->pool, &stream->conn->addr, ast_sockaddr_stringify_host(&transport_state->external_media_address));
+	ast_debug(5, "Setting media address to %s\n", ast_sockaddr_stringify_addr_remote(&transport_state->external_media_address));
+	pj_strdup2(tdata->pool, &stream->conn->addr, ast_sockaddr_stringify_addr_remote(&transport_state->external_media_address));
 }
 
 /*! \brief Function which stops the RTP instance */

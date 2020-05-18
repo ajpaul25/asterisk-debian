@@ -45,6 +45,9 @@ ifeq ($(SPECIAL_TARGETS),)
         else
             $(warning ASTTOPDIR/menuselect hasn't been run yet.  Can't find debug options.)
         endif
+		include ../../Makefile.rules
+		include ../Makefile.rules
+		include Makefile.rules
 
         all: _all
         install: _install
@@ -64,20 +67,19 @@ ifeq ($(SPECIAL_TARGETS),)
         endif
         MALLOC_DEBUG_LIBS = source/pjsip-apps/lib/libasterisk_malloc_debug.a
         MALLOC_DEBUG_LDFLAGS = -L$(PJDIR)/pjsip-apps/lib -Wl,-whole-archive -lasterisk_malloc_debug -Wl,-no-whole-archive
-        ifeq ($(findstring DONT_OPTIMIZE,$(MENUSELECT_CFLAGS)),)
-            CF += -O3
-        endif
-        export CFLAGS += $(CF) -g3
-        export LDFLAGS += $(CC_LDFLAGS)
         TARGETS += pjproject.symbols
     else
         all install:
     endif
+else
+	include ../../Makefile.rules
+	include ../Makefile.rules
+	include Makefile.rules
 endif
 
-include ../../Makefile.rules
-include ../Makefile.rules
-include Makefile.rules
+export PJ_CFLAGS := $(filter-out -O% -g%,$(PJ_CFLAGS))
+export CFLAGS += $(CF)
+export LDFLAGS += $(CC_LDFLAGS)
 
 ECHO_PREFIX := $(ECHO_PREFIX) echo '[pjproject] '
 SHELL_ECHO_PREFIX := echo '[pjproject] '
@@ -180,7 +182,7 @@ source/pjsip-apps/src/python/_pjsua.o: source/pjsip-apps/src/python/_pjsua.c $(a
 source/pjsip-apps/src/python/_pjsua.so: LDFLAGS += $(MALLOC_DEBUG_LDFLAGS)
 source/pjsip-apps/src/python/_pjsua.so: source/pjsip-apps/src/python/_pjsua.o
 	$(ECHO_PREFIX) Linking python bindings $(@F)
-	$(CMD_PREFIX) gcc -shared -pthread -o $@ $< $(LDFLAGS) $(PJ_LDFLAGS) $(APP_LDLIBS) $(PYTHONDEV_LIB) $(REALLY_QUIET)
+	$(CMD_PREFIX) $(CC) -shared -pthread -o $@ $< $(LDFLAGS) $(PJ_LDFLAGS) $(APP_LDLIBS) $(PYTHONDEV_LIB) $(REALLY_QUIET)
 
 _install: _all
 	@if [ ! -d "$(DESTDIR)$(ASTDATADIR)/third-party/pjproject" ]; then \

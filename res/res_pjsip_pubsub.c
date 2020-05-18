@@ -31,7 +31,7 @@
 #include <pjsip_simple.h>
 #include <pjlib.h>
 
-#include "asterisk/app.h"
+#include "asterisk/mwi.h"
 #include "asterisk/res_pjsip_pubsub.h"
 #include "asterisk/module.h"
 #include "asterisk/linkedlists.h"
@@ -130,6 +130,11 @@
 				<configOption name="prune_on_boot">
 					<synopsis>If set, indicates that the contact used a reliable transport
 					and therefore the subscription must be deleted after an asterisk restart.
+					</synopsis>
+				</configOption>
+				<configOption name="generator_data">
+					<synopsis>If set, contains persistence data for all generators of content
+					for the subscription.
 					</synopsis>
 				</configOption>
 			</configObject>
@@ -389,6 +394,8 @@ struct subscription_persistence {
 	char contact_uri[PJSIP_MAX_URL_SIZE];
 	/*! Prune subscription on restart */
 	int prune_on_boot;
+	/*! Body generator specific persistence data */
+	struct ast_json *generator_data;
 };
 
 /*!
@@ -490,6 +497,8 @@ struct ast_sip_subscription {
 	unsigned int full_state;
 	/*! URI associated with the subscription */
 	pjsip_sip_uri *uri;
+	/*! Data to be persisted with the subscription */
+	struct ast_json *persistence_data;
 	/*! Name of resource being subscribed to */
 	char resource[0];
 };
@@ -615,6 +624,7 @@ static void subscription_persistence_destroy(void *obj)
 
 	ast_free(persistence->endpoint);
 	ast_free(persistence->tag);
+	ast_json_unref(persistence->generator_data);
 }
 
 /*! \brief Allocator for subscription persistence */
@@ -758,7 +768,7 @@ static struct ast_sip_pubsub_body_generator *find_body_generator(char accept[AST
 		size_t num_accept, const char *body_type);
 
 /*! \brief Retrieve a handler using the Event header of an rdata message */
-static struct ast_sip_subscription_handler *subscription_get_handler_from_rdata(pjsip_rx_data *rdata)
+static struct ast_sip_subscription_handler *subscription_get_handler_from_rdata(pjsip_rx_data *rdata, const char *endpoint)
 {
 	pjsip_event_hdr *event_header;
 	char event[32];
@@ -766,14 +776,16 @@ static struct ast_sip_subscription_handler *subscription_get_handler_from_rdata(
 
 	event_header = pjsip_msg_find_hdr_by_name(rdata->msg_info.msg, &str_event_name, rdata->msg_info.msg->hdr.next);
 	if (!event_header) {
-		ast_log(LOG_WARNING, "Incoming SUBSCRIBE request with no Event header\n");
+		ast_log(LOG_WARNING, "Incoming SUBSCRIBE request from %s with no Event header\n",
+			endpoint ? endpoint : "Unknown");
 		return NULL;
 	}
 	ast_copy_pj_str(event, &event_header->event_type, sizeof(event));
 
 	handler = find_sub_handler_for_event_name(event);
 	if (!handler) {
-		ast_log(LOG_WARNING, "No registered subscribe handler for event %s\n", event);
+		ast_log(LOG_WARNING, "No registered subscribe handler for event %s from %s\n", event,
+			endpoint ? endpoint : "Unknown");
 	}
 
 	return handler;
@@ -1196,6 +1208,7 @@ static void destroy_subscription(struct ast_sip_subscription *sub)
 
 	AST_VECTOR_FREE(&sub->children);
 	ao2_cleanup(sub->datastores);
+	ast_json_unref(sub->persistence_data);
 	ast_free(sub);
 }
 
@@ -1245,6 +1258,14 @@ static struct ast_sip_subscription *allocate_subscription(const struct ast_sip_s
 	contact_uri = pjsip_uri_get_uri(tree->dlg->local.contact->uri);
 	pjsip_sip_uri_assign(tree->dlg->pool, sub->uri, contact_uri);
 	pj_strdup2(tree->dlg->pool, &sub->uri->user, resource);
+
+	/* If there is any persistence information available for this subscription that was persisted
+	 * then make it available so that the NOTIFY has the correct state.
+	 */
+
+	if (tree->persistence && tree->persistence->generator_data) {
+		sub->persistence_data = ast_json_ref(ast_json_object_get(tree->persistence->generator_data, resource));
+	}
 
 	sub->handler = handler;
 	sub->subscription_state = PJSIP_EVSUB_STATE_ACTIVE;
@@ -1444,11 +1465,10 @@ static struct sip_subscription_tree *allocate_subscription_tree(struct ast_sip_e
 static struct sip_subscription_tree *create_subscription_tree(const struct ast_sip_subscription_handler *handler,
 		struct ast_sip_endpoint *endpoint, pjsip_rx_data *rdata, const char *resource,
 		struct ast_sip_pubsub_body_generator *generator, struct resource_tree *tree,
-		pj_status_t *dlg_status)
+		pj_status_t *dlg_status, struct subscription_persistence *persistence)
 {
 	struct sip_subscription_tree *sub_tree;
 	pjsip_dialog *dlg;
-	struct subscription_persistence *persistence;
 
 	sub_tree = allocate_subscription_tree(endpoint, rdata);
 	if (!sub_tree) {
@@ -1488,6 +1508,9 @@ static struct sip_subscription_tree *create_subscription_tree(const struct ast_s
 			pjsip_msg_clone(dlg->pool, rdata->msg_info.msg));
 
 	sub_tree->notification_batch_interval = tree->notification_batch_interval;
+
+	/* Persistence information needs to be available for all the subscriptions */
+	sub_tree->persistence = ao2_bump(persistence);
 
 	sub_tree->root = create_virtual_subscriptions(handler, resource, generator, sub_tree, tree->root);
 	if (AST_VECTOR_SIZE(&sub_tree->root->children) > 0) {
@@ -1549,7 +1572,7 @@ static int sub_persistence_recreate(void *obj)
 	 */
 	AST_SIP_USER_OPTIONS_TRUNCATE_CHECK(resource);
 
-	handler = subscription_get_handler_from_rdata(rdata);
+	handler = subscription_get_handler_from_rdata(rdata, persistence->endpoint);
 	if (!handler || !handler->notifier) {
 		ast_log(LOG_WARNING, "Failed recreating '%s' subscription: Could not get subscription handler.\n",
 			persistence->endpoint);
@@ -1610,7 +1633,7 @@ static int sub_persistence_recreate(void *obj)
 		pj_status_t dlg_status;
 
 		sub_tree = create_subscription_tree(handler, endpoint, rdata, resource, generator,
-			&tree, &dlg_status);
+			&tree, &dlg_status, persistence);
 		if (!sub_tree) {
 			if (dlg_status != PJ_EEXISTS) {
 				ast_log(LOG_WARNING, "Failed recreating '%s' subscription: Could not create subscription tree.\n",
@@ -1628,7 +1651,6 @@ static int sub_persistence_recreate(void *obj)
 			ind->sub_tree = ao2_bump(sub_tree);
 			ind->expires = expires_header->ivalue;
 
-			sub_tree->persistence = ao2_bump(persistence);
 			subscription_persistence_update(sub_tree, rdata, SUBSCRIPTION_PERSISTENCE_RECREATED);
 			if (ast_sip_push_task(sub_tree->serializer, initial_notify_task, ind)) {
 				/* Could not send initial subscribe NOTIFY */
@@ -2642,6 +2664,28 @@ struct ao2_container *ast_sip_publication_get_datastores(const struct ast_sip_pu
 	return publication->datastores;
 }
 
+void ast_sip_subscription_set_persistence_data(struct ast_sip_subscription *subscription, struct ast_json *persistence_data)
+{
+	ast_json_unref(subscription->persistence_data);
+	subscription->persistence_data = persistence_data;
+
+	if (subscription->tree->persistence) {
+		if (!subscription->tree->persistence->generator_data) {
+			subscription->tree->persistence->generator_data = ast_json_object_create();
+			if (!subscription->tree->persistence->generator_data) {
+				return;
+			}
+		}
+		ast_json_object_set(subscription->tree->persistence->generator_data, subscription->resource,
+			ast_json_ref(persistence_data));
+	}
+}
+
+const struct ast_json *ast_sip_subscription_get_persistence_data(const struct ast_sip_subscription *subscription)
+{
+	return subscription->persistence_data;
+}
+
 AST_RWLIST_HEAD_STATIC(publish_handlers, ast_sip_publish_handler);
 
 static int publication_hash_fn(const void *obj, const int flags)
@@ -2969,7 +3013,7 @@ static pj_bool_t pubsub_on_rx_subscribe_request(pjsip_rx_data *rdata)
 	expires_header = pjsip_msg_find_hdr(rdata->msg_info.msg, PJSIP_H_EXPIRES, rdata->msg_info.msg->hdr.next);
 	if (expires_header) {
 		if (expires_header->ivalue == 0) {
-			ast_log(LOG_WARNING, "Subscription request from endpoint %s rejected. Expiration of 0 is invalid\n",
+			ast_debug(1, "Subscription request from endpoint %s rejected. Expiration of 0 is invalid\n",
 				ast_sorcery_object_get_id(endpoint));
 			pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(), rdata, 400, NULL, NULL, NULL);
 				return PJ_TRUE;
@@ -2982,7 +3026,7 @@ static pj_bool_t pubsub_on_rx_subscribe_request(pjsip_rx_data *rdata)
 		}
 	}
 
-	handler = subscription_get_handler_from_rdata(rdata);
+	handler = subscription_get_handler_from_rdata(rdata, ast_sorcery_object_get_id(endpoint));
 	if (!handler) {
 		pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(), rdata, 489, NULL, NULL, NULL);
 		return PJ_TRUE;
@@ -3003,7 +3047,7 @@ static pj_bool_t pubsub_on_rx_subscribe_request(pjsip_rx_data *rdata)
 		return PJ_TRUE;
 	}
 
-	sub_tree = create_subscription_tree(handler, endpoint, rdata, resource, generator, &tree, &dlg_status);
+	sub_tree = create_subscription_tree(handler, endpoint, rdata, resource, generator, &tree, &dlg_status, NULL);
 	if (!sub_tree) {
 		if (dlg_status != PJ_EEXISTS) {
 			pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(), rdata, 500, NULL, NULL, NULL);
@@ -3294,7 +3338,8 @@ static pj_bool_t pubsub_on_rx_publish_request(pjsip_rx_data *rdata)
 
 	event_header = pjsip_msg_find_hdr_by_name(rdata->msg_info.msg, &str_event_name, rdata->msg_info.msg->hdr.next);
 	if (!event_header) {
-		ast_log(LOG_WARNING, "Incoming PUBLISH request with no Event header\n");
+		ast_log(LOG_WARNING, "Incoming PUBLISH request from %s with no Event header\n",
+			ast_sorcery_object_get_id(endpoint));
 		pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(), rdata, 489, NULL, NULL, NULL);
 		return PJ_TRUE;
 	}
@@ -3302,7 +3347,8 @@ static pj_bool_t pubsub_on_rx_publish_request(pjsip_rx_data *rdata)
 
 	handler = find_pub_handler(event);
 	if (!handler) {
-		ast_log(LOG_WARNING, "No registered publish handler for event %s\n", event);
+		ast_log(LOG_WARNING, "No registered publish handler for event %s from %s\n", event,
+			ast_sorcery_object_get_id(endpoint));
 		pjsip_endpt_respond_stateless(ast_sip_get_pjsip_endpoint(), rdata, 489, NULL, NULL, NULL);
 		return PJ_TRUE;
 	}
@@ -4653,6 +4699,39 @@ static int persistence_tag_struct2str(const void *obj, const intptr_t *args, cha
 	return 0;
 }
 
+static int persistence_generator_data_str2struct(const struct aco_option *opt, struct ast_variable *var, void *obj)
+{
+	struct subscription_persistence *persistence = obj;
+	struct ast_json_error error;
+
+	/* We tolerate a failure of the JSON to load and instead start fresh, since this field
+	 * originates from the persistence code and not a user.
+	 */
+	persistence->generator_data = ast_json_load_string(var->value, &error);
+
+	return 0;
+}
+
+static int persistence_generator_data_struct2str(const void *obj, const intptr_t *args, char **buf)
+{
+	const struct subscription_persistence *persistence = obj;
+	char *value;
+
+	if (!persistence->generator_data) {
+		return 0;
+	}
+
+	value = ast_json_dump_string(persistence->generator_data);
+	if (!value) {
+		return -1;
+	}
+
+	*buf = ast_strdup(value);
+	ast_json_free(value);
+
+	return 0;
+}
+
 static int persistence_expires_str2struct(const struct aco_option *opt, struct ast_variable *var, void *obj)
 {
 	struct subscription_persistence *persistence = obj;
@@ -5525,6 +5604,8 @@ static int load_module(void)
 		CHARFLDSET(struct subscription_persistence, contact_uri));
 	ast_sorcery_object_field_register(sorcery, "subscription_persistence", "prune_on_boot", "no", OPT_YESNO_T, 1,
 		FLDSET(struct subscription_persistence, prune_on_boot));
+	ast_sorcery_object_field_register_custom(sorcery, "subscription_persistence", "generator_data", "",
+		persistence_generator_data_str2struct, persistence_generator_data_struct2str, NULL, 0, 0);
 
 	if (apply_list_configuration(sorcery)) {
 		ast_sched_context_destroy(sched);

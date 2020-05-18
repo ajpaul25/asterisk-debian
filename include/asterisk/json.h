@@ -89,7 +89,7 @@ typedef AST_JSON_INT_T ast_json_int_t;
 /*!
  * \brief Initialize the JSON library.
  */
-void ast_json_init(void);
+int ast_json_init(void);
 
 /*!
  * \brief Set custom allocators instead of the standard ast_malloc() and ast_free().
@@ -562,6 +562,17 @@ size_t ast_json_object_size(struct ast_json *object);
 struct ast_json *ast_json_object_get(struct ast_json *object, const char *key);
 
 /*!
+ * \brief Get a string field from a JSON object.
+ * \since 16.3.0
+ *
+ * \param object JSON object.
+ * \param key Key of string field to look up.
+ * \return String value of given \a key.
+ * \return \c NULL on error, or key value is not a string.
+ */
+#define ast_json_object_string_get(object, key) ast_json_string_get(ast_json_object_get(object, key))
+
+/*!
  * \brief Set a field in a JSON object.
  * \since 12.0.0
  *
@@ -980,6 +991,22 @@ struct ast_json *ast_json_timeval(const struct timeval tv, const char *zone);
  * \return \c NULL on error.
  */
 struct ast_json *ast_json_ipaddr(const struct ast_sockaddr *addr, enum ast_transport transport_type);
+
+/*!
+ * \brief Construct a context/exten/priority/application/application_data as JSON.
+ *
+ * If a \c NULL is passed for \c context or \c exten or \c app_name or \c app_data,
+ * or -1 for \c priority, the fields is set to ast_json_null().
+ *
+ * \param context Context name.
+ * \param exten Extension.
+ * \param priority Dialplan priority.
+ * \param app_name Application name.
+ * \param app_data Application argument.
+ * \return JSON object with \c context, \c exten and \c priority \c app_name \c app_data fields
+ */
+struct ast_json *ast_json_dialplan_cep_app(
+		const char *context, const char *exten, int priority, const char *app_name, const char *app_data);
 
 /*!
  * \brief Construct a context/exten/priority as JSON.

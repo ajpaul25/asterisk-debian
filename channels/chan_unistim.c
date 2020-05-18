@@ -62,11 +62,13 @@
 #include "asterisk/module.h"
 #include "asterisk/pbx.h"
 #include "asterisk/rtp_engine.h"
+#include "asterisk/unaligned.h"
 #include "asterisk/netsock2.h"
 #include "asterisk/acl.h"
 #include "asterisk/callerid.h"
 #include "asterisk/cli.h"
 #include "asterisk/app.h"
+#include "asterisk/mwi.h"
 #include "asterisk/musiconhold.h"
 #include "asterisk/causes.h"
 #include "asterisk/indications.h"
@@ -574,7 +576,7 @@ static const unsigned char packet_send_stream_based_tone_on[] =
 	{ 0x16, 0x06, 0x1b, 0x00, 0x00, 0x05 };
 static const unsigned char packet_send_stream_based_tone_single_freq[] =
 	{ 0x16, 0x06, 0x1d, 0x00, 0x01, 0xb8 };
-static const unsigned char packet_send_stream_based_tone_dial_freq[] =
+static const unsigned char packet_send_stream_based_tone_dual_freq[] =
 	{ 0x16, 0x08, 0x1d, 0x00, 0x01, 0xb8, 0x01, 0x5e };
 static const unsigned char packet_send_select_output[] =
 	{ 0x16, 0x06, 0x32, 0xc0, 0x01, 0x00 };
@@ -1001,33 +1003,43 @@ static int get_to_address(int fd, struct sockaddr_in *toAddr)
 {
 #ifdef HAVE_PKTINFO
 	int err;
-	struct msghdr msg;
-	struct {
-		struct cmsghdr cm;
-		int len;
-		struct in_addr address;
-	} ip_msg;
-
-	/* Zero out the structures before we use them */
-	/* This sets several key values to NULL */
-	memset(&msg, 0, sizeof(msg));
-	memset(&ip_msg, 0, sizeof(ip_msg));
-
-	/* Initialize the message structure */
-	msg.msg_control = &ip_msg;
-	msg.msg_controllen = sizeof(ip_msg);
+	char cmbuf[0x100];
+	struct cmsghdr *cmsg;
+	struct sockaddr_in peeraddr;
+	struct in_addr addr;
+	struct msghdr mh = {
+		.msg_name = &peeraddr,
+		.msg_namelen = sizeof(peeraddr),
+		.msg_control = cmbuf,
+		.msg_controllen = sizeof(cmbuf),
+	};
+	memset(&addr, 0, sizeof(addr));
 	/* Get info about the incoming packet */
-	err = recvmsg(fd, &msg, MSG_PEEK);
+	err = recvmsg(fd, &mh, MSG_PEEK);
 	if (err == -1) {
 		ast_log(LOG_WARNING, "recvmsg returned an error: %s\n", strerror(errno));
+		return err;
 	}
-	memcpy(&toAddr->sin_addr, &ip_msg.address, sizeof(struct in_addr));
+	for(cmsg = CMSG_FIRSTHDR(&mh);
+		cmsg != NULL;
+		cmsg = CMSG_NXTHDR(&mh, cmsg))
+	{
+		 if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
+			struct in_pktinfo *pkt = (struct in_pktinfo*)CMSG_DATA(cmsg);
+			addr = pkt->ipi_addr;
+			if (unistimdebug) {
+				ast_verb(0, "message received on address %s\n", ast_inet_ntoa(addr));
+			}
+		}
+	}
+	memcpy(&toAddr->sin_addr, &addr, sizeof(struct in_addr));
 	return err;
 #else
 	memcpy(toAddr, &public_ip, sizeof(*toAddr));
 	return 0;
 #endif
 }
+
 
 /* Allocate memory & initialize structures for a new phone */
 /* addr_from : ip address of the phone */
@@ -1040,7 +1052,10 @@ static struct unistimsession *create_client(const struct sockaddr_in *addr_from)
 		return NULL;
 
 	memcpy(&s->sin, addr_from, sizeof(struct sockaddr_in));
-	get_to_address(unistimsock, &s->sout);
+	if (get_to_address(unistimsock, &s->sout) < 0) {
+		ast_free(s);
+		return NULL;
+	}
 	s->sout.sin_family = AF_INET;
 	if (unistimdebug) {
 		ast_verb(0, "Creating a new entry for the phone from %s received via server ip %s\n",
@@ -1207,19 +1222,16 @@ static void send_tone(struct unistimsession *pte, uint16_t tone1, uint16_t tone2
 	if (!tone2) {
 		memcpy(buffsend + SIZE_HEADER, packet_send_stream_based_tone_single_freq,
 			   sizeof(packet_send_stream_based_tone_single_freq));
-		buffsend[10] = (tone1 & 0xff00) >> 8;
-		buffsend[11] = (tone1 & 0x00ff);
+		put_unaligned_uint16(&buffsend[10], htons(tone1));
 		send_client(SIZE_HEADER + sizeof(packet_send_stream_based_tone_single_freq), buffsend,
 				   pte);
 	} else {
 		tone2 *= 8;
-		memcpy(buffsend + SIZE_HEADER, packet_send_stream_based_tone_dial_freq,
-			   sizeof(packet_send_stream_based_tone_dial_freq));
-		buffsend[10] = (tone1 & 0xff00) >> 8;
-		buffsend[11] = (tone1 & 0x00ff);
-		buffsend[12] = (tone2 & 0xff00) >> 8;
-		buffsend[13] = (tone2 & 0x00ff);
-		send_client(SIZE_HEADER + sizeof(packet_send_stream_based_tone_dial_freq), buffsend,
+		memcpy(buffsend + SIZE_HEADER, packet_send_stream_based_tone_dual_freq,
+			   sizeof(packet_send_stream_based_tone_dual_freq));
+		put_unaligned_uint16(&buffsend[10], htons(tone1));
+		put_unaligned_uint16(&buffsend[12], htons(tone2));
+		send_client(SIZE_HEADER + sizeof(packet_send_stream_based_tone_dual_freq), buffsend,
 				   pte);
 	}
 
@@ -1339,7 +1351,7 @@ static void refresh_all_favorite(struct unistimsession *pte)
 
 static int is_key_favorite(struct unistim_device *d, int fav)
 {
-	if ((fav < 0) && (fav > 5)) {
+	if ((fav < 0) || (fav >= FAVNUM)) {
 		return 0;
 	}
 	if (d->sline[fav]) {
@@ -1353,7 +1365,7 @@ static int is_key_favorite(struct unistim_device *d, int fav)
 
 static int is_key_line(struct unistim_device *d, int fav)
 {
-	if ((fav < 0) && (fav > 5)) {
+	if ((fav < 0) || (fav >= FAVNUM)) {
 		return 0;
 	}
 	if (!d->sline[fav]) {
@@ -2746,7 +2758,7 @@ static void send_start_rtp(struct unistim_subchannel *sub)
 		   sizeof(packet_send_jitter_buffer_conf));
 	send_client(SIZE_HEADER + sizeof(packet_send_jitter_buffer_conf), buffsend, pte);
 	if (pte->device->rtp_method != 0) {
-		uint16_t rtcpsin_port = htons(us.sin_port) + 1; /* RTCP port is RTP + 1 */
+		uint16_t rtcpsin_port = ntohs(us.sin_port) + 1; /* RTCP port is RTP + 1 */
 
 		if (unistimdebug) {
 			ast_verb(0, "Sending OpenAudioStreamTX using method #%d\n", pte->device->rtp_method);
@@ -2760,20 +2772,14 @@ static void send_start_rtp(struct unistim_subchannel *sub)
 		}
 		if (pte->device->rtp_method != 2) {
 			memcpy(buffsend + 28, &public.sin_addr, sizeof(public.sin_addr));
-			buffsend[20] = (htons(sin.sin_port) & 0xff00) >> 8;
-			buffsend[21] = (htons(sin.sin_port) & 0x00ff);
-			buffsend[23] = (rtcpsin_port & 0x00ff);
-			buffsend[22] = (rtcpsin_port & 0xff00) >> 8;
-			buffsend[25] = (us.sin_port & 0xff00) >> 8;
-			buffsend[24] = (us.sin_port & 0x00ff);
-			buffsend[27] = (rtcpsin_port & 0x00ff);
-			buffsend[26] = (rtcpsin_port & 0xff00) >> 8;
+			put_unaligned_uint16(&buffsend[20], sin.sin_port);
+			put_unaligned_uint16(&buffsend[22], htons(rtcpsin_port));
+			put_unaligned_uint16(&buffsend[24], us.sin_port);
+			put_unaligned_uint16(&buffsend[26], htons(rtcpsin_port));
 		} else {
 			memcpy(buffsend + 23, &public.sin_addr, sizeof(public.sin_addr));
-			buffsend[15] = (htons(sin.sin_port) & 0xff00) >> 8;
-			buffsend[16] = (htons(sin.sin_port) & 0x00ff);
-			buffsend[20] = (us.sin_port & 0xff00) >> 8;
-			buffsend[19] = (us.sin_port & 0x00ff);
+			put_unaligned_uint16(&buffsend[15], sin.sin_port);
+			put_unaligned_uint16(&buffsend[19], us.sin_port);
 		}
 		buffsend[11] = codec; /* rx */
 		buffsend[12] = codec; /* tx */
@@ -2791,20 +2797,14 @@ static void send_start_rtp(struct unistim_subchannel *sub)
 		}
 		if (pte->device->rtp_method != 2) {
 			memcpy(buffsend + 28, &public.sin_addr, sizeof(public.sin_addr));
-			buffsend[20] = (htons(sin.sin_port) & 0xff00) >> 8;
-			buffsend[21] = (htons(sin.sin_port) & 0x00ff);
-			buffsend[23] = (rtcpsin_port & 0x00ff);
-			buffsend[22] = (rtcpsin_port & 0xff00) >> 8;
-			buffsend[25] = (us.sin_port & 0xff00) >> 8;
-			buffsend[24] = (us.sin_port & 0x00ff);
-			buffsend[27] = (rtcpsin_port & 0x00ff);
-			buffsend[26] = (rtcpsin_port & 0xff00) >> 8;
+			put_unaligned_uint16(&buffsend[20], sin.sin_port);
+			put_unaligned_uint16(&buffsend[22], htons(rtcpsin_port));
+			put_unaligned_uint16(&buffsend[24], us.sin_port);
+			put_unaligned_uint16(&buffsend[26], htons(rtcpsin_port));
 		} else {
 			memcpy(buffsend + 23, &public.sin_addr, sizeof(public.sin_addr));
-			buffsend[15] = (htons(sin.sin_port) & 0xff00) >> 8;
-			buffsend[16] = (htons(sin.sin_port) & 0x00ff);
-			buffsend[20] = (us.sin_port & 0xff00) >> 8;
-			buffsend[19] = (us.sin_port & 0x00ff);
+			put_unaligned_uint16(&buffsend[15], sin.sin_port);
+			put_unaligned_uint16(&buffsend[19], us.sin_port);
 		}
 		buffsend[11] = codec; /* rx */
 		buffsend[12] = codec; /* tx */
@@ -2819,11 +2819,9 @@ static void send_start_rtp(struct unistim_subchannel *sub)
 		memcpy(buffsend + SIZE_HEADER, packet_send_call, sizeof(packet_send_call));
 		memcpy(buffsend + 53, &public.sin_addr, sizeof(public.sin_addr));
 		/* Destination port when sending RTP */
-		buffsend[49] = (us.sin_port & 0x00ff);
-		buffsend[50] = (us.sin_port & 0xff00) >> 8;
+		put_unaligned_uint16(&buffsend[49], us.sin_port);
 		/* Destination port when sending RTCP */
-		buffsend[52] = (rtcpsin_port & 0x00ff);
-		buffsend[51] = (rtcpsin_port & 0xff00) >> 8;
+		put_unaligned_uint16(&buffsend[51], htons(rtcpsin_port));
 		/* Codec */
 		buffsend[40] = codec;
 		buffsend[41] = codec;
@@ -2840,10 +2838,8 @@ static void send_start_rtp(struct unistim_subchannel *sub)
 				ast_format_get_name(ast_channel_readformat(sub->owner)));
 		}
 		/* Source port for transmit RTP and Destination port for receiving RTP */
-		buffsend[45] = (htons(sin.sin_port) & 0xff00) >> 8;
-		buffsend[46] = (htons(sin.sin_port) & 0x00ff);
-		buffsend[47] = (rtcpsin_port & 0xff00) >> 8;
-		buffsend[48] = (rtcpsin_port & 0x00ff);
+		put_unaligned_uint16(&buffsend[45], sin.sin_port);
+		put_unaligned_uint16(&buffsend[47], htons(rtcpsin_port));
 		send_client(SIZE_HEADER + sizeof(packet_send_call), buffsend, pte);
 	}
 }
@@ -3330,22 +3326,12 @@ static void handle_call_incoming(struct unistimsession *s)
 	return;
 }
 
-static int unistim_do_senddigit(struct unistimsession *pte, char digit)
+static int send_dtmf_tone(struct unistimsession *pte, char digit)
 {
-	struct ast_frame f = { .frametype = AST_FRAME_DTMF, .subclass.integer = digit, .src = "unistim" };
-	struct unistim_subchannel *sub;
-        int row, col;
+	int row, col;
 
-	sub = get_sub(pte->device, SUB_REAL);
-	if (!sub || !sub->owner || sub->alreadygone) {
-		ast_log(LOG_WARNING, "Unable to find subchannel in dtmf senddigit\n");
-		return -1;
-	}
-
-	/* Send DTMF indication _before_ playing sounds */
-	ast_queue_frame(sub->owner, &f);
 	if (unistimdebug) {
-		ast_verb(0, "Send Digit %c (%i ms)\n", digit, pte->device->dtmfduration);
+		ast_verb(0, "Phone Play Digit %c\n", digit);
 	}
 	if (pte->device->dtmfduration > 0) {
 		row = (digit - '1') % 3;
@@ -3363,6 +3349,28 @@ static int unistim_do_senddigit(struct unistimsession *pte, char digit)
 		} else {
 			send_tone(pte, 500, 2000);
 		}
+	}
+	return 0;
+}
+
+static int unistim_do_senddigit(struct unistimsession *pte, char digit)
+{
+	struct ast_frame f = { .frametype = AST_FRAME_DTMF, .subclass.integer = digit, .src = "unistim" };
+	struct unistim_subchannel *sub;
+
+	sub = get_sub(pte->device, SUB_REAL);
+	if (!sub || !sub->owner || sub->alreadygone) {
+		ast_log(LOG_WARNING, "Unable to find subchannel in dtmf senddigit\n");
+		return -1;
+	}
+
+	/* Send DTMF indication _before_ playing sounds */
+	ast_queue_frame(sub->owner, &f);
+	if (pte->device->dtmfduration > 0) {
+		if (unistimdebug) {
+			ast_verb(0, "Send Digit %c (%i ms)\n", digit, pte->device->dtmfduration);
+		}
+		send_dtmf_tone(pte, digit);
 		usleep(pte->device->dtmfduration * 1000);	 /* XXX Less than perfect, blocking an important thread is not a good idea */
 		send_tone(pte, 0, 0);
 	}
@@ -5505,34 +5513,21 @@ static int unistim_senddigit_begin(struct ast_channel *ast, char digit)
 	if (!pte) {
 		return -1;
 	}
-	return unistim_do_senddigit(pte, digit);
+	return send_dtmf_tone(pte, digit);
 }
 
 static int unistim_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
 {
 	struct unistimsession *pte = channel_to_session(ast);
-	struct ast_frame f = { 0, };
-	struct unistim_subchannel *sub;
 
-	sub = get_sub(pte->device, SUB_REAL);
-
-	if (!sub || !sub->owner || sub->alreadygone) {
-		ast_log(LOG_WARNING, "Unable to find subchannel in dtmf senddigit_end\n");
+	if (!pte) {
 		return -1;
 	}
 
 	if (unistimdebug) {
-		ast_verb(0, "Send Digit off %c\n", digit);
-	}
-	if (!pte) {
-		return -1;
+		ast_verb(0, "Send Digit off %c (duration %d)\n", digit, duration);
 	}
 	send_tone(pte, 0, 0);
-	f.frametype = AST_FRAME_DTMF;
-	f.subclass.integer = digit;
-	f.src = "unistim";
-	ast_queue_frame(sub->owner, &f);
-
 	return 0;
 }
 
