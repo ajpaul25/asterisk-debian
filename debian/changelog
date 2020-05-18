@@ -2,8 +2,18 @@ asterisk (1:16.10.0~dfsg-1) UNRELEASED; urgency=medium
 
   * d/watch: use https instead of http, it is more secure
   * New upstream version 16.10.0~dfsg
+  * Remove patches applied by upstream and refresh the remaining ones
+    - Patches applied by upstream: AST-2019-002.patch and AST-2019-003.patch
+  * Repack pjproject version 2.9
+  * d/TODO.Debian: rename to d/TODO, thanks to lintian
+  * d/README.Debian: fix a typo, thanks to lintian
+  * d/rules: do not use dpkg-parsechangelog to get source package version
+  * d/copyright:
+    - Update years of the upstream copyright
+    - Remove unused paragraphs and files dropped by upstream
+    - Use https instead of http in Format and Source fields
 
- -- Lucas Kanashiro <kanashiro@debian.org>  Mon, 18 May 2020 19:34:26 -0300
+ -- Lucas Kanashiro <kanashiro@debian.org>  Mon, 18 May 2020 19:50:39 -0300
 
 asterisk (1:16.2.1~dfsg-2) unstable; urgency=high
 
