@@ -77,9 +77,9 @@ override_dh_auto_configure:
 	# Copy DSFG-free version of pjproject source into /tmp where the
 	# upstream build will find it, update checksums because we repacked
 	# it
-	cp -a debian/pjproject_2.8~dfsg.orig.tar.bz2 /tmp/pjproject-2.8.tar.bz2
-	cp third-party/pjproject/pjproject-2.8.tar.bz2.md5 third-party/pjproject/pjproject-2.8.tar.bz2.md5.debian_sav
-	md5sum /tmp/pjproject-2.8.tar.bz2 | sed 's:/tmp/::' > third-party/pjproject/pjproject-2.8.tar.bz2.md5
+	cp -a debian/pjproject_2.9~dfsg.orig.tar.bz2 /tmp/pjproject-2.9.tar.bz2
+	cp third-party/pjproject/pjproject-2.9.tar.bz2.md5 third-party/pjproject/pjproject-2.9.tar.bz2.md5.debian_sav
+	md5sum /tmp/pjproject-2.9.tar.bz2 | sed 's:/tmp/::' > third-party/pjproject/pjproject-2.9.tar.bz2.md5
 	$(FETCH_ENV) ./configure			\
 		CFLAGS="-fgnu89-inline $(CFLAGS) $(CPPFLAGS)" LDFLAGS="$(LDFLAGS) -Wl,--as-needed" \
 		--host=$(DEB_HOST_GNU_TYPE)		\
