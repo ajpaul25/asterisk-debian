@@ -1,3 +1,10 @@
+asterisk (1:16.10.0~dfsg-1) UNRELEASED; urgency=medium
+
+  * d/watch: use https instead of http, it is more secure
+  * New upstream version 16.10.0~dfsg
+
+ -- Lucas Kanashiro <kanashiro@debian.org>  Mon, 18 May 2020 19:34:26 -0300
+
 asterisk (1:16.2.1~dfsg-2) unstable; urgency=high
 
   * AST-2019-002 / CVE-2019-12827
