@@ -1,5 +1,6 @@
-asterisk (1:16.10.0~dfsg-1) UNRELEASED; urgency=medium
+asterisk (1:16.10.0~dfsg-1) unstable; urgency=medium
 
+  * Team upload.
   * d/watch: use https instead of http, it is more secure
   * New upstream version 16.10.0~dfsg
   * Remove patches applied by upstream and refresh the remaining ones
